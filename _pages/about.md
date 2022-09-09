@@ -2,7 +2,7 @@
 layout: about
 title: about
 permalink: /
-subtitle: <a href='#'>Affiliations</a>. Address. Contacts. Moto. Etc.
+subtitle: 
 
 profile:
   align: right
@@ -25,14 +25,26 @@ social: true  # includes social icons at the bottom of the page
 <!-- Your cute closer (optional): This may not be necessary in a shorter bio for Twitter or Instagram. But for a website or similarly professional bio, you may want to add a sentence describing who you are outside of work. -->
 <!-- Your contact info (optional): Depending on the site, you may also want to include an email, contact form, or another easy way for readers to reach you. List this information at the end of your bio. -->
 
+<p>
+Hello, my name is Timothy Reese. I am a Visiting Assistant Professor of Statistics at Purdue University. 
+The focus of my research is the utilization and development of class-binarization tools for efficient and interpretable large scale multi-class classification algorithms. 
+Large scale classification is a fundamental problem in statistics and for the development of a AI systems.
+The class-binarization approach to multi-class classification incorporates a structured modeling framework for an interpretable decision process.
+These structured models form a rich class of models capable of exploting the dependency sturcture inherent to large scale classification problems.
+The class-binarization approach further allows for a great reduction in the complexity of large scale problems by 
+reducing the number of decisions to be logarithmic in the number of categories. 
+The current focus of my research is on the efficient incorporation of partial external taxonomic information with a latent structure learning process.
+</p>
 
-Write your biography here. Tell the world about yourself. Link to your favorite [subreddit](http://reddit.com). You can put a picture in, too. 
-The code is already in, just name your picture `prof_pic.jpg` and put it in the `img/` folder.
+<p>
+I earned my Ph.D in Statistics from Purdue University at West Lafayatete, Indiana a MS. Degree in Applied Mathematics from California State University of Northridge
+and a dual BS degree in Mathematics and Computer Science from California State University of Northridge. 
+My research intrests include large scale classification, latent models, generative models, missing data problems, interpretable AI, and dimension reduction. 
+I have teaching experience in introductory statistics and mathematics courses. 
+In addition to teaching standard courses I along with my with my colleague Wenbin Zhu provided an accelerated Deep Learning tutorial seminar to the students of Huzhou teachers college in Huzhou, China.
+</p>
 
-Put your address / P.O. box / other info right below your picture. You can also disable any these elements by editing `profile` 
-property of the YAML header of your `_pages/about.md`. 
-Edit `_bibliography/papers.bib` and Jekyll will render your [publications page](/al-folio/publications/) automatically.
+<p>
 
-Link to your social media connections, too. 
-This theme is set up to use [Font Awesome icons](http://fortawesome.github.io/Font-Awesome/) and [Academicons](https://jpswalsh.github.io/academicons/), 
-like the ones below. Add your Facebook, Twitter, LinkedIn, Google Scholar, or just disable all of them.
+
+</p>

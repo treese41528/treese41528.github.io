@@ -1,7 +1,9 @@
 ---
 layout: post
-date: 2015-10-22 15:59:00-0400
+title: Inital Announcement
+date: 2022-09-09 12:16:00-0400
 inline: true
 ---
 
-A simple inline announcement.
+Website deployed. To test the news feed we share a tweet from Yann LeCun
+{% twitter https://twitter.com/ylecun/status/1562162165540331520 %}
