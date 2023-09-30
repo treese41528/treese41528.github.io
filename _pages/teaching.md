@@ -9,8 +9,22 @@ nav_order: 5
 
 
 <div class = "course">
+<h3><b>STAT 35000 - Introduction To Statistics </b></h3>
+<h4><b>SPRING 2023 - FALL 2023 </b></h4>
+<p>  A data-oriented introduction to the fundamental concepts and methods of applied statistics. 
+Exploratory analysis of data. Sample design and experimental design. 
+Probability distributions and simulation. Sampling distributions. 
+The reasoning of statistical inference. Confidence intervals and tests for one and two samples. 
+Inference for contingency tables, regression, and correlation. Introduction to regression with several explanatory variables. 
+Essential use is made of statistical software throughout. 
+Intended primarily for students majoring in the mathematical sciences. 
+Prerequisite: two semesters of college calculus. </p>
+</div>
+
+
+<div class = "course">
 <h3><b>STAT 30100 - Elementary Statistical Methods </b></h3>
-<h4><b>Fall 2022 </b></h4>
+<h4><b>FALL 2022 </b></h4>
 <p>  Introduction to statistical methods with applications to diverse fields. 
 Emphasis on understanding and interpreting standard techniques. 
 Data analysis for one and several variables, design of samples and experiments, basic probability, 
@@ -21,7 +35,7 @@ Software is used throughout. </p>
 
 <div class = "course">
 <h3><b>STAT STAT 22500 - Introduction To Probability Models  </b></h3>
-<h4><b>Fall 2017 - Fall 2019 </b></h4>
+<h4><b>FALL 2017 - FALL 2019 </b></h4>
 <p>  An introduction to basic probability. 
 Emphasis is placed on formulation of models and applications. 
 Probability calculus, standard distributions, random variables, and moments.  </p>
