@@ -46,5 +46,7 @@ In addition to teaching standard courses I along with my with my colleague Wenbi
 
 <p>
 
+## [Research Reading Resources](https://treese41528.github.io/ResearchGroupMaterials/)
+
 
 </p>
