@@ -44,8 +44,7 @@ I have teaching experience in introductory statistics and mathematics courses.
 In addition to teaching standard courses I along with my with my colleague Wenbin Zhu provided an accelerated Deep Learning tutorial seminar to the students of Huzhou teachers college in Huzhou, China.
 </p>
 
-<p>
-<h3><b>Research Reading Resources </b></h3>
-<a href="Reading.html">https://treese41528.github.io/ResearchGroupMaterials/<a>
 
-</p>
+
+<h3><b>Research Reading Resources </b></h3>
+<a href="Reading.html">"https://treese41528.github.io/ResearchGroupMaterials/"<a>
