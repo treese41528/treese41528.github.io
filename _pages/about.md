@@ -17,11 +17,11 @@ news: true  # includes a list of news items
 selected_papers: false # includes a list of papers marked as "selected={true}"
 social: true  # includes social icons at the bottom of the page
 ---
-<!-- Your first and last name: Start by writing your name. That wasn’t so hard! -->
+<!-- Your first and last name: Start by writing your name. That wasn't so hard! -->
 <!-- Your company or brand: If you have a consulting firm, a brand you use for your side hustle, or a company you currently work at, list that next. -->
 <!-- Your current function: What do you do for work? You can either list your current title or a short, descriptive phrase about your role here. -->
 <!-- Your north star: People reading your bio will also want to get a sense of who you are. Listing your overall goal, values, or a statement that describes your ethos will help them get to know you, even in short bios. -->
-<!-- Your top three accomplishments: Especially in professional bios, you’ll need a few accomplishments to show off what you’ve done in your career. Choose the top two or three large milestones from your career (no more), and put them next. -->
+<!-- Your top three accomplishments: Especially in professional bios, you'll need a few accomplishments to show off what you've done in your career. Choose the top two or three large milestones from your career (no more), and put them next. -->
 <!-- Your cute closer (optional): This may not be necessary in a shorter bio for Twitter or Instagram. But for a website or similarly professional bio, you may want to add a sentence describing who you are outside of work. -->
 <!-- Your contact info (optional): Depending on the site, you may also want to include an email, contact form, or another easy way for readers to reach you. List this information at the end of your bio. -->
 
@@ -47,4 +47,4 @@ In addition to teaching standard courses I along with my with my colleague Wenbi
 
 
 <h3><b>Research Reading Resources </b></h3>
-<a href="Reading.html">"https://treese41528.github.io/ResearchGroupMaterials/"<a>
+<a href="https://treese41528.github.io/ResearchGroupMaterials/">"Research Group Materials"<a>
