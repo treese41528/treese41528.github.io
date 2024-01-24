@@ -39,7 +39,9 @@ In addition to teaching standard courses I along with my with my colleague Wenbi
 
 <!-- 
 <h3><b>Teaching Resources </b></h3>
-<a href="/STAT350/Computer_Assignment_Tutorials/Computer_Assignment_1_Tutorial.html">Computer Assignment #1 Tutorial<a> -->
+<a href="/STAT350/Computer_Assignment_Tutorials/Computer_Assignment_1_Tutorial.html">Computer Assignment #1 Tutorial<a> 
+https://treese41528.github.io/STAT350/Computer_Assignment_Tutorials/Computer_Assignment_1_Tutorial.html
+-->
 
 <h3><b>Research Reading Resources </b></h3>
 <a href="https://treese41528.github.io/ResearchGroupMaterials/">Research Group Materials<a>
