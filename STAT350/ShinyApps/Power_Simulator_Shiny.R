@@ -18,11 +18,11 @@ ui <- fluidPage(
   titlePanel("Power Visualization Applet"),
   sidebarLayout(
     sidebarPanel(
-      sliderInput("nullMean", "Null Mean", min = 50, max = 80, value = 64),
-      sliderInput("altMean", "Alternative Mean", min = 50, max = 80, value = 66),
-      sliderInput("alpha", "Alpha", min = 0, max = 0.2, value = 0.05),
-      sliderInput("sampleSize", "Sample Size", min = 2, max = 400, value = 35),
-      sliderInput("stdDev", "Population Standard Deviation", min = 1, max = 10, value = 3),
+      sliderInput("nullMean", "Null Mean", min = 50, max = 80, value = 64, step = 1),
+      sliderInput("altMean", "Alternative Mean", min = 50, max = 80, value = 66, step = 1),
+      sliderInput("alpha", "Alpha", min = 0, max = 0.2, value = 0.05, step = 0.01),
+      sliderInput("sampleSize", "Sample Size", min = 2, max = 1000, value = 35, step = 1),
+      sliderInput("stdDev", "Population Standard Deviation", min = 1, max = 10, value = 3, step = 0.25),
       radioButtons("hypothesis", "Hypothesis Direction",
                    choices = list("Left-tailed" = "less", "Right-tailed" = "greater", "Two-tailed" = "two.sided"), selected = "greater")
     ),
@@ -113,7 +113,8 @@ server <- function(input, output) {
       # Type II Error region on alternative distribution
       p <- p + geom_ribbon(aes(x = x_values, ymin = 0, ymax = ifelse(x_values <= calcValues$cutoff, alt_density, 0)), 
                            fill = "purple", alpha = 0.8)
-    } else { # two.sided
+    } else { 
+      # two.sided
       lower_bound <- input$nullMean - calcValues$z_critical * calcValues$std_error
       upper_bound <- input$nullMean + calcValues$z_critical * calcValues$std_error
       # Power regions on alternative distribution
