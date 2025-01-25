@@ -1,55 +1,95 @@
-name: deploy
+name: Deploy site
 
 on:
   push:
     branches:
       - master
       - main
+    paths:
+      - "assets/**"
+      - "**.bib"
+      - "**.html"
+      - "**.js"
+      - "**.liquid"
+      - "**/*.md"
+      - "**.yml"
+      - "Gemfile"
+      - "Gemfile.lock"
+      - "!.github/workflows/axe.yml"
+      - "!.github/workflows/broken-links.yml"
+      - "!.github/workflows/deploy-docker-tag.yml"
+      - "!.github/workflows/deploy-image.yml"
+      - "!.github/workflows/docker-slim.yml"
+      - "!.github/workflows/lighthouse-badger.yml"
+      - "!.github/workflows/prettier.yml"
+      - "!lighthouse_results/**"
+      - "!CONTRIBUTING.md"
+      - "!CUSTOMIZE.md"
+      - "!FAQ.md"
+      - "!INSTALL.md"
+      - "!README.md"
   pull_request:
     branches:
       - master
       - main
+    paths:
+      - "assets/**"
+      - "**.bib"
+      - "**.html"
+      - "**.js"
+      - "**.liquid"
+      - "**/*.md"
+      - "**.yml"
+      - "Gemfile"
+      - "Gemfile.lock"
+      - "!.github/workflows/axe.yml"
+      - "!.github/workflows/broken-links.yml"
+      - "!.github/workflows/deploy-docker-tag.yml"
+      - "!.github/workflows/deploy-image.yml"
+      - "!.github/workflows/docker-slim.yml"
+      - "!.github/workflows/lighthouse-badger.yml"
+      - "!.github/workflows/prettier.yml"
+      - "!lighthouse_results/**"
+      - "!CONTRIBUTING.md"
+      - "!CUSTOMIZE.md"
+      - "!FAQ.md"
+      - "!INSTALL.md"
+      - "!README.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   deploy:
-    runs-on: ubuntu-22.04
+    # available images: https://github.com/actions/runner-images#available-images
+    runs-on: ubuntu-latest
     steps:
-      # Step 1: Checkout the repository
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      # Step 2: Setup Ruby environment
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.0.2'
+          ruby-version: "3.2.2"
           bundler-cache: true
-
-      # Step 3: Install Mermaid CLI (if required)
-      - name: Install Mermaid CLI
-        run: npm install -g mermaid.cli
-
-      # Step 4: Install dependencies with Bundler
-      - name: Install Ruby dependencies
-        run: bundle install
-
-      # Step 5: Setup deployment options
-      - name: Setup deploy options
-        id: setup
+      - name: Update _config.yml ⚙️
+        uses: fjogeleit/yaml-update-action@main
+        with:
+          commitChange: false
+          valueFile: "_config.yml"
+          propertyPath: "giscus.repo"
+          value: ${{ github.repository }}
+      - name: Install and Build 🔧
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [[ ${GITHUB_REF} = refs/pull/*/merge ]]; then # Pull request
-            echo "Detected pull request, skipping push."
-            echo "NO_PUSH=--no-push" >> $GITHUB_ENV
-          fi
-          SRC_BRANCH=${GITHUB_REF#refs/heads/}
-          echo "SRC_BRANCH=${SRC_BRANCH}" >> $GITHUB_ENV
-          echo "DEPLOY_BRANCH=gh-pages" >> $GITHUB_ENV
-
-      # Step 6: Deploy the website
-      - name: Deploy website
+          pip3 install --upgrade jupyter
+          export JEKYLL_ENV=production
+          bundle exec jekyll build
+      - name: Purge unused CSS 🧹
         run: |
-          yes | bash bin/deploy --verbose ${{ env.NO_PUSH }} \
-                                --src ${{ env.SRC_BRANCH }} \
-                                --deploy ${{ env.DEPLOY_BRANCH }}
+          npm install -g purgecss
+          purgecss -c purgecss.config.js
+      - name: Deploy 🚀
+        if: github.event_name != 'pull_request'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
