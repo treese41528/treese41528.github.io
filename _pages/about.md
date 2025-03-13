@@ -19,21 +19,19 @@ social: true  # includes social icons at the bottom of the page
 ---
 
 <p>
-Hello, my name is Timothy Reese. I am a Visiting Assistant Professor of Statistics at Purdue University. 
-The focus of my research is the utilization and development of class-binarization tools for efficient and interpretable large scale multi-class classification algorithms. 
-Large scale classification is a fundamental problem in statistics and for the development of a AI systems.
-The class-binarization approach to multi-class classification incorporates a structured modeling framework for an interpretable decision process.
-These structured models form a rich class of models capable of exploting the dependency sturcture inherent to large scale classification problems.
-The class-binarization approach further allows for a great reduction in the complexity of large scale problems by 
-reducing the number of decisions to be logarithmic in the number of categories. 
-The current focus of my research is on the efficient incorporation of partial external taxonomic information with a latent structure learning process.
+Hello, my name is Timothy Reese, and I am an Assistant Professor of Practice in the Statistics Department at Purdue University. 
+My research lies at the intersection of statistical modeling, machine learning, and practical applications in health and movement sciences. 
+I am particularly interested in developing tools for efficient and interpretable large-scale multi-class classification algorithms, leveraging class-binarization approaches. 
+These methods provide a structured modeling framework for decision-making, capable of exploiting the dependency structures inherent in large-scale classification problems. 
+By reducing the number of decisions to logarithmic complexity, these models offer a balance between computational efficiency and interpretability.
+
+In addition to this work, I am exploring applications of motion modeling in Tai Chi and healthcare. 
+My projects aim to develop AI-supported tools for physical health, focusing on motion analysis, generative modeling, and interactive platforms for learning Tai Chi and similar practices. 
+These efforts are geared toward enhancing accessibility and promoting wellness, particularly for older adults.
 </p>
 
 <p>
-I earned my Ph.D in Statistics from Purdue University at West Lafayatete, Indiana a MS. Degree in Applied Mathematics from California State University of Northridge
-and a dual BS degree in Mathematics and Computer Science from California State University of Northridge. 
-My research intrests include large scale classification, latent models, generative models, missing data problems, interpretable AI, and dimension reduction. 
-I have teaching experience in introductory statistics and mathematics courses. 
+I earned my Ph.D in Statistics from Purdue University at West Lafayatete, Indiana a MS. Degree in Applied Mathematics from California State University of Northridge and a dual BS degree in Mathematics and Computer Science from California State University of Northridge. My research interests include large scale classification, latent models, generative models, missing data problems, interpretable AI, and dimension reduction. I have teaching experience in introductory statistics and mathematics courses. 
 In addition to teaching standard courses I along with my with my colleague Wenbin Zhu provided an accelerated Deep Learning tutorial seminar to the students of Huzhou teachers college in Huzhou, China.
 </p>
 

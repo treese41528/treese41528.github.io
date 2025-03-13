@@ -1,0 +1,772 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lecture 03.2 – Procrustes Alignment &mdash; Fitting SMPL to IMU Optimization</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=f2a433a1"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Lecture 4.1: Iterative Closest Point" href="lecture_04_1_icp.html" />
+    <link rel="prev" title="Lecture 03.1 – Surface Representations" href="lecture_03_1_surface_representations.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Virtual Humans Lecture
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="lecture_01_1_historical_body_models.html">Lecture 01.1 – Historical Body Models</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#early-origins-simplified-primitives-and-kinematic-skeletons-1970s1980s">Early Origins: Simplified Primitives and Kinematic Skeletons (1970s–1980s)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#advances-in-the-1990s-superquadrics-differentiable-fitting-and-physical-models">Advances in the 1990s: Superquadrics, Differentiable Fitting, and Physical Models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#the-impact-of-3d-scanning-and-data-from-anthropometry-to-statistical-models-1990s2000s">The Impact of 3D Scanning and Data: From Anthropometry to Statistical Models (1990s–2000s)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#scape-and-the-emergence-of-pose-aware-models-mid-2000s">SCAPE and the Emergence of Pose-Aware Models (Mid-2000s)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#consolidation-in-the-2010s-smpl-and-integration-with-learning-based-methods">Consolidation in the 2010s: SMPL and Integration with Learning-Based Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#deep-learning-and-neural-implicit-models-late-2010spresent">Deep Learning and Neural Implicit Models (Late 2010s–Present)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#timeline-summary-of-milestones">Timeline Summary of Milestones</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_1_historical_body_models.html#conclusion">Conclusion</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html">Lecture 01.2 – Introduction to Human Models</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#historical-context-of-human-body-modeling">1. Historical Context of Human Body Modeling</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#early-developments">Early Developments</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#mid-20th-century-approaches">Mid-20th Century Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#data-driven-revolution-1990s-2000s">Data-Driven Revolution (1990s-2000s)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#mathematical-foundations-of-human-body-models">2. Mathematical Foundations of Human Body Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#the-smpl-model">The SMPL Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#pca-based-statistical-shape-modeling">PCA-Based Statistical Shape Modeling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#kinematic-modeling">Kinematic Modeling</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#applications-of-human-body-models">3. Applications of Human Body Models</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#computer-animation-and-visual-effects">Computer Animation and Visual Effects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#virtual-humans-and-avatars">Virtual Humans and Avatars</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#biomechanics-and-ergonomics">Biomechanics and Ergonomics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#human-computer-interaction-hci">Human-Computer Interaction (HCI)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#computer-vision-and-ai">Computer Vision and AI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#education-and-training">Education and Training</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#challenges-and-future-directions">4. Challenges and Future Directions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#computational-efficiency">Computational Efficiency</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#accuracy-and-detail">Accuracy and Detail</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#generalization">Generalization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#clothing-and-accessories">Clothing and Accessories</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#emerging-approaches">Emerging Approaches</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_2_introduction_to_human_models.html#conclusion">5. Conclusion</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html">Lecture 01.3 – Introduction to Human Models (Overview)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#historical-context">1. Historical Context</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#early-scientific-studies">Early Scientific Studies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#mid-20th-century-to-digital-era">Mid-20th Century to Digital Era</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#st-century-advances">21st Century Advances</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#mathematical-foundations">2. Mathematical Foundations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#parametric-body-models">Parametric Body Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#implicit-surface-representations">Implicit Surface Representations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#kinematic-modeling">Kinematic Modeling</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#image-formation-and-rendering">3. Image Formation and Rendering</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#camera-models">Camera Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#shading-and-visibility">Shading and Visibility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#differentiable-rendering">Differentiable Rendering</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#surface-representation-methods">4. Surface Representation Methods</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#explicit-mesh-models">Explicit Mesh Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#implicit-function-models">Implicit Function Models</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#motion-capture-and-behavior-synthesis">5. Motion Capture and Behavior Synthesis</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#capturing-human-motion">Capturing Human Motion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#behavior-synthesis">Behavior Synthesis</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#clothing-modeling">6. Clothing Modeling</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#physically-based-simulation">Physically-Based Simulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#data-driven-approaches">Data-Driven Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#implicit-clothing-models">Implicit Clothing Models</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#human-object-interaction">7. Human-Object Interaction</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#physics-based-methods">Physics-Based Methods</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#learning-based-approaches">Learning-Based Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#hybrid-systems">Hybrid Systems</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#applications">8. Applications</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#entertainment-and-media">Entertainment and Media</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#healthcare-and-biomechanics">Healthcare and Biomechanics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#engineering-and-design">Engineering and Design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#human-computer-interaction">Human-Computer Interaction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#scientific-research">Scientific Research</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#challenges-and-future-directions">9. Challenges and Future Directions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#scalability-and-generalization">Scalability and Generalization</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#higher-fidelity-dynamics">Higher-Fidelity Dynamics</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#data-and-labeling-constraints">Data and Labeling Constraints</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#physics-and-learning-integration">Physics and Learning Integration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#semantic-and-cognitive-aspects">Semantic and Cognitive Aspects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_01_3_introduction_to_human_models_continued.html#realism-vs-controllability">Realism vs. Controllability</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_02_1_image_formation.html">Lecture 02.1 – Image Formation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#historical-developments-in-image-formation">1. Historical Developments in Image Formation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#ancient-and-medieval-optics-camera-obscura">Ancient and Medieval Optics – Camera Obscura</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#renaissance-perspective-and-geometry">Renaissance Perspective and Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#early-cameras-and-photographic-imaging">Early Cameras and Photographic Imaging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#modern-developments">Modern Developments</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#the-pinhole-camera-model">2. The Pinhole Camera Model</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#coordinate-setup">Coordinate Setup</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#proof-by-similar-triangles">Proof by Similar Triangles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#numerical-example">Numerical Example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#inadequacy-of-a-simple-pinhole">Inadequacy of a Simple Pinhole</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#camera-intrinsics-and-the-projection-matrix">3. Camera Intrinsics and the Projection Matrix</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#extrinsic-parameters">Extrinsic Parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#full-projection-example">Full Projection Example</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#image-distortions-correction">4. Image Distortions &amp; Correction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#properties-of-perspective-projection">5. Properties of Perspective Projection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#advanced-theoretical-extensions">6. Advanced Theoretical Extensions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#light-field-imaging-and-plenoptic-cameras">Light Field Imaging and Plenoptic Cameras</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#non-conventional-imaging-techniques">Non-Conventional Imaging Techniques</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#applications-in-modern-vision-and-graphics">7. Applications in Modern Vision and Graphics</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#computer-vision-and-3d-reconstruction">Computer Vision and 3D Reconstruction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#medical-imaging">Medical Imaging</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_1_image_formation.html#photorealistic-rendering-in-computer-graphics">Photorealistic Rendering in Computer Graphics</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_1_image_formation.html#python-example-simulating-image-formation">8. Python Example: Simulating Image Formation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html">Lecture 02.2 – Rotations and Kinematic Chains</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#representations-of-3d-rotations">1. Representations of 3D Rotations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#a-rotation-matrices">A) Rotation Matrices</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#b-euler-angles">B) Euler Angles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#c-quaternions">C) Quaternions</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#lie-algebra-so-3-and-exponential-map">2. Lie Algebra <span class="math notranslate nohighlight">\(so(3)\)</span> and Exponential Map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#rodrigues-rotation-formula">3. Rodrigues’ Rotation Formula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#kinematic-chains-forward-inverse-kinematics">4. Kinematic Chains: Forward &amp; Inverse Kinematics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_02_2_rotations_kinematic_chains.html#comparison-of-rotation-representations">Comparison of Rotation Representations</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_03_1_surface_representations.html">Lecture 03.1 – Surface Representations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#mathematical-foundations-of-surface-representations">1. Mathematical Foundations of Surface Representations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-parametric-surfaces">A) Parametric Surfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-implicit-surfaces">B) Implicit Surfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-explicit-surfaces">C) Explicit Surfaces</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#surface-differential-properties">2. Surface Differential Properties</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-surface-normals">A) Surface Normals</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-fundamental-forms-and-curvature">B) Fundamental Forms and Curvature</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-geodesics">C) Geodesics</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#discrete-surface-representations">3. Discrete Surface Representations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-polygon-meshes">A) Polygon Meshes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-point-clouds">B) Point Clouds</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-signed-distance-fields-sdf">C) Signed Distance Fields (SDF)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#advanced-surface-representations">4. Advanced Surface Representations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-bezier-curves-and-surfaces">A) Bézier Curves and Surfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-b-splines-and-nurbs">B) B-Splines and NURBS</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-subdivision-surfaces">C) Subdivision Surfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#d-level-sets">D) Level Sets</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#e-neural-implicit-representations">E) Neural Implicit Representations</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#comparative-analysis-and-applications">5. Comparative Analysis and Applications</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-computational-efficiency-and-storage">A) Computational Efficiency and Storage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-practical-applications">B) Practical Applications</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-operations-complexity">C) Operations Complexity</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#implementation-examples">6. Implementation Examples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-basic-mesh-processing-python">A) Basic Mesh Processing (Python)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-implicit-surface-utilities">B) Implicit Surface Utilities</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-bezier-curve-implementation">C) Bézier Curve Implementation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#d-curvature-estimation-on-meshes">D) Curvature Estimation on Meshes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_03_1_surface_representations.html#advanced-topics-and-future-directions">7. Advanced Topics and Future Directions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#a-multi-resolution-representations">A) Multi-Resolution Representations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#b-machine-learning-for-geometry">B) Machine Learning for Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#c-dynamic-surfaces">C) Dynamic Surfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_03_1_surface_representations.html#d-non-manifold-geometries">D) Non-Manifold Geometries</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Lecture 03.2 – Procrustes Alignment</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#goal-learning-a-model-of-pose-and-shape">Goal: Learning a Model of Pose and Shape</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-challenge-of-registration">The Challenge of Registration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#surface-representation-mesh">Surface Representation: Mesh</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#the-procrustes-alignment-problem-mathematical-formulation">The Procrustes Alignment Problem: Mathematical Formulation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#rigid-transformations">Rigid Transformations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#procrustes-alignment-solution">Procrustes Alignment Solution</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#decoupling-translation-by-centroid-alignment">Decoupling Translation by Centroid Alignment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#optimal-rotation-via-svd">Optimal Rotation via SVD</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#reflection-adjustment">Reflection Adjustment</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#optimal-scale-optional">Optimal Scale (Optional)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#complete-mathematical-derivation">Complete Mathematical Derivation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#translation-derivation">Translation Derivation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rotation-derivation">Rotation Derivation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scale-derivation">Scale Derivation</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#summary-of-procrustes-alignment-algorithm">Summary of Procrustes Alignment Algorithm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#python-implementation-example">Python Implementation Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#practical-applications">Practical Applications</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#interactive-visualization-ideas">Interactive Visualization Ideas</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_04_1_icp.html">Lecture 4.1: Iterative Closest Point</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#introduction-to-shape-alignment-and-registration">Introduction to Shape Alignment and Registration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#the-registration-problem">The Registration Problem</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#review-procrustes-analysis">Review: Procrustes Analysis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#problem-unknown-correspondences">Problem: Unknown Correspondences</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#the-iterative-closest-point-icp-algorithm">The Iterative Closest Point (ICP) Algorithm</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#basic-icp-algorithm">Basic ICP Algorithm</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#computational-considerations">Computational Considerations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="lecture_04_1_icp.html#closest-point-computation">Closest Point Computation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="lecture_04_1_icp.html#convergence-and-local-minima">Convergence and Local Minima</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#point-to-point-vs-point-to-plane-icp">Point-to-Point vs. Point-to-Plane ICP</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#point-to-point-icp">Point-to-Point ICP</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#point-to-plane-icp">Point-to-Plane ICP</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#gradient-based-icp-for-non-rigid-registration">Gradient-based ICP for Non-Rigid Registration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#gradient-based-icp-algorithm">Gradient-based ICP Algorithm</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#advantages-of-gradient-based-icp">Advantages of Gradient-based ICP</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#computing-gradients">Computing Gradients</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#improving-icp-s-robustness">Improving ICP’s Robustness</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#data-association-direction">Data Association Direction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#robust-cost-functions">Robust Cost Functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#trimmed-icp">Trimmed ICP</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#ransac-based-approaches">RANSAC-based Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#additional-information">Additional Information</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#point-to-surface-distance">Point-to-Surface Distance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#icp-variants-and-extensions">ICP Variants and Extensions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#generalized-icp-gicp">Generalized ICP (GICP)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#em-icp-and-probabilistic-approaches">EM-ICP and Probabilistic Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#coherent-point-drift-cpd">Coherent Point Drift (CPD)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#multi-scale-approaches">Multi-Scale Approaches</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#applications-of-icp">Applications of ICP</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#implementing-icp">Implementing ICP</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#efficient-python-implementation">Efficient Python Implementation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_1_icp.html#practical-tips">Practical Tips</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_1_icp.html#conclusion">Conclusion</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_04_2_body_models.html">Lecture 04.2 - Body Models: Vertex-Based Models and SMPL</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#body-models-as-parameterized-functions">1. Body Models as Parameterized Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#rotations-articulation-and-pose-representation">2. Rotations, Articulation, and Pose Representation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#rotation-representation">2.1 Rotation Representation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#kinematic-chain">2.2 Kinematic Chain</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#linear-blend-skinning-and-its-limitations">3. Linear Blend Skinning and its Limitations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#linear-blend-skinning">3.1 Linear Blend Skinning</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#problems-with-standard-lbs">3.2 Problems with Standard LBS</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#blend-shapes-for-correcting-lbs-artifacts">3.3 Blend Shapes for Correcting LBS Artifacts</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#the-smpl-body-model">4. The SMPL Body Model</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#smpl-philosophy">4.1 SMPL Philosophy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#smpl-model-architecture">4.2 SMPL Model Architecture</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#shape-blend-shapes">4.2.1 Shape Blend Shapes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#pose-blend-shapes">4.2.2 Pose Blend Shapes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#joint-regression">4.2.3 Joint Regression</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#model-training">4.3 Model Training</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#comparison-with-scape">5. Comparison with SCAPE</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#the-scape-model">5.1 The SCAPE Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#different-approaches-to-deformation">5.2 Different Approaches to Deformation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#performance-comparison">5.3 Performance Comparison</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#other-advantages">5.4 Other Advantages</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#alignment-techniques-procrustes-analysis-and-icp">6. Alignment Techniques: Procrustes Analysis and ICP</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#procrustes-analysis">6.1 Procrustes Analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#iterative-closest-point-icp">6.2 Iterative Closest Point (ICP)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#fitting-smpl-to-scans">6.3 Fitting SMPL to Scans</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#image-formation-and-the-pinhole-camera-model">7. Image Formation and the Pinhole Camera Model</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#the-pinhole-camera-model">7.1 The Pinhole Camera Model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#lens-distortion">7.2 Lens Distortion</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#extensions-and-advanced-applications">8. Extensions and Advanced Applications</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#dynamic-soft-tissue-modeling">8.1 Dynamic Soft Tissue Modeling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#specialized-extensions">8.2 Specialized Extensions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#deep-learning-for-model-fitting">8.3 Deep Learning for Model Fitting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#probabilistic-approaches">8.4 Probabilistic Approaches</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_04_2_body_models.html#hybrid-models">8.5 Hybrid Models</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_04_2_body_models.html#conclusion">Conclusion</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="lecture_05_1_body_model_training.html">Lecture 5.1 - Training a Body Model and Fitting SMPL to Scans</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#body-models-based-on-triangle-deformations">Body Models Based on Triangle Deformations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#scape-and-blendscape-models">SCAPE and BlendSCAPE Models</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#triangle-deformation-process">Triangle Deformation Process</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#comparison-smpl-vs-scape-blendscape">Comparison: SMPL vs. SCAPE/BlendSCAPE</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#training-a-body-model-from-registrations">Training a Body Model from Registrations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#the-challenge-of-raw-scan-data">The Challenge of Raw Scan Data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#training-from-registrations">Training from Registrations</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#obtaining-registrations-fitting-smpl-to-scans">Obtaining Registrations: Fitting SMPL to Scans</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#non-rigid-registration-process">Non-Rigid Registration Process</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#iterative-closest-point-icp-review">Iterative Closest Point (ICP) Review</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#registration-objective-formulation">Registration Objective Formulation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#point-to-surface-distance">Point-to-Surface Distance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#multi-stage-optimization-strategy">Multi-Stage Optimization Strategy</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#joint-registration-and-model-training">Joint Registration and Model Training</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="lecture_05_1_body_model_training.html#co-registration-approach">Co-Registration Approach</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lecture_05_1_body_model_training.html#summary">Summary</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="references.html">References</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-01-1-historical-body-models">Lecture 01.1 (Historical Body Models)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-01-2-introduction-to-human-models">Lecture 01.2 (Introduction to Human Models)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-01-3-introduction-to-human-models-continued">Lecture 01.3 (Introduction to Human Models Continued)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-02-1-image-formation">Lecture 02.1 (Image Formation)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-02-2-rotations-kinematic-chains">Lecture 02.2 (Rotations &amp; Kinematic Chains)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-03-1-surface-representations">Lecture 03.1 (Surface Representations)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-03-2-procrustes-alignment">Lecture 03.2 (Procrustes Alignment)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-04-1-iterative-closest-points">Lecture 04.1 (Iterative Closest Points)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-04-2-body-models">Lecture 04.2 (Body Models)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="references.html#lecture-05-1-body-model-training">Lecture 05.1 (Body Model Training)</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Virtual Humans Lecture</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Lecture 03.2 – Procrustes Alignment</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/lecture_03_2_procrustes_alignment.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="lecture-03-2-procrustes-alignment">
+<span id="id1"></span><h1>Lecture 03.2 – Procrustes Alignment<a class="headerlink" href="#lecture-03-2-procrustes-alignment" title="Link to this heading"></a></h1>
+<iframe width="600" height="400" src="https://www.youtube.com/embed/Wr4ebLzUfyY"
+title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write;
+encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe><p><a class="reference external" href="https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_03_2_Procrustes.pdf">Lecture Slides: Procrustes Alignment</a></p>
+<section id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Link to this heading"></a></h2>
+<p>Procrustes alignment is a fundamental technique for optimally aligning shapes that serves as the foundation for more complex shape analysis and registration methods. Named after a figure in Greek mythology who made his victims fit his bed by either stretching their limbs or cutting them off, Procrustes alignment involves finding a rigid transformation (and optionally a scale factor) that optimally aligns a source shape to a target shape.</p>
+<p>This lecture introduces the mathematical theory behind Procrustes alignment, including its formulation as an optimization problem and its closed-form solution using Singular Value Decomposition (SVD). We provide a detailed derivation of the solution, discuss how to handle reflections and scaling, and illustrate applications in shape matching and motion capture.</p>
+</section>
+<section id="goal-learning-a-model-of-pose-and-shape">
+<h2>Goal: Learning a Model of Pose and Shape<a class="headerlink" href="#goal-learning-a-model-of-pose-and-shape" title="Link to this heading"></a></h2>
+<p>Our ultimate goal is to build a statistical model that can represent and control both the pose and shape of human bodies. This model should be able to:</p>
+<ul class="simple">
+<li><p>Control the shape (body proportions) while keeping the pose fixed</p></li>
+<li><p>Control the pose (body position) while keeping the shape fixed</p></li>
+<li><p>Vary both pose and shape simultaneously</p></li>
+</ul>
+<p>To build such a model, we need to:</p>
+<ol class="arabic simple">
+<li><p>Collect scans of many people of different shapes</p></li>
+<li><p>Collect scans of these people in different poses</p></li>
+<li><p>Bring these different scans into correspondence</p></li>
+</ol>
+</section>
+<section id="the-challenge-of-registration">
+<h2>The Challenge of Registration<a class="headerlink" href="#the-challenge-of-registration" title="Link to this heading"></a></h2>
+<p>The scans collected are sets of unordered points. To analyze them statistically, we need to establish correspondence between them — meaning we need to know which vertex in one scan corresponds to which part of the body (e.g., shoulder, hand, face) across all scans.</p>
+<p>This process of establishing correspondence is called <strong>registration</strong>. We need to align a template mesh to each scan in a way that preserves the anatomical meaning of each vertex. This alignment has two components:</p>
+<ol class="arabic simple">
+<li><p><strong>Rigid alignment</strong>: Finding the optimal translation, rotation, and potentially scale that aligns two shapes</p></li>
+<li><p><strong>Non-rigid alignment</strong>: Deforming the shape to match the target more precisely</p></li>
+</ol>
+<p>In this lecture, we focus on the first step: rigid alignment through Procrustes analysis.</p>
+</section>
+<section id="surface-representation-mesh">
+<h2>Surface Representation: Mesh<a class="headerlink" href="#surface-representation-mesh" title="Link to this heading"></a></h2>
+<p>Before diving into the solution, let’s review the mesh representation used for 3D surfaces:</p>
+<ul class="simple">
+<li><p>A mesh consists of vertices (points) and faces (triangles)</p></li>
+<li><p>The vertices are stored in a matrix V of size n×3, where each row represents a point in 3D space</p></li>
+<li><p>The faces are stored in a matrix F of size m×3, where each row contains the indices of the three vertices forming a triangle</p></li>
+<li><p>The surface is essentially a piecewise linear mapping from ℝ² to ℝ³</p></li>
+</ul>
+</section>
+<section id="the-procrustes-alignment-problem-mathematical-formulation">
+<h2>The Procrustes Alignment Problem: Mathematical Formulation<a class="headerlink" href="#the-procrustes-alignment-problem-mathematical-formulation" title="Link to this heading"></a></h2>
+<p>Given two sets of corresponding points:</p>
+<div class="math notranslate nohighlight">
+\[X = \{x_i\}_{i=1}^{N} \quad\text{and}\quad Y = \{y_i\}_{i=1}^{N}\]</div>
+<p>with <span class="math notranslate nohighlight">\(x_i, y_i \in \mathbb{R}^3\)</span>, we wish to determine:</p>
+<ul class="simple">
+<li><p>A rotation <span class="math notranslate nohighlight">\(R \in SO(3)\)</span> (a 3×3 orthogonal matrix with determinant 1)</p></li>
+<li><p>A translation <span class="math notranslate nohighlight">\(\mathbf{t} \in \mathbb{R}^3\)</span></p></li>
+<li><p>Optionally, a uniform scale factor <span class="math notranslate nohighlight">\(s &gt; 0\)</span></p></li>
+</ul>
+<p>Such that the sum of squared distances between corresponding points is minimized:</p>
+<div class="math notranslate nohighlight">
+\[\min_{s,R,\mathbf{t}} \; \sum_{i=1}^{N} \| s\, R\, x_i + \mathbf{t} - y_i \|^2\]</div>
+<p>When <span class="math notranslate nohighlight">\(s=1\)</span>, the problem is the orthogonal Procrustes problem; when <span class="math notranslate nohighlight">\(s\)</span> is free, it is the similarity Procrustes problem.</p>
+</section>
+<section id="rigid-transformations">
+<h2>Rigid Transformations<a class="headerlink" href="#rigid-transformations" title="Link to this heading"></a></h2>
+<p>There are three basic transformations we’ll consider:</p>
+<ol class="arabic">
+<li><p><strong>Translation</strong>: Moving all points by a fixed vector t</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{X}' = \mathbf{X} + \mathbf{t}\]</div>
+</li>
+<li><p><strong>Rotation</strong>: Rotating all points around the origin</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{X}'^T = \mathbf{R} \cdot \mathbf{X}^T\]</div>
+</li>
+<li><p><strong>Scaling</strong>: Uniformly scaling all points from the origin</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{X}' = s\mathbf{X}\]</div>
+</li>
+</ol>
+<p>Combined, a full rigid transformation with scaling is:</p>
+<blockquote>
+<div><div class="math notranslate nohighlight">
+\[\mathbf{x}' = s\mathbf{R}\mathbf{x} + \mathbf{t}\]</div>
+</div></blockquote>
+</section>
+<section id="procrustes-alignment-solution">
+<h2>Procrustes Alignment Solution<a class="headerlink" href="#procrustes-alignment-solution" title="Link to this heading"></a></h2>
+<p>We can solve this optimization problem in a closed form through the following steps:</p>
+<section id="decoupling-translation-by-centroid-alignment">
+<h3>Decoupling Translation by Centroid Alignment<a class="headerlink" href="#decoupling-translation-by-centroid-alignment" title="Link to this heading"></a></h3>
+<p>We first define the centroids of both point clouds:</p>
+<div class="math notranslate nohighlight">
+\[\bar{x} = \frac{1}{N} \sum_{i=1}^{N} x_i, \qquad \bar{y} = \frac{1}{N} \sum_{i=1}^{N} y_i\]</div>
+<p>Then, we re-center the points by subtracting their respective centroids:</p>
+<div class="math notranslate nohighlight">
+\[x_i' = x_i - \bar{x}, \qquad y_i' = y_i - \bar{y}\]</div>
+<p>Or in matrix form:</p>
+<div class="math notranslate nohighlight">
+\[\bar{\mathbf{X}} = [\mathbf{x}_1 - \bar{\mathbf{x}}, \ldots, \mathbf{x}_n - \bar{\mathbf{x}}]^T\]</div>
+<p>It can be shown that the optimal translation is:</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{t}^* = \bar{y} - s\,R\,\bar{x}\]</div>
+<p>This reduces the problem to finding the optimal rotation (and scale) aligning the centered sets.</p>
+</section>
+<section id="optimal-rotation-via-svd">
+<h3>Optimal Rotation via SVD<a class="headerlink" href="#optimal-rotation-via-svd" title="Link to this heading"></a></h3>
+<p>With the centered point clouds, we now want to minimize:</p>
+<div class="math notranslate nohighlight">
+\[\sum_{i=1}^{N} \| R\, x_i' - y_i' \|^2\]</div>
+<p>Expanding this expression:</p>
+<div class="math notranslate nohighlight">
+\[\sum_{i=1}^{N} \|x_i'\|^2 + \sum_{i=1}^{N} \|y_i'\|^2 - 2 \sum_{i=1}^{N} (R\,x_i')^T y_i'\]</div>
+<p>Since the first two sums are independent of <span class="math notranslate nohighlight">\(R\)</span>, minimizing the error is equivalent to maximizing:</p>
+<div class="math notranslate nohighlight">
+\[\sum_{i=1}^{N} y_i'^T (R\, x_i') = \mathrm{trace}\Bigl(R \Bigl(\sum_{i=1}^{N} x_i' y_i'^T\Bigr)\Bigr)\]</div>
+<p>We define the cross-covariance matrix:</p>
+<div class="math notranslate nohighlight">
+\[H = \sum_{i=1}^{N} x_i'\,y_i'^T\]</div>
+<p>Or in matrix form:</p>
+<div class="math notranslate nohighlight">
+\[\bar{\mathbf{Y}}^T \bar{\mathbf{X}} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T\]</div>
+<p>We compute the Singular Value Decomposition (SVD) of H:</p>
+<div class="math notranslate nohighlight">
+\[H = U\,\Sigma\,V^T\]</div>
+<p>Then the optimal rotation is given by:</p>
+<div class="math notranslate nohighlight">
+\[R^* = V\,U^T\]</div>
+<p>Note: In some formulations, this is written as <span class="math notranslate nohighlight">\(\mathbf{R} = \mathbf{U}\mathbf{V}^T\)</span>, but this depends on whether the cross-covariance matrix is defined as <span class="math notranslate nohighlight">\(\bar{\mathbf{Y}}^T \bar{\mathbf{X}}\)</span> or <span class="math notranslate nohighlight">\(\bar{\mathbf{X}}^T \bar{\mathbf{Y}}\)</span>.</p>
+<section id="reflection-adjustment">
+<h4>Reflection Adjustment<a class="headerlink" href="#reflection-adjustment" title="Link to this heading"></a></h4>
+<p>If <span class="math notranslate nohighlight">\(\det(R^*) &lt; 0\)</span>, we need to flip the sign of the last column of <span class="math notranslate nohighlight">\(V\)</span> (i.e., <span class="math notranslate nohighlight">\(V[:,3] := -V[:,3]\)</span>) and recompute <span class="math notranslate nohighlight">\(R^* = V\,U^T\)</span> to ensure that <span class="math notranslate nohighlight">\(R^* \in SO(3)\)</span>. This handles the case where the optimal transformation would include a reflection, which we generally want to avoid in shape alignment.</p>
+</section>
+</section>
+<section id="optimal-scale-optional">
+<h3>Optimal Scale (Optional)<a class="headerlink" href="#optimal-scale-optional" title="Link to this heading"></a></h3>
+<p>If scaling is allowed, the optimal scale factor is given by:</p>
+<div class="math notranslate nohighlight">
+\[s^* = \frac{\mathrm{trace}(\Sigma)}{\sum_{i=1}^{N} \|x_i'\|^2} = \frac{\text{tr}(\mathbf{\Sigma})}{\|\bar{\mathbf{X}}\|_F^2}\]</div>
+<p>And then we update the translation as:</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{t}^* = \bar{y} - s^*\,R^*\,\bar{x}\]</div>
+</section>
+</section>
+<section id="complete-mathematical-derivation">
+<h2>Complete Mathematical Derivation<a class="headerlink" href="#complete-mathematical-derivation" title="Link to this heading"></a></h2>
+<p>Let’s derive these formulas step by step for a more detailed understanding:</p>
+<section id="translation-derivation">
+<h3>Translation Derivation<a class="headerlink" href="#translation-derivation" title="Link to this heading"></a></h3>
+<p>Starting with the energy function:</p>
+<div class="math notranslate nohighlight">
+\[E = \sum_{i} \|s\mathbf{R}\mathbf{x}_i + \mathbf{t} - \mathbf{y}_i\|^2\]</div>
+<p>We expand it:</p>
+<div class="math notranslate nohighlight">
+\[E = \sum_{i} (s\mathbf{R}\mathbf{x}_i + \mathbf{t} - \mathbf{y}_i)^T(s\mathbf{R}\mathbf{x}_i + \mathbf{t} - \mathbf{y}_i)\]</div>
+<div class="math notranslate nohighlight">
+\[E = \sum_{i} s^2\mathbf{x}_i^T\mathbf{x}_i + \mathbf{t}^T\mathbf{t} + \mathbf{y}_i^T\mathbf{y}_i + 2s\mathbf{x}_i^T\mathbf{R}^T\mathbf{t} - 2s\mathbf{x}_i^T\mathbf{R}^T\mathbf{y}_i - 2\mathbf{t}^T\mathbf{y}_i\]</div>
+<p>To minimize with respect to t, we take the derivative and set it to zero:</p>
+<div class="math notranslate nohighlight">
+\[\frac{\partial E}{\partial \mathbf{t}} = 2N\mathbf{t} + 2s\mathbf{R}\sum_{i}\mathbf{x}_i - 2\sum_{i}\mathbf{y}_i = \mathbf{0}\]</div>
+<p>Solving for t:</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{t} = \bar{\mathbf{y}} - s\mathbf{R}\bar{\mathbf{x}}\]</div>
+</section>
+<section id="rotation-derivation">
+<h3>Rotation Derivation<a class="headerlink" href="#rotation-derivation" title="Link to this heading"></a></h3>
+<p>When we substitute the optimal translation, the energy function simplifies to:</p>
+<div class="math notranslate nohighlight">
+\[E = \sum_{i} \|s\mathbf{R}\bar{\mathbf{x}}_i - \bar{\mathbf{y}}_i\|^2\]</div>
+<p>We can rewrite this in matrix form:</p>
+<div class="math notranslate nohighlight">
+\[E = \|\mathbf{R}\bar{\mathbf{X}}^T - \bar{\mathbf{Y}}^T\|_F^2\]</div>
+<p>Expanding:</p>
+<div class="math notranslate nohighlight">
+\[E = \|\mathbf{R}\bar{\mathbf{X}}^T\|_F^2 + \|\bar{\mathbf{Y}}^T\|_F^2 - 2\langle\mathbf{R}\bar{\mathbf{X}}^T, \bar{\mathbf{Y}}^T\rangle_F\]</div>
+<p>Since R is orthogonal, <span class="math notranslate nohighlight">\(\|\mathbf{R}\bar{\mathbf{X}}^T\|_F^2 = \|\bar{\mathbf{X}}^T\|_F^2\)</span>, so:</p>
+<div class="math notranslate nohighlight">
+\[E = \|\bar{\mathbf{X}}^T\|_F^2 + \|\bar{\mathbf{Y}}^T\|_F^2 - 2\langle\mathbf{R}, \bar{\mathbf{Y}}^T\bar{\mathbf{X}}\rangle_F\]</div>
+<p>To minimize E, we need to maximize <span class="math notranslate nohighlight">\(\langle\mathbf{R}, \bar{\mathbf{Y}}^T\bar{\mathbf{X}}\rangle_F\)</span></p>
+<p>Let’s compute the SVD of the cross-covariance matrix:</p>
+<div class="math notranslate nohighlight">
+\[\bar{\mathbf{Y}}^T\bar{\mathbf{X}} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T\]</div>
+<p>Then:</p>
+<div class="math notranslate nohighlight">
+\[\langle\mathbf{R}, \bar{\mathbf{Y}}^T\bar{\mathbf{X}}\rangle_F = \langle\mathbf{R}, \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T\rangle_F = \langle\mathbf{U}^T\mathbf{R}\mathbf{V}, \mathbf{\Sigma}\rangle_F\]</div>
+<p>Let <span class="math notranslate nohighlight">\(\mathbf{S} = \mathbf{U}^T\mathbf{R}\mathbf{V}\)</span>. Since U and V are orthogonal, S is also orthogonal. To maximize <span class="math notranslate nohighlight">\(\langle\mathbf{S}, \mathbf{\Sigma}\rangle_F\)</span> where <span class="math notranslate nohighlight">\(\mathbf{\Sigma}\)</span> is diagonal, the optimal S is the identity matrix.</p>
+<p>Therefore:</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{I} = \mathbf{U}^T\mathbf{R}\mathbf{V}\]</div>
+<p>Solving for R:</p>
+<div class="math notranslate nohighlight">
+\[\mathbf{R} = \mathbf{U}\mathbf{V}^T\]</div>
+</section>
+<section id="scale-derivation">
+<h3>Scale Derivation<a class="headerlink" href="#scale-derivation" title="Link to this heading"></a></h3>
+<p>Given the optimal rotation, we minimize:</p>
+<div class="math notranslate nohighlight">
+\[E = \sum_{i} (s^2\bar{\mathbf{x}}_i^T\bar{\mathbf{x}}_i - 2s\bar{\mathbf{x}}_i^T\mathbf{R}^T\bar{\mathbf{y}}_i)\]</div>
+<p>Taking the derivative with respect to s and setting it to zero:</p>
+<div class="math notranslate nohighlight">
+\[\frac{\partial E}{\partial s} = 2s\sum_{i}(\bar{\mathbf{x}}_i^T\bar{\mathbf{x}}_i) - 2\sum_{i}(\bar{\mathbf{x}}_i^T\mathbf{R}^T\bar{\mathbf{y}}_i) = 0\]</div>
+<p>Solving for s:</p>
+<div class="math notranslate nohighlight">
+\[s = \frac{\sum_{i}(\bar{\mathbf{x}}_i^T\mathbf{R}^T\bar{\mathbf{y}}_i)}{\sum_{i}(\bar{\mathbf{x}}_i^T\bar{\mathbf{x}}_i)} = \frac{\text{tr}(\bar{\mathbf{X}}\mathbf{R}^T\bar{\mathbf{Y}}^T)}{\|\bar{\mathbf{X}}\|_F^2}\]</div>
+<p>Substituting the optimal R and using properties of the trace:</p>
+<div class="math notranslate nohighlight">
+\[s = \frac{\text{tr}(\mathbf{V}\mathbf{U}^T\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T)}{\|\bar{\mathbf{X}}\|_F^2} = \frac{\text{tr}(\mathbf{\Sigma})}{\|\bar{\mathbf{X}}\|_F^2}\]</div>
+</section>
+</section>
+<section id="summary-of-procrustes-alignment-algorithm">
+<h2>Summary of Procrustes Alignment Algorithm<a class="headerlink" href="#summary-of-procrustes-alignment-algorithm" title="Link to this heading"></a></h2>
+<p>The Procrustes alignment algorithm provides a closed-form solution to find the optimal rigid transformation (with optional scaling) between two shapes with known correspondences:</p>
+<ol class="arabic simple">
+<li><p>Compute the centroids of both point clouds</p></li>
+<li><p>Center both point clouds by subtracting their respective centroids</p></li>
+<li><p>Compute the cross-covariance matrix of the centered point clouds</p></li>
+<li><p>Perform SVD on the cross-covariance matrix</p></li>
+<li><p>Compute the optimal rotation as R = VU^T (or UV^T depending on the formulation)</p></li>
+<li><p>Check if det(R) &lt; 0, and if so, negate the last column of V and recompute R</p></li>
+<li><p>Compute the optimal scale factor (if scaling is allowed)</p></li>
+<li><p>Compute the optimal translation as t = ȳ - sRx̄</p></li>
+</ol>
+</section>
+<section id="python-implementation-example">
+<h2>Python Implementation Example<a class="headerlink" href="#python-implementation-example" title="Link to this heading"></a></h2>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">procrustes_align</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">allow_scale</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+    <span class="c1"># X and Y are N x 3 arrays (each row is a point).</span>
+    <span class="n">X_mean</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">Y_mean</span> <span class="o">=</span> <span class="n">Y</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">Xc</span> <span class="o">=</span> <span class="n">X</span> <span class="o">-</span> <span class="n">X_mean</span>
+    <span class="n">Yc</span> <span class="o">=</span> <span class="n">Y</span> <span class="o">-</span> <span class="n">Y_mean</span>
+
+    <span class="c1"># Compute cross-covariance matrix</span>
+    <span class="n">H</span> <span class="o">=</span> <span class="n">Xc</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">Yc</span>
+    <span class="n">U</span><span class="p">,</span> <span class="n">S</span><span class="p">,</span> <span class="n">Vt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">H</span><span class="p">)</span>
+    <span class="n">R</span> <span class="o">=</span> <span class="n">Vt</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">U</span><span class="o">.</span><span class="n">T</span>
+    <span class="c1"># Correct for reflection if necessary</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">R</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">Vt</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="n">Vt</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">U</span><span class="o">.</span><span class="n">T</span>
+
+    <span class="k">if</span> <span class="n">allow_scale</span><span class="p">:</span>
+        <span class="n">var_X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Xc</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">S</span><span class="p">)</span> <span class="o">/</span> <span class="n">var_X</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+    <span class="n">t</span> <span class="o">=</span> <span class="n">Y_mean</span> <span class="o">-</span> <span class="n">s</span> <span class="o">*</span> <span class="p">(</span><span class="n">X_mean</span> <span class="o">@</span> <span class="n">R</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">s</span><span class="p">,</span> <span class="n">R</span><span class="p">,</span> <span class="n">t</span>
+
+<span class="c1"># Demonstration:</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+<span class="n">X</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="c1"># Create a random rotation</span>
+<span class="n">rand_mat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="n">U</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">Vt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">svd</span><span class="p">(</span><span class="n">rand_mat</span><span class="p">)</span>
+<span class="n">R_true</span> <span class="o">=</span> <span class="n">U</span> <span class="o">@</span> <span class="n">Vt</span>
+<span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">R_true</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">R_true</span><span class="p">[:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*=</span> <span class="o">-</span><span class="mi">1</span>
+<span class="n">s_true</span> <span class="o">=</span> <span class="mf">1.5</span>
+<span class="n">t_true</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="o">-</span><span class="mf">0.2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
+<span class="n">Y</span> <span class="o">=</span> <span class="n">s_true</span> <span class="o">*</span> <span class="p">(</span><span class="n">X</span> <span class="o">@</span> <span class="n">R_true</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">+</span> <span class="n">t_true</span>
+
+<span class="n">s_est</span><span class="p">,</span> <span class="n">R_est</span><span class="p">,</span> <span class="n">t_est</span> <span class="o">=</span> <span class="n">procrustes_align</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">allow_scale</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;True Scale:&quot;</span><span class="p">,</span> <span class="n">s_true</span><span class="p">,</span> <span class="s2">&quot;Estimated Scale:&quot;</span><span class="p">,</span> <span class="n">s_est</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Rotation difference (R_true - R_est):</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">R_true</span> <span class="o">-</span> <span class="n">R_est</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;True Translation:&quot;</span><span class="p">,</span> <span class="n">t_true</span><span class="p">,</span> <span class="s2">&quot;Estimated Translation:&quot;</span><span class="p">,</span> <span class="n">t_est</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>When run, the differences should be close to numerical zero.</p>
+</section>
+<section id="practical-applications">
+<h2>Practical Applications<a class="headerlink" href="#practical-applications" title="Link to this heading"></a></h2>
+<p>Procrustes alignment has numerous applications in computer vision, medical imaging, and geometric morphometrics:</p>
+<ol class="arabic simple">
+<li><p><strong>Statistical Shape Analysis</strong>: Aligns a collection of shapes to compute a mean shape and analyze shape variation</p></li>
+<li><p><strong>3D Model Registration</strong>: Establishes correspondences between 3D models</p></li>
+<li><p><strong>Motion Capture</strong>: Aligns captured markers to a skeletal template</p></li>
+<li><p><strong>Medical Imaging</strong>: Registers anatomical structures across different patients</p></li>
+<li><p><strong>Archaeological Reconstruction</strong>: Aligns fragmented artifacts</p></li>
+</ol>
+</section>
+<section id="interactive-visualization-ideas">
+<h2>Interactive Visualization Ideas<a class="headerlink" href="#interactive-visualization-ideas" title="Link to this heading"></a></h2>
+<p>An interactive tool for teaching and understanding Procrustes alignment might allow:</p>
+<ul class="simple">
+<li><p>Dragging points in <span class="math notranslate nohighlight">\(Y\)</span> and dynamically re-computing the optimal transformation, visualizing how centroids shift, how the SVD-based rotation aligns the shapes, and how scale changes affect the overall alignment.</p></li>
+<li><p>Animating the alignment process frame-by-frame for motion capture data.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="lecture_03_1_surface_representations.html" class="btn btn-neutral float-left" title="Lecture 03.1 – Surface Representations" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="lecture_04_1_icp.html" class="btn btn-neutral float-right" title="Lecture 4.1: Iterative Closest Point" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright .</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
