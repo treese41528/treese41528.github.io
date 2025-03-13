@@ -1,0 +1,438 @@
+.. _lecture_01_3_intro_human_models_overview:
+
+Lecture 01.3 – Introduction to Human Models (Overview)
+======================================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/q32aoImkiIo" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Introduction to Human Models <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_01_3_Introduction_Body_Models_Overview.pdf>`_
+
+
+This lecture presents a comprehensive overview of human body modeling, from historical roots to 
+state-of-the-art techniques. We explore how knowledge from anatomy, computer vision, computer graphics, 
+and biomechanics converges to create digital representations of human shape, motion, and behavior.
+
+-------------------------------------------------------------
+1. Historical Context
+-------------------------------------------------------------
+
+Human body modeling has evolved through centuries of scientific investigation:
+
+Early Scientific Studies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Weber Brothers (1836)**: Conducted one of the first quantitative gait analyses, measuring 
+  timing and distances in human walking.
+
+- **Marey and Muybridge (1870s-1880s)**: Pioneered sequential photography (chronophotography) 
+  to capture and analyze human motion.
+
+- **Braune and Fischer (1890s)**: Applied Newtonian mechanics to study body-segment motion, 
+  calculating joint forces and energy expenditure during locomotion.
+
+Mid-20th Century to Digital Era
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Biomechanical Research**: Rehabilitation needs for World War II veterans spurred comprehensive 
+  gait studies at the University of California in the 1950s.
+
+- **Computer Graphics (1970s-1980s)**: 
+  - Phong's illumination model (1975) improved rendering of 3D surfaces
+  - Fred Parke (1972) created the first 3D facial models
+
+- **Motion Capture Development**:
+  - Tom Calvert's goniometer suit (1983) for medical motion capture
+  - Marker-based optical systems emerged in the late 1980s
+  - Vicon systems with reflective markers became standard in the 1990s
+
+21st Century Advances
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Markerless Motion Capture**: 
+  - Hogg's work (1983) demonstrated tracking walking figures from video
+  - Multi-camera systems in the 2000s enabled visual hull reconstruction
+  - Depth sensors (Microsoft Kinect, 2010) accelerated markerless capture
+
+- **Deep Learning Revolution**:
+  - Convolutional networks for 2D and 3D pose estimation (OpenPose, DeepPose)
+  - Parametric body models like SMPL enabled single-image 3D reconstruction
+
+- **Behavior Synthesis**:
+  - From keyframe animation and physical simulations (1980s-1990s)
+  - To motion graphs for recombining captured clips (2000s)
+  - Modern deep learning approaches for generating realistic movements
+
+Today's human body models combine anatomical insight, physics, and data-driven learning 
+to achieve unprecedented realism and functionality.
+
+-------------------------------------------------------------
+2. Mathematical Foundations
+-------------------------------------------------------------
+
+Parametric Body Models
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The Skinned Multi-Person Linear (SMPL) model exemplifies modern parametric approaches:
+
+.. math::
+
+   M(\boldsymbol{\theta}, \boldsymbol{\beta}) : \mathbb{R}^{|\theta| + |\beta|} \rightarrow \mathbb{R}^{3N}
+
+where:
+- :math:`\boldsymbol{\theta}` represents pose parameters (joint angles, typically 72 parameters for 24 joints)
+- :math:`\boldsymbol{\beta}` represents shape parameters (typically 10 principal components)
+- :math:`N` is the number of mesh vertices (6890 in SMPL)
+
+SMPL can be factored into:
+1. **Base mesh** (mean shape)
+2. **Shape blend shapes** (scaled by :math:`\boldsymbol{\beta}`)
+3. **Pose blend shapes** (dependent on :math:`\boldsymbol{\theta}`)
+4. **Skeleton-driven deformation** via linear blend skinning
+
+This creates a differentiable, low-dimensional representation that can be efficiently optimized.
+
+Implicit Surface Representations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Alternative to meshes, implicit functions define the body as a level set:
+
+.. math::
+
+   \text{Surface} = \{\mathbf{x} \in \mathbb{R}^3 : f(\mathbf{x}) = 0\}
+
+Common implicit representations include:
+- **Signed Distance Functions (SDFs)**: :math:`f(\mathbf{x})` gives distance to surface (positive outside, negative inside)
+- **Occupancy Functions**: Binary inside/outside classification
+
+Neural networks can approximate these functions:
+- **DeepSDF**: MLPs outputting distance values for query points
+- **Neural Articulated Shape Approximation (NASA)**: Implicit functions conditioned on pose
+
+Kinematic Modeling
+^^^^^^^^^^^^^^^^^^^^^^
+
+Human movement is modeled as an articulated figure:
+
+- **Forward Kinematics (FK)**: Computing limb positions from joint angles
+  - Global transform of joint :math:`j`: :math:`G_j = G_{\text{parent}(j)} \cdot \text{Trans}(L_{\text{parent}(j)}) \cdot R_j(\theta_j)`
+
+- **Inverse Kinematics (IK)**: Solving for joint angles given desired end-effector positions
+  - Often uses Jacobian :math:`J(\boldsymbol{\theta}) = \frac{\partial \mathbf{p}}{\partial \boldsymbol{\theta}}` relating joint angle changes to end-effector position changes
+
+- **Skinning**: Vertex position :math:`v_i'` is computed as 
+  :math:`v_i' = \sum_j w_{ij} (\mathbf{T}_j(\theta) \cdot v_i)` where :math:`w_{ij}` are skinning weights
+
+For pose and shape estimation, optimization seeks parameters that minimize the distance between 
+model and observations, often using iterative methods or learning-based approaches.
+
+-------------------------------------------------------------
+3. Image Formation and Rendering
+-------------------------------------------------------------
+
+Projecting 3D humans to 2D images involves several processes:
+
+Camera Models
+^^^^^^^^^^^^^^^^^
+
+The pinhole camera model provides the foundation:
+
+.. math::
+
+   (u, v) = \left(f \frac{X}{Z} + c_x, f \frac{Y}{Z} + c_y\right)
+
+where:
+- :math:`(X, Y, Z)` are 3D coordinates in camera space
+- :math:`f` is focal length
+- :math:`(c_x, c_y)` is the principal point
+
+Camera extrinsic parameters (rotation :math:`R`, translation :math:`t`) transform 
+world coordinates to camera coordinates before projection.
+
+Shading and Visibility
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Lambertian shading**: Surface brightness proportional to :math:`I = \rho \, (\mathbf{n} \cdot \mathbf{l})`
+  where :math:`\mathbf{n}` is surface normal and :math:`\mathbf{l}` is light direction
+
+- **Phong model**: Adds specular highlights for more realistic rendering
+
+- **Z-buffer**: Resolves visibility by keeping only the nearest surface at each pixel
+
+- **Silhouettes**: In multi-view setups, combining silhouettes creates visual hulls approximating 
+  the 3D volume of a person
+
+Differentiable Rendering
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Recent advances make the rendering process differentiable, enabling gradient-based optimization:
+
+- **Softened rasterization**: Allows gradients to flow even through discrete operations
+
+- **End-to-end optimization**: Neural networks can be trained to predict body parameters by 
+  comparing rendered projections with input images
+
+- **Self-supervised learning**: Using image synthesis error as a loss when 3D ground truth is unavailable
+
+This capability allows fitting 3D human models to 2D observations by iteratively refining the model 
+to align with the input image.
+
+-------------------------------------------------------------
+4. Surface Representation Methods
+-------------------------------------------------------------
+
+Two dominant approaches represent human body geometry:
+
+Explicit Mesh Models
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Fixed topology**: Surface represented by vertices connected in a consistent mesh structure
+  (e.g., SMPL with 6890 vertices and ~13,776 triangular faces)
+
+- **Blendshapes**: Shape variations expressed as vertex displacements from a template mesh
+  - SMPL uses linear combinations of learned shape basis vectors
+
+- **Advantages**:
+  - Efficient rendering on graphics hardware
+  - Direct semantic correspondence across shapes
+  - Simple animation via skinning
+  - Easy texture mapping and collision detection
+
+- **Limitations**:
+  - Cannot handle topology changes
+  - Fixed resolution (more details require more vertices)
+
+Implicit Function Models
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Continuous field**: Body defined as level set of a function in 3D space
+  - Neural networks can approximate these fields (e.g., DeepSDF, NASA)
+
+- **Advantages**:
+  - Topological flexibility (can represent open jackets, loose clothing)
+  - Arbitrary resolution (can be sampled at any density)
+  - Natural handling of complex geometry
+  - Continuous surfaces and gradients
+
+- **Limitations**:
+  - Computationally expensive to render
+  - Harder to animate in real-time
+  - Less direct control for artists
+
+Hybrid approaches combine explicit models for coarse structure with implicit functions 
+for high-resolution details.
+
+-------------------------------------------------------------
+5. Motion Capture and Behavior Synthesis
+-------------------------------------------------------------
+
+Capturing Human Motion
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Marker-Based Systems**:
+- **Optical motion capture**: Reflective markers tracked by infrared cameras
+- **Inertial systems**: IMUs measuring orientation and acceleration on each limb
+- **Advantages**: High accuracy, temporal resolution
+- **Limitations**: Requires specialized equipment, markers can interfere with natural movement
+
+**Markerless Approaches**:
+- **Multi-camera systems**: Reconstruct visual hulls from silhouettes
+- **Deep learning**: Models like OpenPose detect 2D keypoints from regular video
+- **Model-fitting**: SMPLify optimizes 3D body model to match 2D detections
+- **End-to-end networks**: HMR, VIBE directly regress SMPL parameters from images/video
+
+**Sparse Sensing**:
+- Recent work shows as few as 5 IMUs can reconstruct full body pose
+- Learning fills gaps in sparse observations using motion priors
+
+Behavior Synthesis
+^^^^^^^^^^^^^^^^^^^^^^
+
+**Motion Graphs and Clip-Based Methods**:
+- Stitch existing motion clips at compatible transitions
+- Introduced by Kovar et al. (2002)
+- Good for interactive control with available motion data
+
+**Physics-Based Simulation**:
+- Model body as articulated rigid bodies with physics
+- Apply joint torques to generate movement
+- Examples include Hodgins et al. (1995) simulating athletic movements
+
+**Deep Learning Approaches**:
+- **Generative models**: VAEs, GANs, diffusion models learn motion distributions
+- Can be conditioned on music, action labels, or other high-level inputs
+- Example: DeepMimic (Peng et al. 2018) uses reinforcement learning to imitate mocap clips
+
+**Hybrid Methods**:
+- Combine data-driven motion with physics constraints
+- Xie et al. (2021) incorporate physics into training from video data
+- Ensure plausible dynamics while leveraging large datasets
+
+-------------------------------------------------------------
+6. Clothing Modeling
+-------------------------------------------------------------
+
+Realistic virtual humans require clothing that moves naturally:
+
+Physically-Based Simulation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Mass-spring systems**: Cloth as mesh with physical forces
+- **Finite element methods**: More accurate but computationally expensive
+- **Baraff & Witkin (1998)**: Pioneered efficient implicit integration for cloth
+
+.. math::
+
+   E = \text{Elastic forces} + \text{Gravity} + \text{Collision response}
+
+- **Advantages**: Realistic dynamics for any movement
+- **Limitations**: Computationally intensive, requires accurate material parameters
+
+Data-Driven Approaches
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Garment shape spaces**: Learn how clothing deforms with different poses
+- **TailorNet**: Neural network predicting clothing deformation from body pose and shape
+- **Displacement models**: Map offsets from body surface to clothing
+- **Advantages**: Fast runtime performance after training
+- **Limitations**: Limited to training distribution of poses/shapes
+
+Implicit Clothing Models
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Neural implicit functions**: Represent clothing as level sets
+- **BCNet**: Two-layer model with body and cloth as separate implicit surfaces
+- **Advantages**: Handle topology changes (open jackets, loose garments)
+- **Limitations**: More complex to train and render
+
+Layered approaches combine body models with separate clothing models, enabling 
+transfer between different bodies while maintaining natural movement.
+
+-------------------------------------------------------------
+7. Human-Object Interaction
+-------------------------------------------------------------
+
+Modeling interactions between humans and their environment:
+
+Physics-Based Methods
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Contact constraints**: Ensure no penetration, appropriate reaction forces
+- **Motion planning**: Find trajectories that accomplish tasks while obeying physics
+- **Contact-Invariant Optimization**: Mordatch et al. (2012) optimized motion with contact variables
+- **Applications**: Sitting, climbing, manipulating objects with proper physics
+
+Learning-Based Approaches
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Affordances**: Learn which objects allow which actions (chairs afford sitting)
+- **PROX**: Hassan et al. (2019) captured realistic human-scene interactions
+- **Pose prediction**: Generate appropriate human poses near specific objects
+- **Applications**: Scene population, interaction prediction, ergonomic assessment
+
+Hybrid Systems
+^^^^^^^^^^^^^^^^^^
+
+- **Reinforce learning for tasks**: Learn to sit (ICLR 2020) used neural policies for chair interactions
+- **COUCH (2021)**: Combined data-driven pose synthesis with controllable contact points
+- **Applications**: Interactive virtual humans that respond naturally to environments
+
+Human-object interaction modeling is crucial for virtual reality, robotics, and 
+digital human simulations that involve realistic environmental interaction.
+
+-------------------------------------------------------------
+8. Applications
+-------------------------------------------------------------
+
+Virtual human models power applications across numerous domains:
+
+Entertainment and Media
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Film and Animation**: Digital characters and crowds in movies
+- **Video Games**: Real-time character control and procedural animation
+- **Virtual Reality**: Avatars representing users in immersive environments
+
+Healthcare and Biomechanics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Gait Analysis**: Quantify walking patterns for diagnosis and treatment
+- **Rehabilitation**: Track and assess patient movements during therapy
+- **Surgical Planning**: Patient-specific anatomical models
+- **Sports Performance**: Technique analysis and injury prevention
+
+Engineering and Design
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Ergonomics**: Design workspaces and products for human comfort
+- **Robotics**: Human-robot interaction and collaborative environments
+- **Autonomous Systems**: Pedestrian tracking and behavior prediction
+
+Human-Computer Interaction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Gesture Recognition**: Body-based input for interfaces
+- **Virtual Try-On**: Visualize clothing on personalized avatars
+- **Accessibility**: Design interfaces for diverse body types and abilities
+
+Scientific Research
+^^^^^^^^^^^^^^^^^^^^^^
+
+- **Psychology**: Study body language and non-verbal communication
+- **Anthropology**: Analyze human movement across cultures
+- **Forensics**: Reconstruct accidents or crime scenes
+
+-------------------------------------------------------------
+9. Challenges and Future Directions
+-------------------------------------------------------------
+
+Despite significant progress, several challenges remain:
+
+Scalability and Generalization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Population Diversity**: Current models often lack coverage of children, elderly, or unusual body types
+- **Motion Diversity**: Rare or extreme actions may fall outside training distributions
+- **Computational Efficiency**: High-fidelity models require significant resources
+
+Higher-Fidelity Dynamics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Soft Tissue**: Modeling fat and muscle jiggling during movement
+- **Fine Details**: Realistic facial expressions and hand articulation
+- **Secondary Motion**: Cloth, hair, and accessories with physical accuracy
+
+Data and Labeling Constraints
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Ground Truth**: Difficult to obtain accurate 3D pose for in-the-wild data
+- **Contact Information**: Precisely capturing where and how bodies interact with objects
+- **Privacy Concerns**: Ethical use of motion data that may be identifying
+
+Physics and Learning Integration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Physical Plausibility**: Learned models can produce physically impossible results
+- **Differentiable Physics**: Backpropagating through simulations for training
+- **Simulation-to-Real Gap**: Ensuring models transfer from simulation to real data
+
+Semantic and Cognitive Aspects
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Action Planning**: High-level decision making for autonomous virtual humans
+- **Social Behavior**: Modeling gestures, personal space, and interaction norms
+- **Context Awareness**: Understanding environmental constraints and affordances
+
+Realism vs. Controllability
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **Multi-Level Control**: Balancing high-level commands with low-level physics
+- **Real-Time Performance**: Maintaining realism under interactive constraints
+- **Artist Tools**: Providing intuitive interfaces for animation and control
+
+The future likely holds unified models combining shape, motion, clothing, and intention 
+in a single framework, enabling applications from immersive telepresence to autonomous 
+digital humans that interact naturally with users.
