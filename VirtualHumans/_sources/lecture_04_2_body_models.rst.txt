@@ -1,0 +1,564 @@
+.. _lecture_04_2_bodyModels:
+
+Lecture 04.2 - Body Models: Vertex-Based Models and SMPL
+================================================================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/JYRC6hxoh5g" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Body Models: Vertex-Based Models and SMPL <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_04_2_Vertex_Based%20Models.pdf>`_
+
+
+
+
+This chapter provides a comprehensive overview of vertex-based body models with a particular focus on the SMPL (Skinned Multi-Person Linear) model. We cover:
+
+- The concept of body models as functions mapping shape and pose parameters to mesh vertices
+- The mathematical foundations of articulated body models
+- Linear Blend Skinning (LBS) and its limitations
+- The SMPL model architecture, training, and advantages
+- Comparison between SMPL and previous approaches like SCAPE
+- Alignment techniques including Procrustes analysis and Iterative Closest Point (ICP)
+- The challenges of training body models from 3D scans
+
+Throughout, we include mathematical formulations, equations, and contextual explanations to provide a thorough understanding of how these models work.
+
+-------------------------------------------------------------
+1. Body Models as Parameterized Functions
+-------------------------------------------------------------
+
+A body model can be defined as a function that maps input parameters to a 3D mesh representing a human body. Modern human body models aim to represent the immense variability of human shapes and poses with a small set of parameters. Typically, the variation is decomposed into two factors:
+
+- **Shape (Identity):** Parameters that control the body size, proportions, and general morphology
+- **Pose:** Parameters that control the articulated body configuration (joint rotations)
+
+This separation allows for independent control of a person's identity and their pose. For example, one can model the same person in different poses, or different people in the same pose.
+
+Mathematically, we can represent this as:
+
+.. math::
+
+   M(\vec{\theta}, \vec{\beta}) \mapsto \text{mesh vertices}
+
+Where:
+- :math:`\vec{\theta}` represents the pose parameters 
+- :math:`\vec{\beta}` represents the shape parameters
+- :math:`M` is the body model function that outputs 3D mesh vertices
+
+This parameterization is intuitive and natural for modeling the human body, as it aligns with our understanding of how people vary in shape and how they move.
+
+-------------------------------------------------------------
+2. Rotations, Articulation, and Pose Representation
+-------------------------------------------------------------
+
+2.1 Rotation Representation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In SMPL, poses are represented using the axis-angle representation:
+
+.. math::
+
+   \vec{\theta} = (\vec{\omega}_1, \ldots, \vec{\omega}_K)^T
+
+Where each :math:`\vec{\omega}_k` is a 3D axis-angle vector representing the rotation at joint :math:`k`. In the axis-angle representation:
+
+- The direction of the vector :math:`\vec{\omega}_k` represents the axis of rotation
+- The magnitude :math:`\|\vec{\omega}_k\|` represents the angle of rotation
+
+The corresponding rotation matrix can be computed using Rodrigues' formula:
+
+.. math::
+
+   R(\theta_j) = I + \frac{\sin\|\theta_j\|}{\|\theta_j\|} [\hat{n}]_\times + \frac{1-\cos\|\theta_j\|}{\|\theta_j\|^2} [\hat{n}]_\times^2,
+   
+where :math:`\hat{n} = \frac{\theta_j}{\|\theta_j\|}`.
+
+Other common rotation representations include:
+
+- **Rotation Matrices:** A :math:`3 \times 3` matrix :math:`R \in SO(3)` with 3 degrees of freedom.
+- **Euler Angles:** Three angles (e.g., yaw, pitch, roll) that represent a sequence of rotations. They are intuitive but can suffer from gimbal lock.
+- **Quaternions:** Four-dimensional vectors (with a unit norm) that allow smooth interpolation and avoid singularities.
+
+2.2 Kinematic Chain
+~~~~~~~~~~~~~~~~~~~~~~
+
+The human body is modeled as a kinematic chain where each body part is connected to its parent. The global transformation of a point in the body frame :math:`\vec{p}_b` to the spatial frame :math:`\vec{p}_s` is given by:
+
+.. math::
+
+   \vec{p}_s = G(\vec{\omega}_1, \vec{\omega}_2, \vec{j}_1, \vec{j}_2) \cdot \vec{p}_b = G(\vec{\omega}_1, \vec{j}_1) \cdot G(\vec{\omega}_2, \vec{j}_2) \cdot \vec{p}_b
+
+Where:
+- :math:`G(\vec{\omega}, \vec{j})` is the rigid body transformation associated with the rotation :math:`\vec{\omega}` around joint :math:`\vec{j}`.
+
+For a joint :math:`j` with parent :math:`p(j)`, the global transformation is computed by:
+
+.. math::
+  
+   T_j^{global} = T_{p(j)}^{global} \; T_j^{local}(\theta_j).
+
+Here, :math:`T_j^{local}(\theta_j)` is a :math:`4 \times 4` homogeneous transformation matrix that encodes the joint's rotation (and translation).
+
+The transformation matrix for a joint is given by:
+
+.. math::
+
+   G(\vec{\omega}) = \begin{bmatrix}
+   [e^{\hat{\omega}}]_{3 \times 3} & \vec{j} - \vec{j}_{\text{parent}} \\
+   \vec{0}_{1 \times 3} & 1
+   \end{bmatrix}
+
+This ensures body parts remain connected as the pose changes.
+
+-------------------------------------------------------------
+3. Linear Blend Skinning and its Limitations
+-------------------------------------------------------------
+
+3.1 Linear Blend Skinning
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Linear Blend Skinning (LBS) is a standard technique in computer graphics for animating articulated characters. In LBS, each vertex is transformed by a weighted combination of nearby joint transformations:
+
+.. math::
+
+   \vec{t}'_i = \sum_{k=1}^{K} w_{k,i} G'_k(\vec{\theta}, J) \vec{t}_i
+
+Where:
+- :math:`\vec{t}_i` is vertex :math:`i` in the rest pose
+- :math:`\vec{t}'_i` is the transformed vertex in the posed configuration
+- :math:`w_{k,i}` is the blend weight that associates vertex :math:`i` with joint :math:`k`
+- :math:`G'_k` is the transformation matrix for joint :math:`k`
+
+In SMPL, each vertex :math:`v_i` is transformed as a weighted blend of the transformations from all joints:
+
+.. math::
+  
+   v_i(\beta, \theta) = \sum_{j=1}^{24} w_{ij} \; G_j(\theta, \beta) \; v_i^*(\beta, \theta),
+
+where :math:`G_j(\theta, \beta)` is the global transformation for joint :math:`j` and :math:`v_i^*(\beta, \theta)` is the vertex position in the canonical (rest) pose.
+
+3.2 Problems with Standard LBS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Standard LBS has well-known artifacts:
+
+1. **Volume collapse:** Loss of volume around joints during bending (e.g., elbows, knees)
+2. **Candy wrapper artifact:** Unrealistic twisting when rotating limbs
+
+These issues occur because LBS linearly combines transformation matrices, which is not mathematically correct for the nonlinear space of rotations. Alternative approaches like Dual Quaternion Skinning address some of these issues but introduce new ones (e.g., joint bulging).
+
+3.3 Blend Shapes for Correcting LBS Artifacts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To address these limitations, vertex-based models use corrective blend shapes. A blend shape is a set of vertex displacements applied in the rest pose to improve the realism of posed configurations.
+
+In animation, these are often manually sculpted by artists. For each pose, an artist creates specific corrective displacements that are activated when that pose is applied. This is labor-intensive and does not scale well to model all possible poses.
+
+-------------------------------------------------------------
+4. The SMPL Body Model
+-------------------------------------------------------------
+
+4.1 SMPL Philosophy
+~~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL (Skinned Multi-Person Linear model) aims to be the simplest possible body model while achieving state-of-the-art performance. Key goals include:
+
+- Ease of training
+- Compatibility with standard animation software
+- High accuracy in representing real human bodies
+
+4.2 SMPL Model Architecture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL builds on standard skinning but parameterizes each component with shape and pose:
+
+.. math::
+
+   M(\vec{\theta}, \vec{\beta}) = W(T_P(\vec{\beta}, \vec{\theta}), J(\vec{\beta}), \mathcal{W}, \vec{\theta})
+
+Where:
+- :math:`T_P(\vec{\beta}, \vec{\theta})` is the template mesh that depends on shape and pose
+- :math:`J(\vec{\beta})` are the joint positions that depend on shape
+- :math:`\mathcal{W}` are the blend weights
+- :math:`W` is the skinning function
+
+The template mesh :math:`T_P` is defined as:
+
+.. math::
+
+   T_P(\vec{\theta}, \vec{\beta}) = \bar{T} + B_S(\vec{\beta}) + B_P(\vec{\theta})
+
+Where:
+- :math:`\bar{T}` is the mean template shape
+- :math:`B_S(\vec{\beta})` are shape blend shapes
+- :math:`B_P(\vec{\theta})` are pose blend shapes
+
+This can be expressed equivalently as:
+
+.. math::
+  
+     V(\beta, \theta) = \text{LBS}\Bigl(T(\beta) + B_P(\theta),\, J(\beta),\, \theta,\, W\Bigr),
+
+4.2.1 Shape Blend Shapes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Shape blend shapes model identity variations and are defined as a linear combination:
+
+.. math::
+
+   B_S(\vec{\beta}) = \sum_{j=1}^{|\vec{\beta}|} \beta_j S_j
+
+Where:
+- :math:`S_j` are the shape blend shapes (PCA components)
+- :math:`\beta_j` are the shape coefficients
+
+In SMPL, shape variations are modeled using a low-dimensional vector :math:`\beta \in \mathbb{R}^{10}` such that:
+
+.. math::
+  
+   T(\beta) = \bar{T} + \sum_{i=1}^{10} \beta_i \; S_i,
+
+4.2.2 Pose Blend Shapes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pose blend shapes correct LBS artifacts and add muscle deformations:
+
+.. math::
+
+   B_P(\vec{\theta}) = \sum_{i=1}^{|f(\vec{\theta})|} f_i(\vec{\theta}) P_i
+
+Where:
+- :math:`P_i` are the pose blend shapes
+- :math:`f_i(\vec{\theta})` are functions of the pose parameters
+
+In SMPL, pose blend shapes are linear in the elements of the joint rotation matrices:
+
+.. math::
+
+   f(\vec{\theta}) = [(e^{\hat{\omega}_1} - I), \ldots, (e^{\hat{\omega}_K} - I)]
+
+These terms are vectorized, resulting in 9K pose blend shape coefficients (9 elements per rotation matrix × K joints).
+
+The subtraction of the identity matrix I ensures that there are no pose blend shape effects in the zero pose.
+
+4.2.3 Joint Regression
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL regresses joint locations linearly from the template mesh vertices:
+
+.. math::
+
+   J = J(T; \mathcal{J}) = \mathcal{J} T
+
+Where :math:`\mathcal{J}` is the joint regressor matrix, a sparse matrix that maps vertices to joint locations.
+
+4.3 Model Training
+~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL is trained on two datasets:
+
+1. **Multipose dataset:** ~1,800 scans of 44 subjects (20 males, 24 females) in various poses
+2. **Multishape dataset:** ~2,000 scans per gender in a standard pose
+
+The training objective is:
+
+.. math::
+
+   \mathbf{w} = \arg\min_{\mathbf{w}} \sum_j \|M(\vec{\theta}_j, \vec{\beta}_j; \mathbf{w}) - \mathbf{V}_j\|^2
+
+Where :math:`\mathbf{V}_j` are the registered scans and :math:`\mathbf{w}` represents all model parameters.
+
+This can be expanded to:
+
+.. math::
+
+   \arg\min_{T, \mathcal{S}, \mathcal{P}, \mathcal{W}, \mathcal{J}} \sum_j \min_{\vec{\theta}_j, \vec{\beta}_j} \|M(\vec{\theta}_j, \vec{\beta}_j; T, \mathcal{S}, \mathcal{P}, \mathcal{W}, \mathcal{J}) - \mathbf{V}_j\|^2
+
+Training details include:
+- The pose blend shapes, blend weights, and joint regressor matrices are trained on the multipose dataset
+- Pose blend shapes are regularized toward zero (ridge regression)
+- Blend weights are regularized toward an initial configuration provided by an animator
+- The joint regressor is forced to be sparse and to predict joints at body part boundaries
+- The mean shape and shape blend shapes are learned from the multishape dataset
+
+Training a model like SMPL involves two intertwined problems:
+
+1. **Registration:**  
+   Each 3D scan must be aligned to the common template (using non-rigid ICP or similar methods) to establish 
+   vertex correspondences across scans.
+
+2. **Parameter Estimation:**  
+   Once registrations are available, PCA is applied to the vertex displacements to derive the shape blend shapes :math:`S_i`, and pose blend shapes :math:`B_P(\theta)` are estimated by analyzing how the mesh deforms across different poses. The joint regressor is learned from the registered data.
+
+Because registration and model training depend on each other, an alternating optimization or EM approach is used:
+   
+   - **Step 1:** Initialize with a rough registration.
+   - **Step 2:** Train the model parameters (:math:`\beta, \theta, B_P, W`, etc.).
+   - **Step 3:** Refine the registrations using the current model.
+   - **Repeat** until convergence.
+
+In total, SMPL has about 6 million learned parameters for a 6,890-vertex model.
+
+-------------------------------------------------------------
+5. Comparison with SCAPE
+-------------------------------------------------------------
+
+SMPL is compared to earlier body models, particularly SCAPE (Shape Completion and Animation of People):
+
+5.1 The SCAPE Model
+~~~~~~~~~~~~~~~~~~~~~~
+
+SCAPE (Shape Completion and Animation of People) was one of the first models to separate identity from pose. Its key features include:
+
+- **Triangle Deformations:**  
+  Rather than manipulating vertices directly, SCAPE applies local 3×3 transformation matrices to each triangle of the mesh. These matrices capture how local surface patches deform with changes in pose or shape.
+
+- **Separation of Pose and Shape:**  
+  SCAPE learns two distinct subspaces:
+  
+  - The **shape subspace** is learned from scans of different individuals in a standard pose.
+  - The **pose subspace** is learned from scans of one individual in various poses, capturing non-rigid deformations (e.g., muscle bulging).
+  
+- **Registration:**  
+  A common template mesh is registered to each scan using non-rigid ICP so that point-to-point correspondences are established. Principal Component Analysis (PCA) is then applied to the aligned vertex displacements to form the shape basis.
+
+5.2 Different Approaches to Deformation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**SCAPE:**
+- Uses local triangle deformations (3×3 transformations)
+- Applied to two edges per triangle
+- No explicit center of rotation
+
+**SMPL:**
+- Uses global vertex deformations (3D displacements + rigid body motion)
+- Applied directly to vertices
+- Has explicit centers of rotation
+
+5.3 Performance Comparison
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Key advantages of SMPL over SCAPE include:
+
+1. **Pose generalization:** SMPL slightly outperforms SCAPE when generalizing to new poses
+2. **Shape space efficiency:** SMPL requires far fewer components to capture shape variance:
+   - With 10 components, SMPL captures >90% of shape variance
+   - SCAPE needs ~300 components to reach the same level
+
+5.4 Other Advantages
+~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL offers:
+- Faster runtime performance
+- Superior compatibility with standard animation software
+- A simpler mathematical formulation
+
+-------------------------------------------------------------
+6. Alignment Techniques: Procrustes Analysis and ICP
+-------------------------------------------------------------
+
+Aligning a model to data is a fundamental step for both model training and pose estimation.
+
+6.1 Procrustes Analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Given two sets of corresponding 3D points :math:`\{a_i\}` and :math:`\{b_i\}`, the objective is to find the rotation :math:`R` and translation :math:`\mathbf{t}` minimizing
+
+.. math::
+  
+   E(R, \mathbf{t}) = \sum_{i=1}^{N} \|R\,a_i + \mathbf{t} - b_i\|^2.
+
+**Derivation:**
+
+1. **Centroid Alignment:**  
+   Compute the centroids:
+   
+   .. math::
+   
+      \bar{a} = \frac{1}{N}\sum_{i=1}^{N} a_i, \quad \bar{b} = \frac{1}{N}\sum_{i=1}^{N} b_i.
+   
+   The optimal translation is:
+   
+   .. math::
+   
+      \mathbf{t}^* = \bar{b} - R\,\bar{a}.
+   
+2. **Optimal Rotation:**  
+   Center the points: :math:`a'_i = a_i - \bar{a}`, :math:`b'_i = b_i - \bar{b}`. Form the cross-covariance matrix:
+   
+   .. math::
+   
+      H = \sum_{i=1}^{N} b'_i {a'_i}^T.
+   
+   Compute the SVD: :math:`H = U \Sigma V^T`. Then, the optimal rotation is:
+   
+   .. math::
+   
+      R^* = V\,U^T.
+   
+   If :math:`\det(R^*) < 0`, adjust by negating the last column of :math:`V`.
+
+6.2 Iterative Closest Point (ICP)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ICP is used when correspondences are unknown. Its procedure is as follows:
+
+1. **Initialization:**  
+   Start with an initial guess for the transformation.
+   
+2. **Correspondence Assignment:**  
+   For each point in the source set, find the closest point in the target.
+   
+3. **Transformation Update:**  
+   Solve for the optimal rigid transformation (using Procrustes analysis).
+   
+4. **Iteration:**  
+   Update the source points with the transformation and repeat until convergence.
+
+**Variants include:**
+
+- **Point-to-Plane ICP:** Utilizes surface normals to minimize the distance from a point to the tangent plane.
+- **Probabilistic ICP (e.g., CPD):** Uses soft correspondences via a Gaussian mixture model.
+- **Robust ICP:** Incorporates robust loss functions or outlier rejection strategies.
+
+6.3 Fitting SMPL to Scans
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Fitting a body model such as SMPL to a 3D scan is a non-rigid registration problem. The goal is to find the parameters :math:`(\beta, \theta)` that minimize an error function:
+
+.. math::
+  
+   E(\beta, \theta) = \sum_{i=1}^{N} \rho\Bigl( \|v_i(\beta,\theta) - s_i\|^2 \Bigr) + \lambda\, R(\beta,\theta),
+  
+where:
+- :math:`v_i(\beta, \theta)` are the vertices of the SMPL model,
+- :math:`s_i` are the corresponding points on the scan,
+- :math:`\rho(\cdot)` is a robust loss function,
+- :math:`R(\beta,\theta)` are regularizers (such as pose and shape priors),
+- :math:`\lambda` is a balancing weight.
+
+Since correspondences are unknown, an iterative process is used:
+   
+- **Step 1:** Establish correspondences (e.g., using nearest neighbors).
+- **Step 2:** Optimize :math:`(\beta, \theta)` using gradient-based methods.
+- **Step 3:** Update correspondences and iterate until convergence.
+
+This process, an extension of ICP into the non-rigid domain, leverages the low-dimensional nature of SMPL to ensure plausible human shapes while fitting the scan data.
+
+-------------------------------------------------------------
+7. Image Formation and the Pinhole Camera Model
+-------------------------------------------------------------
+
+Understanding how 3D points are projected onto 2D images is essential for tasks such as fitting a model to image data.
+
+7.1 The Pinhole Camera Model
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+For a 3D point :math:`\mathbf{X} = (X, Y, Z)`, its projection onto the image plane is given by:
+
+.. math::
+  
+   x = f \frac{X}{Z}, \qquad y = f \frac{Y}{Z},
+
+where :math:`f` is the focal length.
+
+In homogeneous coordinates, the projection can be written as:
+
+.. math::
+  
+   \tilde{\mathbf{x}} \sim P \; \tilde{\mathbf{X}},
+  
+with the projection matrix
+
+.. math::
+  
+   P = K \; [R \mid \mathbf{t}],
+  
+where:
+
+- :math:`K` is the intrinsic matrix, for example:
+
+  .. math::
+  
+     K = \begin{pmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{pmatrix},
+  
+- :math:`[R \mid \mathbf{t}]` contains the extrinsic parameters.
+
+This formulation is used to reproject the 3D model into the 2D image space (e.g., for comparing with detected 2D keypoints).
+
+7.2 Lens Distortion
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Real cameras introduce lens distortions. Radial distortion, for instance, can be modeled by:
+
+.. math::
+  
+   x_{distorted} = x \; (1 + k_1 r^2 + k_2 r^4 + \dots), \qquad r = \sqrt{x^2 + y^2},
+  
+with analogous equations for :math:`y`. These parameters are estimated during camera calibration and are applied to correct the projected image coordinates.
+
+-------------------------------------------------------------
+8. Extensions and Advanced Applications
+-------------------------------------------------------------
+
+8.1 Dynamic Soft Tissue Modeling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The SMPL framework can be extended to model soft tissue dynamics through additional blend shapes:
+
+.. math::
+
+   B_D(\Phi, \vec{\beta})
+
+Where :math:`\Phi` represents dynamic parameters controlling soft tissue motion.
+
+This approach has been used in the DYNA model to capture realistic jiggling and deformation of soft tissues during dynamic motion.
+
+8.2 Specialized Extensions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SMPL has been extended to various specialized body modeling tasks:
+
+- **MANO:** Hand modeling based on the SMPL approach
+- **FLAME:** Face modeling based on the SMPL approach
+- **SMPL-X:** Integrated body, face, and hand modeling
+- **DMPL:** Dynamic Multi-Person Linear model for soft tissue animation
+- **SMAL:** Animal modeling based on the SMPL approach
+
+8.3 Deep Learning for Model Fitting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Methods such as HMR train convolutional neural networks to predict SMPL parameters from images. The SMPL layer is embedded as a differentiable component, and reprojection loss is used for supervision.
+
+8.4 Probabilistic Approaches
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some frameworks treat the body model parameters as random variables with priors. These models use techniques like particle filtering or variational inference to estimate the posterior distribution over pose and shape.
+
+8.5 Hybrid Models
+~~~~~~~~~~~~~~~~~~~~~~
+
+Extensions like SMPL-X or neural implicit models combine parametric models with free-form deformations to capture details that the base SMPL model cannot, such as clothing and fine surface geometry.
+
+-------------------------------------------------------------
+Conclusion
+-------------------------------------------------------------
+
+Vertex-based models, particularly SMPL, represent a significant advance in human body modeling. By parameterizing skinning with pose and shape, SMPL provides an efficient, accurate, and compatible framework for representing human bodies in computer graphics and vision applications.
+
+Key contributions of the SMPL approach include:
+- The insight that blend shapes should be linear in rotation matrix elements rather than axis angles
+- The joint regressor that allows joint positions to vary with body shape
+- The additive model that separates pose-dependent deformations from identity variation
+
+Starting with the design of parametric models such as SCAPE and SMPL, we examined how shape and pose are mathematically represented and learned from data. We reviewed the principles of image formation via the pinhole camera model and the role of lens distortion in accurate 3D reconstruction. We also discussed the representation of rotations and the kinematic chains that form the basis of articulated models, as well as alignment techniques such as Procrustes analysis and ICP for fitting these models to scan data.
+
+These innovations have made SMPL the de facto standard for human body modeling in many applications, from animation to computer vision and AR/VR. This rigorous foundation is essential for developing robust digital human representations for applications ranging from animation and augmented reality to robotics and beyond.
