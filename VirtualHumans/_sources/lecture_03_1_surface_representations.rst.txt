@@ -1,0 +1,741 @@
+.. _lecture_03_1_surface_representations:
+
+Lecture 03.1 – Surface Representations
+======================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/5uE7Pc5mr1I" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Surface Representations <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_03_1_Surface_Representations.pdf>`_
+
+
+In this lecture, we examine different approaches to representing surfaces in computational geometry and computer graphics. The choice of representation significantly impacts what operations can be efficiently performed and what applications are most suitable. We'll explore parametric (explicit), implicit, and discrete representations such as **meshes**, **point clouds**, and **signed distance fields** (SDFs), along with their mathematical foundations, differential properties, and practical implementations.
+
+------------------------------------------------------------
+1. Mathematical Foundations of Surface Representations
+------------------------------------------------------------
+
+A surface can be represented mathematically in several ways, each with distinct advantages for different applications. We'll explore three fundamental approaches: parametric, implicit, and explicit.
+
+A) Parametric Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A parametric surface is defined by a mapping from a 2D parameter domain into 3D space:
+
+   .. math::
+
+      \mathbf{x}(u,v) = \bigl( x(u,v),\, y(u,v),\, z(u,v) \bigr)
+
+where :math:`(u,v) \in D \subset \mathbb{R}^2` maps to a point on the surface in :math:`\mathbb{R}^3`. For a regular surface, the partial derivatives :math:`\mathbf{x}_u = \frac{\partial \mathbf{x}}{\partial u}` and :math:`\mathbf{x}_v = \frac{\partial \mathbf{x}}{\partial v}` must be linearly independent (their cross product is non-zero). Intuitively, :math:`\mathbf{x}_u` and :math:`\mathbf{x}_v` span the tangent plane at each surface point.
+
+For example, a sphere of radius :math:`R` can be parameterized using spherical coordinates:
+
+   .. math::
+
+      \begin{aligned}
+      x(u,v) &= R\,\cos u\,\sin v, \\
+      y(u,v) &= R\,\sin u\,\sin v, \\
+      z(u,v) &= R\,\cos v,
+      \end{aligned}
+
+where :math:`u \in [0, 2\pi)` (longitude) and :math:`v \in [0, \pi]` (latitude).
+
+B) Implicit Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~
+An implicit surface is defined as the zero level set of a scalar function in 3D space:
+
+   .. math::
+
+      F(x,y,z) = 0
+
+For example, a sphere of radius :math:`R` centered at the origin is given by:
+
+   .. math::
+
+      F(x,y,z) = x^2 + y^2 + z^2 - R^2 = 0
+
+This representation makes inside/outside queries straightforward:
+- If :math:`F(p) < 0`, point :math:`p` is inside the surface
+- If :math:`F(p) > 0`, point :math:`p` is outside the surface
+- If :math:`F(p) = 0`, point :math:`p` is on the surface
+
+A key requirement for a well-defined implicit surface is that :math:`\nabla F \neq 0` on the surface, ensuring a smooth definition via the implicit function theorem.
+
+C) Explicit Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~
+An explicit surface is typically represented as a function of two variables:
+
+   .. math::
+
+      z = f(x,y)
+
+This is essentially the graph of a bivariate function over the x-y plane. It's useful for representing terrains or height fields but cannot capture overhangs or multiple z-values for a single (x,y) pair. This is a special case of the parametric representation with :math:`u = x` and :math:`v = y`.
+
+Any explicit representation can be converted to implicit form by:
+
+   .. math::
+
+      F(x,y,z) = f(x,y) - z = 0
+
+------------------------------------------------------------
+2. Surface Differential Properties
+------------------------------------------------------------
+
+Understanding differential properties such as normals and curvature is essential for analyzing and manipulating surfaces.
+
+A) Surface Normals
+~~~~~~~~~~~~~~~~~~~~~~
+
+**Parametric Surfaces:** For a parametric surface :math:`\mathbf{x}(u,v)`, the normal vector is:
+
+   .. math::
+
+      \mathbf{n}(u,v) = \mathbf{x}_u \times \mathbf{x}_v
+
+The unit normal is :math:`\hat{\mathbf{n}} = \frac{\mathbf{x}_u \times \mathbf{x}_v}{|\mathbf{x}_u \times \mathbf{x}_v|}`.
+
+**Implicit Surfaces:** For an implicit surface :math:`F(x,y,z) = 0`, the normal at a point is given by the gradient:
+
+   .. math::
+
+      \mathbf{n}(x,y,z) = \nabla F(x,y,z) = \left( \frac{\partial F}{\partial x}, \frac{\partial F}{\partial y}, \frac{\partial F}{\partial z} \right)
+
+The unit normal is :math:`\hat{\mathbf{n}} = \frac{\nabla F}{|\nabla F|}`. This makes intuitive sense because the gradient points in the direction of greatest increase, which is perpendicular to the level set.
+
+**Explicit Surfaces:** For a surface :math:`z = f(x,y)`, the normal vector is:
+
+   .. math::
+
+      \mathbf{n} = (-f_x, -f_y, 1)
+
+where :math:`f_x = \frac{\partial f}{\partial x}` and :math:`f_y = \frac{\partial f}{\partial y}` are the partial derivatives. The unit normal is:
+
+   .. math::
+
+      \hat{\mathbf{n}} = \frac{(-f_x, -f_y, 1)}{\sqrt{1 + f_x^2 + f_y^2}}
+
+B) Fundamental Forms and Curvature
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The curvature of a surface quantifies how the surface bends in different directions. It's essential for shape analysis, smoothing, and rendering.
+
+**First Fundamental Form:**
+The first fundamental form is the metric induced on the surface from 3D space. If we define:
+
+   .. math::
+
+      E = \mathbf{x}_u \cdot \mathbf{x}_u, \quad F = \mathbf{x}_u \cdot \mathbf{x}_v, \quad G = \mathbf{x}_v \cdot \mathbf{x}_v
+
+Then any tangent vector :math:`\mathbf{w} = a\mathbf{x}_u + b\mathbf{x}_v` has squared length:
+
+   .. math::
+
+      I(\mathbf{w}) = Ea^2 + 2Fab + Gb^2
+
+**Second Fundamental Form:**
+The second fundamental form relates to the surface's curvature. It is defined using second derivatives:
+
+   .. math::
+
+      L = \mathbf{x}_{uu} \cdot \mathbf{n}, \quad M = \mathbf{x}_{uv} \cdot \mathbf{n}, \quad N = \mathbf{x}_{vv} \cdot \mathbf{n}
+
+These coefficients form a quadratic form:
+
+   .. math::
+
+      II = L\,du^2 + 2M\,du\,dv + N\,dv^2
+
+**Curvature Measures:**
+Using the fundamental forms, we can compute important curvature measures:
+
+1. **Gaussian Curvature:** :math:`K = \kappa_1 \kappa_2 = \frac{LN-M^2}{EG-F^2}`
+
+2. **Mean Curvature:** :math:`H = \frac{\kappa_1 + \kappa_2}{2} = \frac{EN-2FM+GL}{2(EG-F^2)}`
+
+3. **Principal Curvatures:** :math:`\kappa_{1,2} = H \pm \sqrt{H^2-K}`
+
+The principal curvatures (:math:`\kappa_1, \kappa_2`) are the eigenvalues of the shape operator, representing the maximum and minimum normal curvatures at a point.
+
+**Curvature for Implicit Surfaces:**
+For an implicit surface :math:`F(x,y,z) = 0`, curvature can be derived from the gradient and Hessian of :math:`F`. The mean curvature is proportional to the divergence of the unit normal:
+
+   .. math::
+
+      -2H = \nabla \cdot \left( \frac{\nabla F}{|\nabla F|} \right)
+
+If :math:`F` is a signed distance function (with :math:`|\nabla F| = 1` near the surface), this simplifies to:
+
+   .. math::
+
+      -2H = \Delta F \quad \text{(the Laplacian of F)}
+
+**Curvature for Explicit Surfaces:**
+For a surface :math:`z = f(x,y)`, the Gaussian curvature is:
+
+   .. math::
+
+      K = \frac{f_{xx}f_{yy}-(f_{xy})^2}{(1+f_x^2+f_y^2)^2}
+
+And the mean curvature is:
+
+   .. math::
+
+      H = \frac{(1+f_y^2)f_{xx}-2f_xf_y f_{xy}+(1+f_x^2)f_{yy}}{2(1+f_x^2+f_y^2)^{3/2}}
+
+C) Geodesics
+~~~~~~~~~~~~~~~~
+
+A geodesic is a curve on a surface that is "as straight as possible" - it has no acceleration component within the tangent plane. Formally, a curve on a surface is geodesic if its geodesic curvature (the curvature component within the surface) is zero.
+
+For example, on a sphere, geodesics are great circles (like the equator or meridians). On a plane, geodesics are straight lines.
+
+A geodesic :math:`\mathbf{x}(u(t),v(t))` on a parametric surface must satisfy:
+
+   .. math::
+
+      \ddot{u} + \Gamma_{ij}^u \dot{u}_i \dot{u}_j = 0, \quad \ddot{v} + \Gamma_{ij}^v \dot{u}_i \dot{u}_j = 0
+
+where :math:`\Gamma_{ij}^u, \Gamma_{ij}^v` are the Christoffel symbols derived from the first fundamental form.
+
+Geodesics represent shortest paths between points on a surface and are crucial for parameterization, path planning, and surface analysis.
+
+------------------------------------------------------------
+3. Discrete Surface Representations
+------------------------------------------------------------
+
+In practice, continuous surface representations are discretized for computational purposes.
+
+A) Polygon Meshes
+~~~~~~~~~~~~~~~~~~~~~~
+A polygon mesh consists of:
+- **Vertices**: Points in 3D space (positions)
+- **Edges**: Connections between vertices
+- **Faces**: Closed loops of edges (typically triangles or quads)
+
+**Data Structure:**
+A triangle mesh can be represented by:
+- A vertex array: :math:`V` (n×3 array of coordinates)
+- A face array: :math:`F` (m×3 array of vertex indices)
+
+**Computing Normals:**
+- **Face Normal**: For a triangle with vertices :math:`p_1, p_2, p_3`, the normal is:
+  
+  .. math::
+     
+     \mathbf{n}_f = \frac{(p_2 - p_1) \times (p_3 - p_1)}{|(p_2 - p_1) \times (p_3 - p_1)|}
+
+- **Vertex Normal**: Typically computed by averaging adjacent face normals:
+  
+  .. math::
+     
+     \mathbf{n}_v = \frac{\sum_{f \in \mathcal{F}(v)} \theta_f \mathbf{n}_f}{|\sum_{f \in \mathcal{F}(v)} \theta_f \mathbf{n}_f|}
+
+  where :math:`\mathcal{F}(v)` is the set of faces adjacent to vertex :math:`v`, and :math:`\theta_f` is the angle at vertex :math:`v` in face :math:`f`.
+
+**Barycentric Interpolation:**
+Points inside a triangle can be represented as convex combinations of the vertices:
+
+   .. math::
+
+      p = \phi_i p_i + \phi_j p_j + \phi_k p_k
+
+where :math:`\phi_i + \phi_j + \phi_k = 1` and :math:`\phi_i, \phi_j, \phi_k \geq 0`.
+
+**Pros and Cons:**
+- **Pros**: Efficient for rendering, adaptable resolution, widespread support
+- **Cons**: Complex for topology changes, limited smoothness, memory overhead for connections
+
+**Implementation Example (Python):**
+
+.. code-block:: python
+
+   import numpy as np
+
+   # Define three vertices of a triangle
+   A = np.array([0, 0, 0])
+   B = np.array([1, 0, 0])
+   C = np.array([0, 1, 0])
+   
+   # Compute edge vectors
+   AB = B - A
+   AC = C - A
+   
+   # Compute face normal using cross product
+   normal = np.cross(AB, AC)
+   normal_unit = normal / np.linalg.norm(normal)
+   print("Face normal:", normal_unit)
+
+B) Point Clouds
+~~~~~~~~~~~~~~~~~~~~
+A point cloud is simply a collection of 3D points, often with additional attributes like normals or colors.
+
+**Data Structure:**
+- Point positions: :math:`P` (n×3 array)
+- Optional attributes: normals, colors, etc.
+
+**Estimating Normals:**
+Since point clouds lack connectivity, normals must be estimated from local neighborhoods:
+1. For each point, find its k-nearest neighbors
+2. Compute the covariance matrix of the neighborhood
+3. The normal is the eigenvector corresponding to the smallest eigenvalue (PCA)
+
+**Pros and Cons:**
+- **Pros**: Direct output from scanners, flexible topology, simple structure
+- **Cons**: No connectivity information, difficult to render directly, challenging for surface reconstruction
+
+C) Signed Distance Fields (SDF)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+An SDF represents a surface implicitly by storing the signed distance to the surface at each point in a volume:
+- Negative values: inside the surface
+- Positive values: outside the surface
+- Zero: on the surface
+
+**Data Structure:**
+- 3D grid (voxels) storing distance values
+- Or a sparse representation (octree, hash grid)
+- Or a continuous function approximation (neural network)
+
+**Mathematical Definition:**
+For a domain :math:`\Omega` with boundary :math:`\partial\Omega`, the SDF is:
+
+   .. math::
+
+      F(p) = 
+      \begin{cases}
+      -\min_{q \in \partial\Omega}||p-q|| & \text{if } p \in \Omega \\
+      \min_{q \in \partial\Omega}||p-q|| & \text{if } p \notin \Omega
+      \end{cases}
+
+For a sphere of radius :math:`R`:
+
+   .. math::
+
+      F_{\text{sphere}}(x,y,z) = \sqrt{x^2 + y^2 + z^2} - R
+
+**Surface Extraction:**
+The surface can be extracted using algorithms like Marching Cubes, which find the zero level set in the volume.
+
+**Normal Computation:**
+The normal at any point is simply the normalized gradient of the SDF:
+
+   .. math::
+
+      \mathbf{n}(p) = \frac{\nabla F(p)}{|\nabla F(p)|}
+
+**Closest Point Computation:**
+The closest point on the surface to a query point :math:`p` is:
+
+   .. math::
+
+      q = p - F(p) \cdot \nabla F(p)
+
+**Implementation Example (Python):**
+
+.. code-block:: python
+
+   import numpy as np
+
+   def sphere_sdf(point, radius=1.0, center=(0, 0, 0)):
+       px, py, pz = point
+       cx, cy, cz = center
+       dist = np.sqrt((px - cx)**2 + (py - cy)**2 + (pz - cz)**2)
+       return dist - radius
+
+   test_points = [(0, 0, 0), (1, 0, 0), (2, 0, 0)]
+   for p in test_points:
+       val = sphere_sdf(p, 1.0)
+       print("SDF at", p, "=", val)
+
+**Pros and Cons:**
+- **Pros**: Easy inside/outside queries, natural for CSG operations, handles topology changes
+- **Cons**: Memory-intensive for high resolutions, indirect access to surface points
+
+------------------------------------------------------------
+4. Advanced Surface Representations
+------------------------------------------------------------
+
+A) Bézier Curves and Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bézier curves use Bernstein polynomials as a basis:
+
+   .. math::
+
+      B_k^n(t) = {n \choose k} t^k (1-t)^{n-k}
+
+A Bézier curve of degree :math:`n` is defined as:
+
+   .. math::
+
+      C(t) = \sum_{k=0}^{n} P_k B_k^n(t), \quad t \in [0,1]
+
+where :math:`P_k` are control points.
+
+Bézier surfaces are formed by taking the tensor product of Bézier curves:
+
+   .. math::
+
+      S(u,v) = \sum_{i=0}^{m} \sum_{j=0}^{n} P_{ij} B_i^m(u) B_j^n(v), \quad u,v \in [0,1]
+
+**Properties:**
+- The curve/surface interpolates the first and last control points
+- Derivatives at endpoints depend on adjacent control points
+- The curve/surface lies in the convex hull of the control points
+- Limited flexibility for complex shapes (need multiple patches)
+
+B) B-Splines and NURBS
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+B-splines provide more local control than Bézier curves by using piecewise polynomial functions:
+
+   .. math::
+
+      C(t) = \sum_{i=0}^{n} P_i N_{i,p}(t)
+
+where :math:`N_{i,p}(t)` are B-spline basis functions of degree :math:`p`.
+
+Non-Uniform Rational B-Splines (NURBS) extend B-splines with weights and rational functions:
+
+   .. math::
+
+      C(t) = \frac{\sum_{i=0}^{n} w_i P_i N_{i,p}(t)}{\sum_{i=0}^{n} w_i N_{i,p}(t)}
+
+where :math:`w_i` are weights associated with control points.
+
+**Properties:**
+- Local control: changing one control point affects only a local region
+- Can represent conic sections exactly (unlike polynomial Bézier curves)
+- Widely used in CAD and industrial design
+- More complex to implement than Bézier curves
+
+C) Subdivision Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Subdivision surfaces generate smooth surfaces through iterative refinement of a control mesh:
+
+1. Start with a coarse control mesh
+2. Apply subdivision rules to split faces and reposition vertices
+3. Iterate until desired smoothness is achieved
+
+Common subdivision schemes:
+- **Catmull-Clark**: for quad-dominant meshes
+- **Loop**: for triangle meshes
+- **Doo-Sabin**: for quad meshes, generalizing biquadratic B-splines
+
+**Properties:**
+- Simple to implement
+- Arbitrary topology support
+- Can represent sharp features and boundaries
+- Widely used in animation and modeling
+- Limit surface has provable continuity properties
+
+D) Level Sets
+~~~~~~~~~~~~~~~~
+Level sets represent a surface as the zero crossing of a scalar field, typically stored on a grid. Unlike a simple SDF, level set methods include evolution equations that allow the surface to change over time:
+
+   .. math::
+
+      \frac{\partial \phi}{\partial t} + F|\nabla \phi| = 0
+
+where :math:`F` is a speed function that can depend on curvature, external forces, etc.
+
+**Applications:**
+- Fluid simulation
+- Image segmentation
+- Shape deformation
+- Topology optimization
+
+**Advantages:**
+- Natural handling of topology changes
+- Integration with physics simulations
+- No need for reparameterization
+
+E) Neural Implicit Representations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Recent approaches use neural networks to represent implicit surfaces:
+
+   .. math::
+
+      F_\theta(x,y,z) = 0
+
+where :math:`F_\theta` is a neural network with parameters :math:`\theta`.
+
+Examples include:
+- DeepSDF: learns a signed distance field
+- Neural Radiance Fields (NeRF): represents both geometry and appearance
+- Occupancy Networks: learn binary inside/outside functions
+
+**Advantages:**
+- Compact representation
+- Can learn from data
+- Handles complex topology
+- Continuous and differentiable
+- Can represent multiple shapes with one model
+
+------------------------------------------------------------
+5. Comparative Analysis and Applications
+------------------------------------------------------------
+
+A) Computational Efficiency and Storage
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Computational Efficiency Comparison
+   :header-rows: 1
+   :widths: 20 25 25 30
+
+   * - Representation
+     - Memory Complexity
+     - Query Performance
+     - Topology Handling
+   * - Mesh
+     - O(N) vertices + connectivity
+     - Fast point sampling
+     - Difficult for changes
+   * - Point Cloud
+     - O(N) points
+     - Fast, but incomplete
+     - Flexible but implicit
+   * - SDF (grid)
+     - O(N³) for grid resolution N
+     - Fast inside/outside
+     - Natural for changes
+   * - NURBS
+     - O(control points)
+     - Evaluation complexity depends on degree
+     - Fixed topology per patch
+   * - Neural Implicit
+     - O(network parameters)
+     - Forward pass through network
+     - Flexible
+
+B) Practical Applications
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Computer Graphics and CAD:**
+- Meshes: real-time rendering, games, film
+- NURBS: CAD, industrial design, manufacturing
+- Subdivision: character animation, modeling
+- Implicit: CSG operations, special effects
+
+**Robotics and Computer Vision:**
+- SDFs: collision detection, path planning
+- Point clouds: 3D scanning, SLAM
+- Meshes: object recognition, tracking
+- Neural implicits: scene reconstruction, completion
+
+**Physics Simulation:**
+- Level sets: fluid simulation, interface tracking
+- Meshes: deformable bodies, cloth
+- Implicit: fracture simulation, topology changes
+
+**Medical Imaging:**
+- Level sets: segmentation, registration
+- Meshes: visualization, finite element analysis
+- Implicit: morphological operations
+
+C) Operations Complexity
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Operation Complexity Comparison
+   :header-rows: 1
+   :widths: 20 25 25 30
+
+   * - Operation
+     - Mesh
+     - Point Cloud
+     - Implicit
+   * - Rendering
+     - Fast (GPU optimized)
+     - Challenging
+     - Requires extraction
+   * - Boolean Operations
+     - Complex
+     - N/A
+     - Simple
+   * - Deformation
+     - Natural
+     - Simple but lacks connectivity
+     - Requires reparameterization
+   * - Curvature Analysis
+     - Discrete approximations
+     - Challenging
+     - Direct from function
+   * - Closest Point
+     - Acceleration structures needed
+     - kD-tree search
+     - Direct for SDFs
+     
+------------------------------------------------------------
+6. Implementation Examples
+------------------------------------------------------------
+
+A) Basic Mesh Processing (Python)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   
+   # Compute mesh face normal
+   def compute_face_normal(vertices, face):
+       v1, v2, v3 = [vertices[i] for i in face]
+       e1 = v2 - v1
+       e2 = v3 - v1
+       normal = np.cross(e1, e2)
+       return normal / np.linalg.norm(normal)
+   
+   # Compute vertex normals from face normals
+   def compute_vertex_normals(vertices, faces):
+       vertex_normals = np.zeros_like(vertices)
+       counts = np.zeros(len(vertices))
+       
+       for face in faces:
+           normal = compute_face_normal(vertices, face)
+           for vertex_idx in face:
+               vertex_normals[vertex_idx] += normal
+               counts[vertex_idx] += 1
+       
+       # Normalize
+       for i in range(len(vertices)):
+           if counts[i] > 0:
+               vertex_normals[i] /= counts[i]
+               vertex_normals[i] /= np.linalg.norm(vertex_normals[i])
+       
+       return vertex_normals
+
+B) Implicit Surface Utilities
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   
+   # Torus SDF
+   def torus_sdf(point, R=1.0, r=0.25):
+       x, y, z = point
+       q = np.array([np.sqrt(x*x + y*y) - R, z])
+       return np.sqrt(q[0]*q[0] + q[1]*q[1]) - r
+   
+   # Compute SDF gradient (for normal)
+   def numerical_gradient(func, point, epsilon=1e-5):
+       x, y, z = point
+       dx = (func([x+epsilon, y, z]) - func([x-epsilon, y, z])) / (2*epsilon)
+       dy = (func([x, y+epsilon, z]) - func([x, y-epsilon, z])) / (2*epsilon)
+       dz = (func([x, y, z+epsilon]) - func([x, y, z-epsilon])) / (2*epsilon)
+       grad = np.array([dx, dy, dz])
+       return grad / np.linalg.norm(grad)
+   
+   # Project point to surface
+   def project_to_surface(func, point, max_steps=10, epsilon=1e-5):
+       p = np.array(point, dtype=float)
+       for _ in range(max_steps):
+           dist = func(p)
+           if abs(dist) < epsilon:
+               return p
+           grad = numerical_gradient(func, p)
+           p = p - dist * grad
+       return p
+
+C) Bézier Curve Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   
+   def bernstein(n, i, t):
+       """Bernstein polynomial basis function."""
+       return np.math.comb(n, i) * (t**i) * ((1-t)**(n-i))
+   
+   def bezier_curve(control_points, num_points=100):
+       """Generate points along a Bezier curve."""
+       n = len(control_points) - 1
+       points = []
+       
+       for t in np.linspace(0, 1, num_points):
+           point = np.zeros(len(control_points[0]))
+           for i in range(n + 1):
+               point += bernstein(n, i, t) * np.array(control_points[i])
+           points.append(point)
+       
+       return np.array(points)
+
+D) Curvature Estimation on Meshes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   
+   def estimate_curvature(vertices, faces, vertex_normals):
+       """Estimate mean curvature using the Laplace-Beltrami operator."""
+       curvatures = np.zeros(len(vertices))
+       
+       # Build adjacency information
+       neighbors = [[] for _ in range(len(vertices))]
+       for face in faces:
+           for i in range(3):
+               v1 = face[i]
+               v2 = face[(i+1)%3]
+               if v2 not in neighbors[v1]:
+                   neighbors[v1].append(v2)
+                   neighbors[v2].append(v1)
+       
+       # Compute curvature for each vertex
+       for i in range(len(vertices)):
+           if not neighbors[i]:
+               continue
+           
+           # Compute cotangent weights and mean curvature
+           laplacian = np.zeros(3)
+           total_weight = 0
+           
+           for j in neighbors[i]:
+               vec = vertices[j] - vertices[i]
+               weight = 1.0  # Simple uniform weight, cotangent weights would be better
+               laplacian += weight * vec
+               total_weight += weight
+           
+           if total_weight > 0:
+               laplacian /= total_weight
+           
+           # Mean curvature is half the magnitude of the Laplacian
+           curvatures[i] = 0.5 * np.linalg.norm(laplacian)
+           
+           # Sign based on normal direction
+           if np.dot(laplacian, vertex_normals[i]) < 0:
+               curvatures[i] = -curvatures[i]
+       
+       return curvatures
+
+------------------------------------------------------------
+7. Advanced Topics and Future Directions
+------------------------------------------------------------
+
+A) Multi-Resolution Representations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Adaptive meshes
+- Progressive LOD (Level of Detail)
+- Wavelets for surfaces
+- Hierarchical structures (octrees, BSP trees)
+
+B) Machine Learning for Geometry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Neural implicit fields
+- Point cloud processing networks
+- Mesh generation from data
+- Differentiable rendering
+- DeepSDF and NeRF architectures
+
+C) Dynamic Surfaces
+~~~~~~~~~~~~~~~~~~~~~~
+- Time-evolving geometries
+- Physical simulations
+- Fluid interfaces
+- Growth and morphogenesis models
+
+D) Non-Manifold Geometries
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- Mixed-dimensional models
+- Cell complexes
+- Combinatorial representations
+- Geometric deep learning

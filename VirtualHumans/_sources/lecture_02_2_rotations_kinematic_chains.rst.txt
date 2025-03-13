@@ -1,0 +1,810 @@
+.. _lecture_02_2_rotations_kinematic_chains:
+
+Lecture 02.2 – Rotations and Kinematic Chains
+=====================================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/APjxvowbcOI" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Rotations and Kinematic Chains <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_02_2_Rotation_KinematicChains.pdf>`_
+
+
+
+
+
+In this lecture, we explore different parameterizations of rotations and kinematic chains, which are core ingredients for modeling human motion. We'll examine rotation matrices, Euler angles, quaternions, and twist-exponential maps, comparing their advantages and disadvantages. Then we'll see how these parameterizations apply to articulated kinematic chains for controlling virtual humans.
+
+When evaluating a parameterization for rotations or rigid body motion, we should consider:
+
+- **Minimum number of parameters**: This makes controlling characters easier, inference more efficient, and storage more lightweight.
+- **Avoiding singularities**: Degenerate cases where degrees of freedom are lost or multiple parameter combinations produce the same result should be avoided.
+- **Ease of computing derivatives**: How efficiently we can calculate changes in positions and orientations with respect to parameters is crucial for optimization.
+- **Placing biomechanical constraints**: The ability to incorporate natural movement constraints (e.g., an elbow rotating along a single axis).
+- **Ease of motion concatenation**: How easily we can accumulate motion over time, which is important for tracking and animation.
+
+--------------------------------------------------------------------------------
+1. Representations of 3D Rotations
+--------------------------------------------------------------------------------
+
+First, let's understand what a rotation actually is. Informally, a rotation is a linear transformation that:
+- Preserves angles between vectors
+- Preserves distances (length of vectors)
+- Does not mirror the object (no reflection)
+
+A key property to note is that rotations in 2D commute (order doesn't matter), but rotations in 3D do not commute (order matters significantly).
+
+3D rotations lie in the special orthogonal group :math:`SO(3)`, i.e., all
+:math:`3\times 3` matrices :math:`R` with :math:`R^T R = I` and :math:`\det(R)=+1`.
+Because :math:`SO(3)` is a non-linear manifold, we have multiple parameterizations:
+
+A) Rotation Matrices
+~~~~~~~~~~~~~~~~~~~~
+A rotation matrix :math:`R \in SO(3)` is a :math:`3\times 3` orthonormal matrix. 
+Applying it to a vector :math:`v` yields :math:`v' = R\,v`. Composing two rotations
+is matrix multiplication: :math:`R_2 R_1`, which is non-commutative in 3D.
+
+**Understanding Rotation Matrices**: Consider a point :math:`P_B` expressed in body frame coordinates with coordinates :math:`(\lambda_x, \lambda_y, \lambda_z)`. To express this point in spatial (world) frame coordinates, we can write:
+
+.. math::
+
+   P_S = \lambda_x X_{BS} + \lambda_y Y_{BS} + \lambda_z Z_{BS}
+
+where :math:`X_{BS}`, :math:`Y_{BS}`, and :math:`Z_{BS}` are the axes of the body frame expressed in spatial coordinates. This can be written in matrix form as:
+
+.. math::
+
+   P_S = R_{SB} P_B
+
+where :math:`R_{SB}` is the rotation matrix mapping from body frame to spatial frame. The columns of :math:`R_{SB}` are simply the axes of the body frame expressed in spatial coordinates.
+
+There are two ways to interpret rotations (though mathematically identical):
+1. **Coordinate transformation**: Moving between coordinate frames that are fixed in space
+2. **Motion**: Actually rotating a point (or object) in space
+
+**Important properties of rotation matrices**:
+
+.. math::
+
+   R^TR = RR^T = I
+
+.. math::
+
+   \det(R) = 1
+
+.. math::
+
+   R^T = R^{-1}
+
+The columns (or rows) form an orthonormal basis
+
+**Algorithm for enforcing orthogonality**: When numerical errors accumulate, rotation matrices may drift from being perfectly orthogonal. A common correction method is:
+
+1. Apply Gram-Schmidt orthogonalization to the columns
+2. Use SVD: If :math:`R = USV^T`, set :math:`R' = UV^T` (discarding singular values)
+
+- **Pros**: Directly used for transformations (OpenGL, DirectX). Often good for learning tasks due to its trigonometric nature.
+- **Cons**: Uses 9 numbers to represent 3 degrees of freedom. Requires maintaining orthonormality constraints during optimization, which is inefficient.
+
+B) Euler Angles
+~~~~~~~~~~~~~~~~~~~~
+A triple :math:`(\alpha,\beta,\gamma)` describing successive rotations about coordinate
+axes (e.g., yaw/pitch/roll). These parameterize a rotation as three consecutive planar rotations.
+
+**Basic 2D rotation matrices**:
+- Around x-axis: 
+  
+  .. math::
+     
+     R_x(\theta) = \begin{pmatrix}
+     1 & 0 & 0 \\
+     0 & \cos\theta & -\sin\theta \\
+     0 & \sin\theta & \cos\theta
+     \end{pmatrix}
+
+- Around y-axis:
+  
+  .. math::
+     
+     R_y(\theta) = \begin{pmatrix}
+     \cos\theta & 0 & \sin\theta \\
+     0 & 1 & 0 \\
+     -\sin\theta & 0 & \cos\theta
+     \end{pmatrix}
+
+- Around z-axis:
+  
+  .. math::
+     
+     R_z(\theta) = \begin{pmatrix}
+     \cos\theta & -\sin\theta & 0 \\
+     \sin\theta & \cos\theta & 0 \\
+     0 & 0 & 1
+     \end{pmatrix}
+
+A complete Euler angle rotation might look like:
+
+.. math::
+
+   R = R_x(\alpha) R_y(\beta) R_z(\gamma)
+
+**Important**: When using Euler angles, two things must be specified:
+
+1. **Convention**: Which axes are being rotated around (e.g., XYZ, ZYX, ZXZ)
+2. **Frame of reference**: Whether rotations are happening in the static spatial frame or the moving body frame (extrinsic vs. intrinsic rotations)
+
+**Common Euler angle conventions**:
+
+- **ZYX** (yaw-pitch-roll): Common in aerospace, robotics
+- **XYZ**: Often used in computer graphics
+- **ZXZ**: Used in physics and classical mechanics
+
+**Converting from rotation matrix to Euler angles (ZYX convention)**:
+Given a rotation matrix :math:`R`, the Euler angles can be extracted as:
+
+.. math::
+
+   \beta = \arctan2(-r_{31}, \sqrt{r_{11}^2 + r_{21}^2})
+
+.. math::
+
+   \alpha = \arctan2(r_{21}, r_{11})
+
+.. math::
+
+   \gamma = \arctan2(r_{32}, r_{33})
+
+where :math:`r_{ij}` is the element at row :math:`i`, column :math:`j` of matrix :math:`R`. For the gimbal lock case (:math:`\beta = \pm \pi/2`), special handling is required as :math:`\alpha` and :math:`\gamma` are not uniquely determined (only their sum or difference matters).
+
+- **Pros**: Intuitive for small rotations. Three parameters match the degrees of freedom. Common in animation.  
+- **Cons**: Suffers from gimbal lock—a configuration where one degree of freedom is lost. For example, with ZYX Euler angles, when :math:`\theta_y = \pi/2`, the rotation matrix becomes:
+
+  .. math::
+
+     R = \begin{pmatrix}
+     0 & -\sin(\theta_x+\theta_z) & \cos(\theta_x+\theta_z) \\
+     0 & -\cos(\theta_x+\theta_z) & -\sin(\theta_x+\theta_z) \\
+     -1 & 0 & 0
+     \end{pmatrix}
+
+  Notice that :math:`\theta_x` and :math:`\theta_z` only appear as a sum, so we've lost one degree of freedom—only their combined effect matters.
+
+C) Quaternions
+~~~~~~~~~~~~~~~~
+
+Quaternions are 4D numbers :math:`q = (w, x, y, z)` with :math:`\|q\| = 1` for rotation. 
+To understand quaternions, it helps to first understand complex numbers as representing 2D rotations.
+
+**Complex numbers as 2D rotations**:
+In a geometric interpretation, the imaginary unit :math:`i` represents a quarter turn. Multiplying by :math:`i` twice gives a half turn (:math:`i^2 = -1`). Complex numbers can be expressed in polar form as :math:`re^{i\theta}`, where :math:`r` is the magnitude and :math:`\theta` is the angle.
+
+When we multiply complex numbers, the magnitudes multiply and the angles add:
+
+.. math::
+
+   z_1 \cdot z_2 = r_1 e^{i\theta_1} \cdot r_2 e^{i\theta_2} = r_1 r_2 e^{i(\theta_1 + \theta_2)}
+
+**Quaternions as an extension to 3D**:
+William Rowan Hamilton generalized complex numbers to 3D, discovering that you need 4 dimensions with the fundamental formula:
+
+.. math::
+
+   i^2 = j^2 = k^2 = ijk = -1
+
+A quaternion can be written as :math:`q = q_w + q_x i + q_y j + q_z k` or more compactly as :math:`q = (q_w, \vec{v})` where :math:`\vec{v} = (q_x, q_y, q_z)`.
+
+**Multiplication rules for quaternion basis elements**:
+
+- :math:`i^2 = j^2 = k^2 = -1`
+- :math:`ij = k`, :math:`jk = i`, :math:`ki = j`
+- :math:`ji = -k`, :math:`kj = -i`, :math:`ik = -j`
+
+For a rotation by angle :math:`\theta` around a **unit** axis 
+:math:`k = (k_x, k_y, k_z)`, the corresponding quaternion is:
+
+.. math::
+
+   q \;=\;
+   \Bigl(
+       \cos\!\tfrac{\theta}{2},\;
+       k_x\,\sin\!\tfrac{\theta}{2},\;
+       k_y\,\sin\!\tfrac{\theta}{2},\;
+       k_z\,\sin\!\tfrac{\theta}{2}
+   \Bigr)
+
+**Quaternion operations**:
+
+- Conjugate: :math:`q^* = (q_w, -\vec{v})`
+- Norm: :math:`\|q\| = \sqrt{q_w^2 + q_x^2 + q_y^2 + q_z^2}`
+- Inverse: :math:`q^{-1} = q^*/\|q\|^2` (for unit quaternions, :math:`q^{-1} = q^*`)
+
+The quaternion product for two quaternions :math:`q_1 = (w_1, \vec{v}_1)` and :math:`q_2 = (w_2, \vec{v}_2)` is:
+
+.. math::
+
+   q_1 q_2 = (w_1 w_2 - \vec{v}_1 \cdot \vec{v}_2, w_1 \vec{v}_2 + w_2 \vec{v}_1 + \vec{v}_1 \times \vec{v}_2)
+
+**Derivation of quaternion product**:
+The quaternion product can be derived by expanding using the definitions:
+
+.. math::
+
+   q_1 q_2 = (w_1 + x_1i + y_1j + z_1k)(w_2 + x_2i + y_2j + z_2k)
+
+Expanding and applying the multiplication rules:
+
+.. math::
+
+   (w_1w_2 - x_1x_2 - y_1y_2 - z_1z_2) + (w_1x_2 + x_1w_2 + y_1z_2 - z_1y_2)i + (w_1y_2 - x_1z_2 + y_1w_2 + z_1x_2)j + (w_1z_2 + x_1y_2 - y_1x_2 + z_1w_2)k
+
+This can be rewritten more compactly using vector operations as shown above.
+
+To rotate a vector :math:`v` by a quaternion :math:`q`, we use:
+
+.. math::
+
+   v' = q v q^*
+
+Where :math:`v` is treated as a pure quaternion :math:`(0, v)` with zero scalar part. The formula expands to:
+
+.. math::
+
+   v' = q (0, v) q^*
+
+This can also be written as a matrix-vector multiplication, where a quaternion :math:`q=(w,x,y,z)` can be converted to a rotation matrix:
+
+.. math::
+
+   R(q) = \begin{pmatrix}
+   1-2y^2-2z^2 & 2xy-2wz & 2xz+2wy \\
+   2xy+2wz & 1-2x^2-2z^2 & 2yz-2wx \\
+   2xz-2wy & 2yz+2wx & 1-2x^2-2y^2
+   \end{pmatrix}
+
+**Quaternion SLERP (Spherical Linear Interpolation)** is excellent for interpolating between orientations:
+
+.. math::
+
+   q(t) = q_0 (q_0^{-1} q_1)^t
+
+where :math:`t \in [0, 1]` and :math:`q_0` and :math:`q_1` are the start and end orientations.
+
+**Computational formula for SLERP**:
+If :math:`\cos\theta = q_0 \cdot q_1` is the dot product between unit quaternions:
+
+.. math::
+
+   q(t) = \frac{\sin((1-t)\theta)}{\sin\theta}q_0 + \frac{\sin(t\theta)}{\sin\theta}q_1
+
+For small angles or numerical stability, a linear interpolation followed by normalization (NLERP) is often used as an approximation:
+
+.. math::
+
+   q(t) = \frac{(1-t)q_0 + tq_1}{\|(1-t)q_0 + tq_1\|}
+
+**Converting from rotation matrix to quaternion**:
+Given a rotation matrix :math:`R`:
+
+.. math::
+
+   w = \frac{1}{2}\sqrt{1 + r_{11} + r_{22} + r_{33}}
+
+.. math::
+
+   x = \frac{r_{32} - r_{23}}{4w}
+
+.. math::
+
+   y = \frac{r_{13} - r_{31}}{4w}
+
+.. math::
+
+   z = \frac{r_{21} - r_{12}}{4w}
+
+When :math:`w` is close to zero, alternative formulas must be used to avoid numerical instability.
+
+- **Pros**: No gimbal lock. Computationally efficient. Perfect for interpolation. Derivatives exist and are linearly independent.
+- **Cons**: Four numbers for 3 DOF. Requires unit norm constraint in optimization. Sign ambiguity :math:`q \leftrightarrow -q`.
+
+
+
+--------------------------------------------------------------------------------
+2. Lie Algebra :math:`so(3)` and Exponential Map
+--------------------------------------------------------------------------------
+
+:math:`SO(3)` is a Lie group—a continuously differentiable manifold with group properties. Its Lie algebra is :math:`so(3)`, the space
+of all :math:`3\times 3` real skew-symmetric matrices:
+
+.. math::
+
+   so(3) \;=\; \{\,A \in \mathbb{R}^{3\times 3}\,\mid\, A^T = -A\,\}.
+
+Any :math:`A\in so(3)` can be written:
+
+.. math::
+
+   A \;=\;
+   \begin{pmatrix}
+         0 & -\gamma & \beta \\
+         \gamma & 0 & -\alpha \\
+         -\beta & \alpha & 0
+   \end{pmatrix}
+
+Given a vector :math:`w = (w_1, w_2, w_3)`, we can define the skew-symmetric matrix:
+
+.. math::
+
+   [w]_\times =
+   \begin{pmatrix}
+         0 & -w_3 & w_2 \\
+         w_3 & 0 & -w_1 \\
+         -w_2 & w_1 & 0
+   \end{pmatrix}
+
+This skew-symmetric matrix has the property that for any vector :math:`p`:
+
+.. math::
+   
+   [w]_\times p = w \times p
+
+That is, the matrix represents the cross product operation.
+
+**Properties of skew-symmetric matrices**:
+For :math:`\hat{\omega} = [\omega]_\times` where :math:`\omega` is a unit vector:
+
+- :math:`\hat{\omega}^2 = \omega\omega^T - I`
+- :math:`\hat{\omega}^3 = -\hat{\omega}`
+- :math:`\hat{\omega}^4 = -\hat{\omega}^2`
+- :math:`\hat{\omega}^{2n} = (-1)^n\hat{\omega}^2` for :math:`n \geq 1`
+- :math:`\hat{\omega}^{2n+1} = (-1)^n\hat{\omega}` for :math:`n \geq 1`
+
+These properties are crucial for deriving Rodrigues' formula.
+
+**Exponential Map**  
+Exponentiating :math:`A\in so(3)` yields a rotation matrix in :math:`SO(3)`:
+
+.. math::
+
+   R \;=\; \exp(A) \;=\; I \;+\; A \;+\; \tfrac{1}{2!}A^2 \;+\; \tfrac{1}{3!}A^3 \;+\;\dots
+
+If we have a vector :math:`w` with :math:`\|w\| = \theta`, we get a rotation by angle :math:`\theta` about axis
+:math:`w/\|w\|`.
+
+**Derivation of the exponential map**:
+For :math:`A = [w]_\times` where :math:`\|w\| = \theta` and :math:`\hat{w} = w/\|w\|` is a unit vector, we group the infinite series of the matrix exponential:
+
+.. math::
+
+   \exp(A) = I + A + \frac{1}{2!}A^2 + \frac{1}{3!}A^3 + \cdots
+
+Using the properties of skew-symmetric matrices, we can separate even and odd powers:
+
+.. math::
+
+   \exp(A) = I + \frac{A^2}{2!} + \frac{A^4}{4!} + \cdots + A\left(1 + \frac{A^2}{3!} + \frac{A^4}{5!} + \cdots \right)
+
+With :math:`A = \theta[\hat{w}]_\times`, this becomes:
+
+.. math::
+
+   \exp(\theta[\hat{w}]_\times) = I + \frac{(\theta[\hat{w}]_\times)^2}{2!} + \frac{(\theta[\hat{w}]_\times)^4}{4!} + \cdots + \theta[\hat{w}]_\times\left(1 + \frac{(\theta[\hat{w}]_\times)^2}{3!} + \cdots \right)
+
+Using the properties above, and recognizing the series expansions of sine and cosine:
+
+.. math::
+
+   \exp(\theta[\hat{w}]_\times) = I + \sin\theta[\hat{w}]_\times + (1-\cos\theta)[\hat{w}]_\times^2
+
+This is Rodrigues' rotation formula.
+
+**Physical Interpretation of the Exponential Map**:
+The exponential map comes from the differential equation for rotating a point :math:`P_s` around an axis :math:`w`:
+
+.. math::
+
+   \dot{P}(t) = w \times P(t) = [w]_\times P(t)
+
+The solution to this differential equation is:
+
+.. math::
+
+   P(t) = e^{[w]_\times t} P(0)
+
+This is why we use the exponential to represent rotations—it integrates the angular velocity over time.
+
+**Logarithmic map (inverse of exponential map)**:
+The logarithm of a rotation matrix :math:`R` gives the corresponding element in :math:`so(3)`:
+
+.. math::
+
+   \log(R) = \theta [\hat{w}]_\times
+
+Where:
+
+- :math:`\theta = \arccos((tr(R) - 1)/2)` is the rotation angle
+- :math:`\hat{w}` is the unit rotation axis extracted from:
+
+  .. math::
+  
+     [\hat{w}]_\times = \frac{R - R^T}{2\sin\theta}
+
+For small rotations or when :math:`\theta \approx 0` (when :math:`tr(R) \approx 3`), special handling is required to avoid numerical issues.
+
+--------------------------------------------------------------------------------
+3. Rodrigues' Rotation Formula
+--------------------------------------------------------------------------------
+
+Rodrigues' formula provides a closed-form expression for the exponential map, avoiding the need to compute the infinite Taylor series.
+
+Given a unit axis :math:`k=(k_x,k_y,k_z)` and angle :math:`\theta`:
+
+.. math::
+
+   R(\theta, k) \;=\; I \;+\; (\sin\theta)\,[k]_\times 
+                      \;+\; (1-\cos\theta)\,[k]_\times^2,
+
+where :math:`[k]_\times` is the skew-symmetric matrix of :math:`k`.
+
+**Computing** :math:`[k]_\times^2` **explicitly**:
+For :math:`k = (k_x, k_y, k_z)` with :math:`\|k\| = 1`:
+
+.. math::
+
+   [k]_\times^2 = 
+   \begin{pmatrix}
+   -k_y^2-k_z^2 & k_xk_y & k_xk_z \\
+   k_xk_y & -k_x^2-k_z^2 & k_yk_z \\
+   k_xk_z & k_yk_z & -k_x^2-k_y^2
+   \end{pmatrix}
+   = kk^T - I
+
+This identity simplifies the implementation of Rodrigues' formula.
+
+**Vector Form**:  For any :math:`v\in\mathbb{R}^3`,
+
+.. math::
+
+   v_{\text{rot}} \;=\; v\,\cos\theta \;+\; (k \times v)\,\sin\theta 
+                       \;+\; k\,(k\cdot v)\,(1-\cos\theta).
+
+**Derivation of vector form**:
+Applying the matrix form to a vector :math:`v`:
+
+.. math::
+
+   Rv = (I + \sin\theta[k]_\times + (1-\cos\theta)[k]_\times^2)v
+
+Expanding using :math:`[k]_\times v = k \times v` and :math:`[k]_\times^2 v = k(k \cdot v) - v`:
+
+.. math::
+
+   Rv = v + \sin\theta(k \times v) + (1-\cos\theta)(k(k \cdot v) - v)
+
+Simplifying:
+
+.. math::
+
+   Rv = v\cos\theta + (k \times v)\sin\theta + k(k \cdot v)(1-\cos\theta)
+
+This formula has a nice geometric interpretation:
+- The first term :math:`v\cos\theta` scales the original vector.
+- The second term :math:`(k \times v)\sin\theta` adds a perpendicular component for rotation.
+- The third term :math:`k\,(k\cdot v)\,(1-\cos\theta)` is a correction for the parallel component.
+
+**Extending to Translation with Twist Coordinates**:
+
+To represent both rotation and translation (a full rigid body motion), we can use twist coordinates:
+
+.. math::
+
+   \xi = (\omega, v) \in \mathbb{R}^6
+
+where :math:`\omega` is the rotation axis (scaled by angle) and :math:`v` relates to translation. These six numbers can be arranged into a twist matrix:
+
+.. math::
+
+   [\xi]_\times = 
+   \begin{pmatrix}
+   [\omega]_\times & v \\
+   0 & 0
+   \end{pmatrix}
+
+**Exponential of a twist**:
+For twist :math:`\xi = (\omega, v)` with :math:`\|\omega\| = \theta > 0`:
+
+.. math::
+
+   \exp([\xi]_\times) = 
+   \begin{pmatrix}
+   \exp([\omega]_\times) & Gv \\
+   0 & 1
+   \end{pmatrix}
+
+Where:
+
+- :math:`\exp([\omega]_\times)` is the rotation matrix from Rodrigues' formula
+- :math:`G = I\theta + (1-\cos\theta)[\omega]_\times + (\theta-\sin\theta)[\omega]_\times^2`
+
+For the special case when :math:`\omega = 0` (pure translation):
+
+.. math::
+
+   \exp([\xi]_\times) = 
+   \begin{pmatrix}
+   I & v \\
+   0 & 1
+   \end{pmatrix}
+
+The exponential of this matrix gives us the full rigid body motion matrix (a 4×4 matrix including translation).
+
+**Rodrigues' Parameters**:
+An alternative way to represent rotations is using Rodrigues' parameters:
+
+.. math::
+
+   \rho = \tan(\theta/2)\hat{\omega}
+
+These provide a minimal 3-parameter representation but have a singularity at :math:`\theta = \pm\pi`.
+
+**Modified Rodrigues Parameters (MRPs)**:
+A variation that moves the singularity to :math:`\theta = \pm2\pi`:
+
+.. math::
+
+   \sigma = \tan(\theta/4)\hat{\omega}
+
+MRPs are useful in attitude control and estimation.
+
+
+--------------------------------------------------------------------------------
+4. Kinematic Chains: Forward & Inverse Kinematics
+--------------------------------------------------------------------------------
+
+A *kinematic chain* models an articulated structure like the human skeleton as a sequence of rigid segments connected by joints.
+
+**Forward Kinematics (FK)**:  
+Given joint angles, compute the position of end effectors (e.g., hands, feet):
+
+.. math::
+
+   G_{SB}(\theta) = G_{SB}(0) \prod_{i=1}^n e^{[\xi_i]\theta_i}
+
+where:
+- :math:`G_{SB}(\theta)` is the transformation from body to spatial frame
+- :math:`G_{SB}(0)` is the transformation in the rest pose
+- :math:`\xi_i` are the twist coordinates for each joint
+- :math:`\theta_i` are the joint angles
+
+**Product of Exponentials (PoE) derivation**:
+For a serial chain with :math:`n` joints where the :math:`i`-th joint contributes a twist motion :math:`\xi_i`:
+
+1. Define the "home configuration" :math:`M \in SE(3)` as the end-effector pose when all joint variables are zero
+2. Define a twist :math:`\xi_i` for each joint, expressed in the space frame at the home configuration
+3. For a given set of joint values :math:`\theta = (\theta_1, \ldots, \theta_n)`, the end-effector pose is:
+
+.. math::
+
+   T(\theta) = e^{[\xi_1]\theta_1}e^{[\xi_2]\theta_2}\cdots e^{[\xi_n]\theta_n}M
+
+This formula is exact and accounts for the full 3D kinematics.
+
+**Types of Joints and Their Twists**:
+
+- **Revolute Joint** (1 DOF rotation): :math:`\xi = (\omega, -\omega \times q)` where :math:`\omega` is the unit axis of rotation and :math:`q` is a point on the axis.
+- **Prismatic Joint** (1 DOF translation): :math:`\xi = (0, v)` where :math:`v` is the unit direction of translation.
+- **Spherical Joint** (3 DOF rotation): Represented as three revolute joints with orthogonal axes intersecting at a point.
+- **Universal Joint** (2 DOF): Represented as two revolute joints with orthogonal axes intersecting at a point.
+
+**Inverse Kinematics (IK)**:  
+Given a desired end-effector pose, find the joint angles:
+
+.. math::
+
+   \min_{\theta_1,...,\theta_n} \|X_a - X_b\|^2
+
+This is typically a non-linear problem solved using the Jacobian, which maps small changes in joint angles to small changes in end-effector position:
+
+.. math::
+
+   J(\theta) = [\xi'_1, \xi'_2, ..., \xi'_n]
+
+where :math:`\xi'_i` are the twist coordinates transformed to the current configuration.
+
+**Computation of the Jacobian**:
+For a serial chain with :math:`n` joints, the spatial Jacobian columns are:
+
+.. math::
+
+   J_i = Ad_{e^{[\xi_1]\theta_1}\cdots e^{[\xi_{i-1}]\theta_{i-1}}}(\xi_i)
+
+Where :math:`Ad` is the adjoint transformation that maps twists between different coordinate frames. For revolute joints, this simplifies to:
+
+.. math::
+
+   J_i = 
+   \begin{pmatrix}
+   \omega_i \\
+   p_{i-1,n} \times \omega_i
+   \end{pmatrix}
+
+Where :math:`\omega_i` is the axis of the :math:`i`-th joint after being transformed by previous joints, and :math:`p_{i-1,n}` is the vector from joint :math:`i` to the end-effector.
+
+The Jacobian gives us a linearization:
+
+.. math::
+
+   \Delta X = J(\theta) \Delta \theta
+
+This allows us to solve IK iteratively:
+
+.. math::
+
+   \Delta \theta = J^+ \Delta X
+
+where :math:`J^+` is the pseudoinverse of the Jacobian.
+
+**Pseudoinverse computation**:
+For a Jacobian :math:`J`:
+
+.. math::
+
+   J^+ = J^T(JJ^T)^{-1}
+
+When :math:`J` is singular or near-singular (at singularities), damped least squares provides numerical stability:
+
+.. math::
+
+   J^+ = J^T(JJ^T + \lambda^2 I)^{-1}
+
+Where :math:`\lambda` is a damping factor.
+
+**IK Algorithm (Damped Least Squares)**:
+
+1. Initialize joint angles :math:`\theta^{(0)}`
+2. For iteration :math:`k = 0, 1, 2, ...`:
+   a. Compute forward kinematics :math:`X(\theta^{(k)})`
+   b. Compute error: :math:`e = X_{desired} - X(\theta^{(k)})`
+   c. Compute Jacobian :math:`J(\theta^{(k)})`
+   d. Update: :math:`\theta^{(k+1)} = \theta^{(k)} + J^+(\theta^{(k)})e`
+   e. Check for convergence or maximum iterations
+
+**Handling Joint Limits**:
+For practical applications, joints often have limits. A weighted damped least squares approach can be used:
+
+.. math::
+
+   \Delta \theta = (J^TW_xJ + W_\theta)^{-1}(J^TW_xe - W_\theta(\theta - \theta_{mid}))
+
+Where:
+- :math:`W_x` is a weighting matrix for task space
+- :math:`W_\theta` is a weighting matrix for joint space
+- :math:`\theta_{mid}` are the midpoints of joint ranges
+
+The weights in :math:`W_\theta` can be adjusted to increasingly penalize joints as they approach their limits:
+
+.. math::
+
+   W_{\theta,ii} = w_0 + \frac{w_s}{(\theta_{max,i} - \theta_i)(\theta_i - \theta_{min,i})}
+
+Where :math:`w_0` is a small base weight and :math:`w_s` is a scaling factor.
+
+**Null Space Projection**:
+For redundant manipulators (more DOFs than task constraints), secondary objectives can be optimized in the null space:
+
+.. math::
+
+   \Delta \theta = J^+\Delta X + (I - J^+J)z
+
+Where :math:`z` is a vector pointing in the direction of optimization for secondary objectives (e.g., avoiding joint limits, obstacles, or singularities).
+
+**Singularity-Robust IK**:
+Near singularities, the standard damped least squares approach can be enhanced with a variable damping factor:
+
+.. math::
+
+   \lambda^2 = \begin{cases}
+   0 & \text{if } \sigma_{min} > \epsilon \\
+   \lambda_0^2(1 - \frac{\sigma_{min}^2}{\epsilon^2}) & \text{if } \sigma_{min} \leq \epsilon
+   \end{cases}
+
+Where :math:`\sigma_{min}` is the smallest singular value of the Jacobian, :math:`\epsilon` is a threshold, and :math:`\lambda_0` is the maximum damping factor.
+
+**Practical Applications for Human Body Modeling**:
+
+In the SMPL model (a widely used parametric human body model), kinematic chains are used with twist coordinates to represent the articulated human skeleton. Each joint can be modeled as having:
+- A fixed axis of rotation with variable angle (e.g., hinge joints like elbows)
+- Multiple degrees of freedom (e.g., ball joints like shoulders)
+
+**SMPL model formulation**:
+The SMPL model represents the human body as:
+
+.. math::
+
+   T(\beta, \theta) = W(T_P(\beta, \theta), J(\beta), \theta, \mathcal{W})
+
+Where:
+- :math:`\beta` are shape parameters
+- :math:`\theta` are pose parameters (joint angles)
+- :math:`T_P` is a template mesh deformed by pose and shape
+- :math:`J(\beta)` are joint locations
+- :math:`W` is a skinning function with weights :math:`\mathcal{W}`
+
+The joint rotations are parametrized using axis-angle representation, which can be converted to rotation matrices using Rodrigues' formula.
+
+**Practical IK Implementations for Human Models**:
+When applying IK to human models, special considerations include:
+
+1. **Biomechanical constraints**: Human joints have physical limits (e.g., elbows don't bend backwards)
+2. **Posture naturalness**: Solutions that satisfy end-effector positions may still look unnatural
+3. **Joint coupling**: Some human joints have coupled motion (e.g., finger joints)
+
+These are often addressed by:
+- Using data-driven priors for natural poses
+- Adding energy terms to penalize unnatural configurations
+- Defining hierarchy of task priorities (e.g., feet placement > hand position > gaze direction)
+
+**Full-Body IK**:
+For full-body human IK, the problem is often decomposed into:
+
+1. **Root positioning**: Placing the hip/pelvis in global space
+2. **Lower-body IK**: Solving for legs to maintain balance and foot placement
+3. **Upper-body IK**: Solving for arms, spine, and head
+
+A common approach is a multi-stage IK with prioritization:
+- Primary tasks: Balance constraints, foot placement
+- Secondary tasks: Hand positions, gaze direction
+- Tertiary tasks: Joint limit avoidance, pose naturalness
+
+
+-----------------------------------------
+Comparison of Rotation Representations
+-----------------------------------------
+
+Here is a summary comparison of the different rotation parameterizations:
+
++-----------------------+-------------------------+---------------------------+
+| Representation        | Advantages              | Disadvantages             |
++=======================+=========================+===========================+
+| **Rotation Matrices** | - Direct transformation | - 9 numbers for 3 DOF     |
+|                       | - Easy to understand    | - Orthogonality           |
+|                       | - Good for learning     |   constraints             |
++-----------------------+-------------------------+---------------------------+
+| **Euler Angles**      | - Only 3 parameters     | - Gimbal lock             |
+|                       | - Intuitive angles      | - Order dependence        |
+|                       | - Simple to manipulate  | - Complex concatenation   |
++-----------------------+-------------------------+---------------------------+
+| **Quaternions**       | - No singularities      | - 4 parameters for 3 DOF  |
+|                       | - Stable interpolation  | - Unit norm constraint    |
+|                       | - Efficient products    | - Less intuitive          |
++-----------------------+-------------------------+---------------------------+
+| **Twist/Axis-Angle**  | - Only 3 parameters     | - Singular at zero angle  |
+|                       | - Clear geometric       | - Not suitable for        |
+|                       |   interpretation        |   parameter addition      |
++-----------------------+-------------------------+---------------------------+
+
+**Recommended Choices**:
+- For optimization and machine learning: Twist coordinates or quaternions 
+- For interpolation: Quaternions (SLERP)
+- For intuitive control: Euler angles or axis-angle
+- For direct transformation: Rotation matrices
+
+**Conversion Between Representations**:
+In practice, it's often necessary to convert between different representations:
+
+1. **Rotation Matrix to Euler Angles**:
+   - Extract angles using arctangent functions as described earlier
+   - Handle special cases like gimbal lock
+
+2. **Rotation Matrix to Axis-Angle**:
+   - Extract angle: :math:`\theta = \arccos(\frac{\text{tr}(R) - 1}{2})`
+   - Extract axis: :math:`\hat{\omega} = \frac{1}{2\sin\theta}(r_{32} - r_{23}, r_{13} - r_{31}, r_{21} - r_{12})^T`
+
+3. **Axis-Angle to Quaternion**:
+   - :math:`q = (\cos\frac{\theta}{2}, \hat{\omega}\sin\frac{\theta}{2})`
+
+4. **Quaternion to Rotation Matrix**:
+   - Use the formula shown in the quaternion section
+
+Each conversion may have numerical considerations, especially near singularities or special cases.
