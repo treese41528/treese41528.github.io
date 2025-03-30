@@ -1,0 +1,423 @@
+.. _lecture_nerf_overview:
+
+Neural Radiance Fields: A Historical and Theoretical Overview
+==============================================================
+
+Introduction
+----------------
+
+Neural Radiance Fields (NeRF) represent a breakthrough in 3D scene representation and view synthesis, enabling photorealistic rendering of scenes from novel viewpoints given a set of input images. Unlike traditional computer vision pipelines that explicitly reconstruct geometry (point clouds, meshes, voxels, etc.), NeRF learns an implicit scene representation – a continuous function implemented by a neural network that outputs color and density given a 3D position and viewing direction. This representation is then rendered into images using principles of volumetric rendering, allowing end-to-end optimization from images alone.
+
+This document provides a comprehensive overview of NeRF's development: from its foundations in traditional 3D scene representation techniques through the original NeRF formulation with detailed mathematical analysis, to numerous extensions and improvements. We also compare NeRF to alternative 3D representations and summarize common datasets used for evaluating NeRF and its variants.
+
+Foundations: 3D Scene Representation and Reconstruction Techniques
+----------------------------------------------------------------------
+
+Before NeRF, 3D scenes were typically represented with explicit geometric structures or discrete volumetric grids. We review key foundational techniques that influenced NeRF's development.
+
+Voxel Grids
+~~~~~~~~~~~~~~~
+
+A voxel grid is a 3D extension of a pixel grid, dividing space into a regular lattice of small cubes (voxels), each storing properties like occupancy, color, or density. Voxel grids provide an intuitive volumetric representation of shape and appearance – for example, early 3D reconstructions from medical CT or MRI directly produce voxel data. One advantage is their ability to represent complex internal structures that may be hard to capture with just surfaces.
+
+Voxel representations were used in some of the earliest 3D reconstruction approaches (e.g., space carving, where a volume is carved away based on silhouette consistency from multiple images). They gained popularity in the deep learning era as well: Maturana and Scherer's VoxNet (2015) applied 3D Convolutional Neural Networks (CNNs) on voxel grids for object recognition. In multi-view reconstruction, approaches like Choy et al.'s 3D-R2N2 (2016) learned to predict a voxel grid from images using recurrent networks.
+
+However, dense voxel grids suffer from high memory usage and limited resolution – doubling resolution increases memory by 8×, making it impractical to capture fine details in large scenes. Techniques like octrees (hierarchies of voxels) were introduced to sparsely subdivide space where detail is needed, alleviating memory issues. These voxel-based ideas influenced NeRF, as a volume with spatially-varying density and color is essentially a continuous counterpart of a voxel grid representation, albeit encoded in a network rather than an explicit array.
+
+Point Clouds
+~~~~~~~~~~~~~~~~
+
+A point cloud represents a 3D shape or scene as an unstructured set of points in space, each with coordinates (and often color). Point clouds are a direct output of many 3D sensors (like LiDAR scanners or multi-view stereo algorithms) and were widely used for reconstruction before surface meshing. Their simplicity is a strength – no topology or connectivity is assumed – which makes them easy to acquire and merge from different views.
+
+However, their lack of connectivity means surfaces are only implicitly defined; rendering point clouds can produce gaps or require interpolation (e.g., splatting each point as a disk or Gaussian). Early computer graphics explored point-based rendering for efficiency (e.g., Grossman & Dally 1998; Rusinkiewicz & Levoy 2000's QSplat for adaptive point rendering).
+
+In recent years, deep learning networks like PointNet (Qi et al., 2017) process point clouds directly, and techniques like 3D Gaussian splatting (Kerbl et al., 2023) model surfaces as oriented point primitives. Notably, NeRF itself does not use point clouds directly, but some later NeRF variants and editing tools convert NeRF to point sets for faster rendering or manipulation.
+
+Mesh-Based Surfaces
+~~~~~~~~~~~~~~~~~~~~~~
+
+Perhaps the most common 3D representation in graphics is a mesh, typically a collection of vertices connected into polygons (usually triangles) forming surfaces. Meshes are efficient to render with hardware and are the backbone of traditional graphics pipelines.
+
+Decades of multi-view stereo (MVS) research were devoted to reconstructing meshes from images: structure-from-motion gives sparse points and cameras, then MVS densifies into either point clouds or directly into mesh surfaces. Techniques like Poisson Surface Reconstruction (Kazhdan et al., 2006) convert point clouds to watertight meshes, and well-established algorithms (e.g., COLMAP by Schönberger & Frahm, 2016) produce textured meshes for real scenes.
+
+Meshes excel at representing explicit geometry with high precision and are memory-efficient (complex surfaces can be represented by millions of triangles, far less data than a comparable voxel grid). However, they mostly capture surfaces (the "shell" of objects), not their volumetric interior or translucent materials. View-dependent appearance like specular highlights or transparency is also not inherent in a static textured mesh; additional material models are required to render such effects.
+
+These limitations of mesh-based approaches set the stage for NeRF's implicit volumetric method, which naturally handles volume density and view-dependent color. Nonetheless, meshes remain important for comparison – e.g., NeRF's accuracy is often measured by extracting a mesh via iso-surface of density and comparing to scanned geometry, and recent methods combine NeRF with mesh-based human models (like SMPL) to get the best of both worlds.
+
+Light Fields and Volumetric Rendering
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+NeRF is deeply connected to concepts from light field rendering and volumetric rendering in graphics. A light field represents the radiance traveling in every direction through every point in space. Adelson and Bergen (1991) introduced the plenoptic function as a 7D function describing light rays (with dimensions for 3D position, 2D direction, time, and wavelength). In free space, light fields reduce to 4D (two angles for direction, two for viewpoint on a focal plane).
+
+Classic work by Levoy and Hanrahan (1996) and Gortler et al. (1996) showed that if you capture a dense set of views of a scene (effectively samples of the 4D light field), you can render new views by interpolation. However, dense sampling is impractical for large baselines, so light field methods often suffered blur if input views were sparse. NeRF can be seen as learning a continuous light field (actually a radiance field with density) from sparse views, thereby interpolating the plenoptic function in a data-driven way rather than storing a huge 4D dataset explicitly.
+
+In volumetric rendering, a scene is represented as a field of emitting/absorbing particles (volume density and color). Kajiya and von Herzen (1984) and Max (1995) established the classic volume rendering equation: through a volume, its color is an integral of emitted radiance attenuated by the accumulated density (treating density as causing exponential attenuation of light). In formula form, for a camera ray :math:`\mathbf{r}(t)=\mathbf{o}+t\mathbf{d}` with near and far bounds :math:`t_n, t_f`, the expected color is:
+
+.. math::
+
+   C(r)=\int_{t_n}^{t_f}T(t) \sigma(\mathbf{r}(t)) \mathbf{c}(\mathbf{r}(t),\mathbf{d}) dt,
+
+where :math:`\sigma(\mathbf{x})` is the volume density at point :math:`\mathbf{x}` (interpreted as the differential probability of a ray terminating at :math:`\mathbf{x}`), :math:`\mathbf{c}(\mathbf{x},\mathbf{d})` is the radiance (color) emitted at :math:`\mathbf{x}` in direction :math:`\mathbf{d}`. :math:`T(t)=\exp(-\int_{t_n}^{t}\sigma(\mathbf{r}(s))ds)` is the transmittance (the probability the ray travels unoccluded up to :math:`t`). This equation can be thought of as alpha compositing many translucent slices.
+
+Rendering is achieved by numerically approximating this integral (e.g., by ray-marching through the volume and compositing front-to-back). Importantly, this rendering process is differentiable – a small change in density or color at any point affects the rendered pixel continuously – which is a key enabler for NeRF to learn from images.
+
+Volumetric approaches have been used in computer vision before NeRF as well, such as visual hulls (Laurentini, 1994) or space carving (Kutulakos & Seitz, 2000) that carve a voxel volume using silhouettes or photo-consistency. NeRF's core innovation was to combine a volumetric rendering formulation with a neural implicit representation and optimize it with gradient descent from images. Thus, understanding classical volume rendering is fundamental to understanding NeRF.
+
+These foundational methods – voxel grids, point clouds, meshes, and light field/volumetric rendering – each contributed ideas to NeRF. Voxel volumes and volumetric rendering inspired NeRF's density+color field and integration technique; point clouds and meshes highlighted the need for representations that can capture fine details and view-dependent effects; light fields provided a target (the plenoptic function) that NeRF effectively learns to approximate. NeRF can be viewed as a neural, continuous extension of earlier volumetric scene representations, optimized using the tools of modern deep learning.
+
+Emergence of Neural Radiance Fields (NeRF)
+--------------------------------------------
+
+Neural Radiance Fields were introduced by Mildenhall et al. in their 2020 paper "NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis." This work demonstrated, for the first time, that an MLP (multilayer perceptron) could implicitly encode a complete 5D representation of a complex scene – 3D spatial coordinates :math:`(x,y,z)` plus 2D viewing direction :math:`(\theta,\phi)` – such that photorealistic images from arbitrary viewpoints can be rendered via volume rendering. The original NeRF achieved a step-change in view synthesis quality, surpassing prior methods like deep voxel-based volumes (Lombardi et al. 2019), multi-plane images (MPIs in LLFF by Mildenhall et al. 2019), or learned mesh-based rendering, especially on scenes with intricate geometry and reflective materials.
+
+Core Idea
+~~~~~~~~~~~~~
+
+NeRF represents a scene as a continuous function :math:`F_\Theta(\mathbf{x}, \mathbf{d}) \mapsto (\sigma, \mathbf{c})` – implemented by a neural network with parameters :math:`\Theta` – that maps any 3D point :math:`\mathbf{x}` and viewing direction :math:`\mathbf{d}` to a density :math:`\sigma` (volume density at that point) and an emitted color :math:`\mathbf{c}` (an RGB value). In practice, :math:`\mathbf{d}` is typically parameterized as a unit vector or two angular coordinates. This function is fully implicit; there is no explicit voxel grid or mesh stored.
+
+The network is optimized such that when these predicted values are rendered along any camera ray using the volume rendering integral, the resulting pixel color matches the input image. NeRF requires input images with known camera poses (e.g., from structure-from-motion) but no other geometry input – the geometry and appearance are learned by minimizing the photometric error between rendered and real pixels.
+
+Training Procedure
+~~~~~~~~~~~~~~~~~~~~
+
+The original NeRF training loop randomly samples camera rays from the input images, and for each ray samples a set of points :math:`\{\mathbf{x}_i\}` along it. The network is queried at each sample to produce :math:`\sigma_i` and :math:`\mathbf{c}_i`, and these are composited with the volume rendering equation to produce a predicted pixel color :math:`C_{\text{pred}}`. The loss is simply the mean squared error (MSE) between :math:`C_{\text{pred}}` and the true pixel color :math:`C_{\text{gt}}`. Because volume rendering is differentiable, gradients with respect to the network parameters :math:`\Theta` can be computed and used to update the MLP. Over many iterations (typically 100k+), the network converges to represent the scene.
+
+Mildenhall et al. showed that this process, while slow, produces significantly higher fidelity novel views than prior approaches – in their results, NeRF achieved ~PSNR 31–40 on synthetic scenes, versus prior state-of-the-art ~22–34. Qualitatively, NeRF's renderings were crisp and could reproduce even fine details and specular highlights that competing methods blurred or missed.
+
+NeRF Architecture
+~~~~~~~~~~~~~~~~~~~~
+
+The MLP used in NeRF is a fully-connected network (no convolutions) with depth 8–10 layers and ~256 channels per layer for the main branch. A crucial aspect was the use of a positional encoding on the inputs to enable the network to represent high-frequency details. The network outputs density after some layers, and also produces a feature vector that, together with the view direction, flows into subsequent layers to output the view-dependent color.
+
+This architecture allows the network to model effects like specular reflections by making color a function of viewing direction :math:`\mathbf{d}` (while density :math:`\sigma` is view-independent). Empirically, including view direction was important: without it, the model reduces to a pure Lambertian scene and cannot reproduce highlights. The NeRF authors illustrated this by showing that training without view input fails to learn the shiny reflections on a bulldozer object.
+
+Hierarchical Sampling
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+A notable training trick in NeRF is hierarchical sampling. Rather than using a fixed sampling of points along each ray, NeRF employs a two-stage process: a coarse network predicts a rough volume distribution, and then a fine network focuses samples in regions likely to contribute (e.g., where density is non-negligible).
+
+In practice, the coarse model is identical in architecture; it is trained simultaneously using a small number of stratified samples along the ray. It produces a "proposal" distribution (essentially weights proportional to :math:`\sigma`) from which additional sample points are drawn for the fine model. The fine model then outputs the final color.
+
+This hierarchical approach acts as an importance sampling scheme, improving efficiency and also acting as regularization. Mildenhall et al. noted that it was one of two key improvements (the other being positional encoding) needed to get high-quality results. The result is that NeRF can represent very high-resolution details despite using a relatively compact MLP – because it samples continuously and not on a fixed grid, it is not limited to a specific voxel resolution. Essentially, NeRF showed that an overfit neural network can serve as a powerful compression of a scene's light field.
+
+Original Results
+~~~~~~~~~~~~~~~~~~
+
+The NeRF paper demonstrated compelling results on both synthetic data (objects rendered with complex materials) and real images (photos of scenes captured with a handheld phone). For instance, on the Synthetic-NeRF benchmark (8 Blender scenes with path-traced images), NeRF achieved ~PSNR 31, a ~5 dB improvement over prior methods like DeepVoxels and SRN. On the real LLFF dataset (8 real-world captured scenes), NeRF also outperformed local light field methods, especially in preserving fine geometry (e.g., thin structures like leaves, which NeRF rendered consistently without "floating" artifacts that LLFF showed).
+
+The downside was speed: NeRF required dozens of hours to train per scene (often 1–2 days) and minutes to render a single image with hundreds of MLP evaluations per ray. Nonetheless, the breakthrough in visual fidelity sparked an explosion of research extending and improving NeRF.
+
+
+Theoretical and Mathematical Analysis of NeRF
+-------------------------------------------------
+
+In this section, we examine NeRF's formulation in detail – from the volume rendering equations it employs, to the positional encoding and network architecture that allow it to succeed, and the loss functions and optimization strategies used.
+
+Volume Rendering Formulation in NeRF
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+NeRF's rendering process relies on classical volume rendering. As described earlier, the color of a camera ray :math:`C(\mathbf{r})` is obtained by integrating the radiance emitted along the ray with appropriate attenuation. For completeness, we restate the continuous formulation and then show how NeRF implements it discretely.
+
+**Continuous volume rendering equation**: For a ray :math:`\mathbf{r}(t) = \mathbf{o} + t\mathbf{d}` from camera origin :math:`\mathbf{o}`, in direction :math:`\mathbf{d}`, passing through the scene from depth :math:`t_n` to :math:`t_f`, the integral form is:
+
+.. math::
+
+   C(r)=\int_{t_n}^{t_f}\exp\left(-\int_{t_n}^{t}\sigma(\mathbf{r}(s)) ds\right) \sigma(\mathbf{r}(t)) \mathbf{c}(\mathbf{r}(t),\mathbf{d}) dt.
+
+Here :math:`\sigma(\mathbf{x})` is the density at point :math:`\mathbf{x}` and :math:`\mathbf{c}(\mathbf{x},\mathbf{d})` is the emitted color. The inner exponential is the transmittance :math:`T(t)` from :math:`t_n` up to :math:`t`, meaning the fraction of light that hasn't been absorbed before reaching :math:`t`. Intuitively, this equation accumulates color contributions from each differential segment of the ray, weighted by the probability that the ray has not been occluded prior to that segment. This is analogous to compositing translucent layers: :math:`\sigma` acts like an opacity at each point, and :math:`\mathbf{c}` like the color of a glowing particle at that point.
+
+**Discrete approximation**: NeRF implements this integral via numerical quadrature. It samples a set of :math:`N` points :math:`\{t_i\}_{i=1}^N` along the ray (sorted in increasing depth). Typically, NeRF draws stratified random samples in each of :math:`N` equal depth intervals in :math:`[t_n,t_f]` for the coarse pass, and then uses importance sampling for the fine pass. Given sample points and their densities and colors :math:`(\sigma_i, \mathbf{c}_i) = F_\Theta(\mathbf{x}_i,\mathbf{d})`, the discrete color is computed as:
+
+.. math::
+
+   \hat{C}(r)=\sum_{i=1}^{N}T_i \alpha_i \mathbf{c}_i, \quad \text{where} \quad \alpha_i=1-\exp(-\sigma_i\delta_i),
+
+:math:`T_i = \prod_{j=1}^{i-1}(1-\alpha_j)`, and :math:`\delta_i = t_{i+1}-t_i` is the distance between adjacent sample points. In words, :math:`\alpha_i` is the probability of the ray terminating in segment :math:`i` (given density :math:`\sigma_i` over interval :math:`\delta_i`) and :math:`T_i` is the transmittance up to the start of segment :math:`i`. This formula is essentially the standard front-to-back alpha compositing: each sample's color contributes, but exponentially farther samples (or those behind high density) contribute less.
+
+NeRF's implementation ensures that as :math:`N \to \infty` with appropriately small :math:`\delta_i`, :math:`\hat{C}(\mathbf{r})` converges to the true integral :math:`C(\mathbf{r})`. In practice :math:`N` is on the order of 64 (coarse pass) + 128 (fine pass). The discrete formulation is differentiable with respect to the network outputs :math:`\sigma_i, \mathbf{c}_i` since it's just a chain of multiplications and exponentials. Thus, one can backpropagate the image error gradients through :math:`\hat{C}(\mathbf{r})` to each sample's properties and further into the network parameters :math:`\Theta`.
+
+**Interpretation**: The density :math:`\sigma(\mathbf{x})` learned by NeRF often corresponds to actual scene surfaces, but blurred into a soft occupancy volume. In theory, a scene with opaque surfaces would have :math:`\sigma \to \infty` at the surface (a Dirac delta), but NeRF's MLP represents a smoothed version of geometry (like a translucent shell). Training encourages the MLP to concentrate density in thin regions that explain the occlusions in the images, but due to the continuous representation and MSE loss, it typically finds a reasonable approximation (surfaces of a few mm thickness with high density). The color :math:`\mathbf{c}(\mathbf{x},\mathbf{d})` represents the view-dependent radiance, which can encode effects like specular reflectance by varying with :math:`\mathbf{d}`.
+
+The use of volume rendering (as opposed to a surface rendering equation) was a clever choice: it bypasses the need to explicitly identify surface geometry or do rasterization. Additionally, volume rendering's differentiability and continuity make optimization smoother. Max (1995) noted that volumetric compositing is equivalent to traditional alpha blending for emission-absorption models, which NeRF leverages.
+
+It's worth emphasizing that NeRF does not model more complex light transport (no shadows, indirect light, or reflection between surfaces); it assumes each point emits independently. Essentially, NeRF deals with radiance as observed from the cameras, baking in all lighting effects present in the images. This is fine for view interpolation but means NeRF is not inherently a physical model of lighting – it won't automatically handle changing illumination, etc., without extensions.
+
+Positional Encoding and Neural Network Architecture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+One of the key technical contributions in NeRF is the use of positional encoding (PE) to map input coordinates to a higher-dimensional space before feeding them to the MLP. This addresses the issue that standard neural networks are biased toward learning low-frequency functions (Rahaman et al., 2019) – a phenomenon that would cause an MLP to struggle with representing fine details like sharp edges or high-frequency textures. NeRF's positional encoding, also known as a type of Fourier feature mapping (Tancik et al., 2020), enables the network to represent high-frequency variation by providing it with sinusoidal basis functions of the inputs.
+
+**Definition**: For each component of a 3D coordinate :math:`\mathbf{x}=(x,y,z)` and for each component of the 2D viewing direction :math:`\mathbf{d}`, NeRF applies the encoding:
+
+.. math::
+
+   \gamma(p)=(\sin(2^0\pi p),\cos(2^0\pi p),\sin(2^1\pi p),\cos(2^1\pi p),\ldots,\sin(2^{L-1}\pi p),\cos(2^{L-1}\pi p)).
+
+This is done separately for each scalar coordinate :math:`p` (with :math:`L` frequencies). Mildenhall et al. used :math:`L=10` for position components and :math:`L=4` for direction, meaning the 3D position is expanded to :math:`3\times 2L = 60` dimensions and the 3D direction to :math:`3\times 2L = 24` dimensions (sometimes they also include the raw :math:`p` as well). The intuition is that these sinusoids of increasing frequency allow the network to produce outputs that vary rapidly with input – the first few frequencies capture coarse variation, the higher frequencies allow fine detail. Without PE, a deep network would tend to approximate a low-frequency version of the target function, requiring many more layers or neurons to encode sharp changes. Empirically, NeRF with PE could fit high-detail scenes whereas the same network without PE produced blurry results.
+
+The positional encoding can be viewed as providing a rich set of basis functions that span a wide range of spatial frequencies, which the MLP can then linearly combine in its first layer. Tancik et al. (2020) showed that a random Fourier feature mapping of inputs effectively gives the network a kernel that is capable of representing high-frequency variations in the target function. NeRF's chosen frequencies :math:`2^k` (for :math:`k=0,...,L-1`) are a deterministic mapping (not learned), but some later works make the encoding learned or use multiresolution hash grids (see Instant NGP in the extensions section).
+
+**Network architecture**: After positional encoding, the encoded position (60-D) is input to an 8-layer MLP (256 units each) with ReLU activations. They include a skip connection that feeds the input of layer 1 into layer 5 (concatenating to the feature vector) – this helps gradients flow and allows later layers to directly access the original coordinates (which can be useful for very fine details that might otherwise be "forgotten" after many layers). The MLP outputs a single scalar :math:`\sigma` (density) and a 256-D feature vector. This feature is concatenated with the encoded viewing direction (24-D) and passed to a final 1-layer MLP (128 units) that outputs the RGB color.
+
+So effectively the network is two-headed: one head produces density (view-independent), and one produces view-dependent color. The separation ensures that the density (geometry) doesn't arbitrarily change with viewing angle, which would make multi-view consistency impossible. Instead, all view-dependent effects must be explained by the color head. In practice, the color head can model phenomena like specular reflection by learning functions that vary with :math:`\mathbf{d}`. For example, in a shiny region, the density will represent the surface location, and the color head will output brighter color for view directions near the mirror-reflection direction of a light source, reproducing a highlight.
+
+**Activation functions**: NeRF used ReLU activations in most layers. The density output used ReLU (or its exponential for positivity – many implementations use an exponential on the raw density output to ensure :math:`\sigma \ge 0` since density should be non-negative). The color output used a sigmoid or simply ReLU-clamped outputs to [0,1] (since they normalized pixel values). They also added a small noise to predicted densities during training to stabilize and discourage "floater" artifacts (a form of regularization).
+
+**Why an MLP?** The choice of a fully-connected network to represent a function over :math:`\mathbb{R}^5` is interesting. A large enough MLP is a universal function approximator, and with positional encoding, it can approximate the highly complex radiance field. Alternative choices could have been a large 5D tensor (impossible to store for high resolution) or some hybrid (which later works explore). The MLP has the benefit of being memory-efficient (NeRF's network is only ~5 MB, much smaller than storing a detailed voxel grid). It's also continuous – it can be sampled at arbitrary coordinates. However, MLP inference is relatively slow, which is why rendering took so long. But at training time, the cost was manageable with modern GPUs since each sample is independent and MLPs vectorize well.
+
+Loss Function and Optimization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Loss function**: NeRF's loss is straightforward: for each sampled ray (pixel), the rendered color :math:`\hat{C}(\mathbf{r})` is compared to the ground truth :math:`C_{\text{gt}}` from the input image, and they minimize the sum of squared errors (L2 loss):
+
+.. math::
+
+   L=\sum_{\text{rays}}\|\hat{C}(\mathbf{r})-C_{\text{gt}}(\mathbf{r})\|_2^2.
+
+They observed that this simple photometric loss was sufficient to achieve excellent results. No explicit regularization on the learned densities or colors was needed (aside from the noise added to :math:`\sigma` early in training to reduce floaters, and an implicit regularization from the coarse-to-fine sampling). The reasoning is that any deviation of the predicted image from the real image will cause a direct loss, and because the scene must be explained from all viewpoints, the solution that minimizes error is usually to correctly model the scene's geometry and appearance.
+
+There is, however, an inherent ambiguity in how the network can explain a set of images – e.g., a brighter surface with lower opacity versus a darker surface with higher opacity can yield the same pixel colors. NeRF largely avoided these shape-radiance ambiguities by how the volume rendering formulation is set up and by injecting noise to densities (which pushes the solution toward finding opacity at surfaces rather than floating semi-transparent clouds). NeRF++ (discussed later) analyzed these ambiguities in more detail.
+
+**Optimization**: NeRF is trained using stochastic gradient descent (Adam optimizer) on the above loss. The training is done per-scene (the network is not meant to generalize to new scenes; it "overfits" to one scene). Typically, a batch consists of a number of random rays from the training images (for example, each batch might take 1024 rays from random images). Each ray samples e.g., 64 points for the coarse model and 128 for the fine model; those are fed through the network. The network weights are updated by Adam with a learning rate that may start around :math:`5\times10^{-4}` and decay over time. The authors reported training 100k – 300k iterations, which for their implementation took on the order of 1–2 days on a GPU per scene (the exact time depending on image resolution and number of rays per batch). In contrast, a competing method LLFF took only minutes to process a scene but at the cost of much lower quality. Thus, NeRF introduced a new time vs. quality trade-off in 3D reconstruction: one can invest significant compute to optimize an implicit model that then yields exceptional quality novel views.
+
+One important detail: NeRF requires accurate camera poses for all images. These are usually obtained via structure-from-motion (SfM) tools like COLMAP. NeRF does not estimate poses itself (though later works have tackled pose refinement within NeRF). If the poses are wrong, NeRF's results degrade because the network is trying to explain inconsistent viewpoints.
+
+In summary, the original NeRF formulation is elegant in its simplicity: a plain L2 reconstruction loss on images, a differentiable volumetric rendering procedure, and a simple fully-connected network with a frequency encoding. This simplicity belies the complexity of what the network is achieving: essentially performing a form of analysis-by-synthesis – it explains the input images by constructing a model that could have generated them. By training until convergence, NeRF's model often encodes the scene's geometry (in its density field) and appearance (in its color field) very accurately.
+
+Major Advancements and Extensions of NeRF
+-----------------------------------------
+
+Since the original NeRF paper, there has been a surge of research addressing NeRF's limitations, improving its quality, speed, and extending it to new domains. We outline several major developments: anti-aliasing and scene scaling (mip-NeRF, NeRF++), efficiency improvements (Instant Neural Graphics Primitives, PlenOctrees), dynamic scenes (deformable/dynamic NeRFs for moving content), and integration with human body models (enabling controllable human avatars). Each of these advances builds on NeRF's foundation, adjusting the representation or training procedure to broaden its applicability.
+
+Anti-Aliasing and Unbounded Scenes: mip-NeRF and NeRF++
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**NeRF++ (2020)**: One assumption in NeRF was that scenes are bounded (contained in a finite volume). For 360° captures of objects, NeRF worked well, but for unbounded scenes (e.g., outdoor panoramas where background goes to infinity), NeRF struggled. NeRF++, introduced by Zhang et al. (2020), analyzed NeRF and proposed improvements for these cases. NeRF++ addressed the parametrization issue when modeling large scenes by splitting the space into an "inner region" (near the cameras) and an "outer region" (far background) and using different parameterizations for each. For the outer region (like sky or distant scenery), they used an inverted sphere parameterization (mapping rays to a finite sphere for background). This allowed NeRF++ to render scenes with an appropriate treatment of infinity (the background essentially acts like a distant environment map).
+
+They also discussed the shape-radiance ambiguity: the fact that an incorrect geometry combined with adjusted color could still explain images. NeRF++ noted that NeRF inherently avoids some ambiguities by how the volume rendering works (preferring the closest surface along a ray to take the color), but to further discourage incorrect solutions they added a regularization (random noise) to the density output during training. The result was improved fidelity for 360° outdoor captures – NeRF++ could handle a camera that spins around on the spot, seeing a full panorama, whereas NeRF (original) would have trouble representing the distant parts. NeRF++ also demonstrated better quality on thin structures and avoided some artifacts present in NeRF.
+
+**mip-NeRF (2021)**: Another issue with NeRF is aliasing: if a scene has fine details (e.g., a picket fence) and input images are at different resolutions or if a render camera zooms out, NeRF can produce blurry or flickering results. This is because NeRF sampled only a single ray per pixel, effectively point-sampling the scene function. The straightforward fix of supersampling (many rays per pixel) would be extremely expensive for NeRF (since each ray requires hundreds of network queries).
+
+Mip-NeRF (Barron et al., 2021) introduced a solution by rendering cone-shaped rays instead of infinitesimal rays. They treat each camera ray as a cone that covers a finite area of the scene, especially noticeable when a pixel covers a large area in the scene (e.g., distant objects). Instead of sampling a single point :math:`\mathbf{x}` along a ray, mip-NeRF samples a conical frustum and approximates the integral of the NeRF function over that volume. Concretely, they represent a conical frustum as a multivariate Gaussian in space and derive a closed-form integrated positional encoding (IPE) that computes :math:`E[\gamma(\mathbf{x})]` – the expected positional encoding over that Gaussian distribution. This IPE can be fed into the network to produce outputs that are effectively averaged over the cone's cross-section.
+
+The result is an anti-aliased rendering: high-frequency details smaller than a pixel are appropriately averaged (not erroneously point-sampled), preventing Moiré patterns or excessive blur when zooming. Mip-NeRF also merged the coarse and fine networks into one – since they now sample multiple levels of detail inherently by the cone integration, a single network sufficed (making it actually slightly faster and smaller than NeRF). Experiments showed significant improvement: on a multiscale synthetic dataset, mip-NeRF reduced error ~60% compared to NeRF. It also was more robust when the training images had varying distance or resolution (which would confound NeRF).
+
+Mip-NeRF is fully backwards compatible with NeRF – if all pixels are the same scale, it reduces to NeRF. In essence, mip-NeRF introduced a level of scale awareness into NeRF's representation, borrowing ideas from mipmapping in classic graphics (hence the name). An extension, Mip-NeRF 360 (Barron et al. 2022), later combined mip-NeRF and NeRF++ ideas to handle unbounded, anti-aliased 360° scenes, introducing a non-linear scene parametrization and other improvements.
+
+In summary, NeRF++ and mip-NeRF tackled two important practical issues: representing unbounded scene extent and handling aliasing/mipmapping. These works improved NeRF's accuracy (by resolving ambiguities and alias artifacts) and applicability (to outdoor and zooming scenarios) without fundamentally changing the NeRF concept of an MLP + volume render. Both have become standard components in subsequent NeRF systems.
+
+Efficiency Improvements: Instant NeRF and PlenOctrees
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The original NeRF, while impressive in quality, was computationally intensive. Training took hours to days per scene, and rendering even a single image could take seconds to minutes on a GPU (since hundreds of network evaluations are needed per pixel). A major thrust of research has been making NeRF faster – both faster to train and faster to render – to bring it closer to real-time use.
+
+**Instant Neural Graphics Primitives (Instant-NGP, 2022)**: A breakthrough in speed came from Müller et al. (NVIDIA) with Instant Neural Graphics Primitives, often called Instant NeRF. They introduced a new input encoding and data structure that accelerates learning by orders of magnitude. Instead of a fixed sinusoidal positional encoding, they used a multi-resolution hash grid of trainable feature vectors. In practice, they allocate several levels of a sparse voxel grid (at exponentially increasing resolutions); each level stores a hash table of feature vectors. An input coordinate :math:`\mathbf{x}` is mapped to each level by finding the surrounding voxel's feature (using a hash of the coordinates to index the table), and trilinearly interpolating features if needed. These features from all levels are concatenated to form the input to a small MLP. The hash tables are trainable parameters that are optimized along with the MLP.
+
+This approach dramatically reduces the network size (their MLP had maybe only a few layers with tens of neurons) because the spatial complexity is mostly captured by the grid, not the neural network. The multi-resolution aspect ensures both coarse and fine details can be represented. Müller et al. implemented this with a highly optimized CUDA code, achieving a combined speedup of several thousand-fold in some cases: training a NeRF in a few seconds and rendering at ~60 FPS in 1080p. Essentially, Instant-NGP trades some memory (for the feature grids) to gain immense speed. The quality remained high – in fact often on par or even better than original NeRF – because the grid can represent high-frequency details more directly than a deep MLP.
+
+This work showed that NeRFs don't have to be slow. The hash grid idea is a form of learned multiresolution voxel representation, and it has inspired many follow-ups (it's related to earlier concepts like Sparse Voxel DAGs and Octrees, but with learned features and a hash to keep it memory-efficient). To put numbers: Instant NeRF can train on the NeRF synthetic dataset in a few seconds to a minute (where NeRF took 1-2 days). It made NeRF interactive, enabling uses like quickly scanning an object with a phone and getting a 3D model immediately (NVIDIA even released a tool around it). The approach also extended beyond radiance fields (they applied it to SDFs, images, etc., hence "neural graphics primitives"). The key takeaway is that explicit spatial feature structures (like grids or caches) can massively accelerate NeRF, moving away from the heavy MLP-only approach.
+
+**PlenOctrees (2021)**: Another approach to speed is to accelerate rendering by converting a trained NeRF into an explicit data structure that is faster to ray-march. PlenOctrees (Alex Yu et al., 2021) proposed taking a trained NeRF and precomputing an octree that stores radiance field information. Specifically, they optimized NeRF to output spherical harmonics (SH) coefficients for color instead of raw RGB. A spherical harmonic basis can represent view-dependent lighting (like a low-frequency approximation of the reflectance lobes). By doing so, they effectively remove the view direction input from the network – the NeRF outputs, for each point, a density and SH coefficients encoding how color varies with view.
+
+These outputs can then be sampled onto a 3D octree: each node in the octree contains a density and a set of SH coefficients for color. The octree can be rendered by standard volume rendering techniques extremely fast: since it's just a bunch of voxels, one can traverse the octree along rays (skipping empty space efficiently) and at each sample compute color by evaluating the SH (a small dot product) instead of an expensive network. The result was real-time rendering: PlenOctrees achieved >150 FPS at 800×800 resolution on a high-end GPU, which is >3000× faster than the original NeRF rendering. They reported even mobile devices could render at tens of FPS.
+
+Importantly, this speed gain came after relatively slow training (they still had to train a NeRF or similar first). But they also showed a further step: one can optimize the octree directly (fine-tuning the voxel data to minimize the error) to potentially bypass some of the neural network training. The quality of PlenOctree rendering was on par with NeRF (since it was distilled from NeRF). View-dependent effects were preserved thanks to the SH representation. Essentially, PlenOctrees traded the compactness of NeRF for speed: the octree representation can be quite large in memory (hundreds of MB for a scene, versus NeRF's 5 MB network) because it explicitly stores a volume. But for applications where inference speed is crucial (like VR/AR), this is a worthwhile trade-off.
+
+Other notable efficiency improvements include Plenoxels (Fridovich-Keil et al. 2022) which cut out the network entirely and directly optimized a sparse grid of density + spherical harmonic coefficients, achieving fast training and fast rendering (within seconds, similar to Instant-NGP, but with a simpler optimization scheme). Also, NSVF (Neural Sparse Voxel Fields) by Liu et al. (2020) used a sparse voxel octree during training to constrain NeRF's space and accelerated rendering via a hybrid explicit-implicit approach. The general trend is moving toward explicit data structures (grids, octrees, etc.) to assist or replace the neural network. However, even these approaches owe a debt to NeRF's formulation: they typically still leverage volumetric rendering and often keep a small MLP for interpolation.
+
+In summary, thanks to these innovations, we now have NeRF-like models that are several orders of magnitude faster than the original, making it feasible to use NeRFs in real-time applications. Instant-NGP in particular has become a go-to method for quickly getting NeRF results, and PlenOctrees/Plenoxels demonstrate that once a scene is learned, it can be converted for real-time display. The performance gains came with some trade-offs (memory or preprocessing), but ongoing research continues to close the gap, aiming for both compactness and speed.
+
+Dynamic and Deformable NeRFs (D-NeRF, Nerfies, NSFF, etc.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The original NeRF (and most early derivatives) assumed a static scene – the input images are all capturing a scene where nothing but the camera moves. Extending NeRF to handle dynamic scenes (where the scene changes over time, such as moving objects or people) is a crucial step toward applications like 3D video, VR/AR with dynamic content, and performance capture. Several key works have addressed this, introducing Dynamic NeRFs that add time or deformation as an additional dimension in the radiance field.
+
+**D-NeRF (2020)**: One of the first such works was D-NeRF: Neural Radiance Fields for Dynamic Scenes by Pumarola et al. (2021). D-NeRF's setting is a monocular video of a moving scene (e.g., a person moving, or a non-rigid object deforming) with known camera trajectory. The challenge is that each frame is a different scene state, so you can't just throw all images into a static NeRF – you'd get blur or an average of all states. D-NeRF's solution is to encode time as an input and learn a continuous deformation model. They consider time :math:`t` as an extra input coordinate and split the problem into two parts: (1) a canonical NeRF (scene representation at a reference time), and (2) a deformation field that maps any point from canonical space to its pose at time :math:`t`.
+
+In other words, D-NeRF learns a function :math:`F_{\text{canon}}(\mathbf{x}) = (\sigma,\mathbf{c})` for the scene in canonical pose, and another function :math:`G(\mathbf{x}, t) = \Delta \mathbf{x}` that warps a 3D point from canonical to the configuration at time :math:`t`. When rendering a ray at time :math:`t`, they first map sample points from the live frame back to canonical space, query the NeRF there, and composite as usual. Both the NeRF and deformation network are trained jointly to minimize the photometric error across all frames. This is akin to a motion-compensated NeRF – it separates shape from motion.
+
+D-NeRF demonstrated the ability to render novel views at novel times: one can smoothly interpolate time (getting slow-motion or future frames) and view the scene from any angle, effectively reconstructing a 4D space-time radiance field. The results included dynamic synthetic scenes (like a moving humanoid shape) and simple real sequences. A key difficulty is that with only a single camera, the network must learn to infer occluded regions over time – the canonical representation helps because each point's true color is learned from when it's visible in some frame. D-NeRF had to combat issues of ambiguity (it could trade off deforming geometry vs. changing colors). They found it important to regularize the deformation field (e.g., assume it's smooth or small) to get plausible geometry. Overall, D-NeRF showed the viability of NeRF for dynamic scenes with non-rigid motion, given multi-view or time-varying input.
+
+**Nerfies (Deformable NeRF, 2021)**: Park et al. concurrently developed Nerfies, focusing on casually captured human portraits (selfies) with slight movement. Their approach also introduced a continuous deformation field :math:`W(\mathbf{x}, t)` that warps points into a canonical space. They found that a simple translation field per point was not sufficient and used an SE(3) (rigid) deformation per point to allow rotations (improving stability). They also introduced an elastic regularization inspired by as-rigid-as-possible deformation in graphics, to keep the learned warps reasonable. Nerfies optimized both the canonical radiance field and the deformation field, and used a coarse-to-fine strategy to avoid bad local minima.
+
+The term "nerfies" was used to describe the resulting animated NeRF models of people, which could be rendered from new viewpoints. Nerfies showed convincing results on faces making expressions and small head motions – things where the motion is non-rigid but not too large. They also built a two-camera capture rig for evaluation (so they had two views at the same time for validation). Compared to D-NeRF, Nerfies put more emphasis on regularizing deformations (using elasticity and enforcing that distant points don't move too differently). The two approaches are similar in spirit and were developed simultaneously. Both demonstrate that adding a learned deformation per frame lets NeRF handle non-rigid scene changes.
+
+**Neural Scene Flow Fields (2021)**: Li et al. took a slightly different route with NSFF: Neural Scene Flow Fields for dynamic view synthesis. Instead of an explicit canonical space, they estimated 3D scene flow between consecutive frames and used it to align points. Essentially, NSFF learns per-frame NeRFs plus forward/backward optical flow in 3D, ensuring temporal consistency by penalizing differences between flow-predicted positions and NeRF-predicted geometry. This method was able to take a monocular video and produce a dynamic NeRF without multi-view at each time, by cleverly using the scene flow as a supervisory signal for geometry. NSFF could handle more challenging scenarios like dynamic outdoor scenes (e.g., cars and people moving in street scenes captured by a single driving camera) by leveraging the regularizing power of scene flow.
+
+There are many other dynamic NeRF extensions: NR-NeRF (Tretschk et al. 2021) which also did non-rigid with regularization, Video NeRF approaches that use multi-view videos, Time-of-Flight NeRF (attaching time dimensions), etc. A particularly challenging scenario is where even the lighting changes over time – most dynamic NeRFs assume constant illumination. Some works address that by decomposing radiance into reflectance and illumination, but that's beyond our scope here.
+
+Common challenges in dynamic NeRFs: ensuring temporal coherence, dealing with occlusions, and the sheer increase in data/complexity (a 5D radiance field becomes 6D with time). Most solutions introduce either an explicit deformation model (which imposes coherence) or a prior like scene flow or a parametric model (e.g., body model, next section). Many dynamic NeRFs also require more data – e.g., multi-view video, or at least knowing the motion via another method – because with a single video there's an inherent ambiguity in what's moving vs. what's static (structure-from-motion itself becomes tricky if the scene moves).
+
+Despite these challenges, by 2021 we saw that NeRFs can indeed be made to handle dynamic scenes, opening the door to 4D reconstruction (3D + time). For example, D-NeRF's learned canonical model plus deformation essentially yields a 3D model that can be animated (within the range of observed motions) – a primitive form of a captured 3D animation.
+
+Neural Radiance Fields for Human Modeling (with SMPL and Body Models)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+One high-value application of NeRFs is capturing human performances in 3D – for virtual telepresence, VFX, games, etc. However, human bodies are non-rigid and can take on many poses, so a NeRF of a person in one pose might not generalize to other poses. To address this, researchers have combined NeRFs with parametric human body models like SMPL (Loper et al., 2015), which provides a skeletal pose and shape prior for the human. The idea is to leverage the known structure of human geometry to constrain the NeRF, making it controllable by pose parameters and generalizable to new poses.
+
+**Neural Body (2021)**: Peng et al. introduced Neural Body, which embeds a deformable human model (SMPL) into a NeRF representation. In Neural Body, each vertex of the SMPL mesh has a learned latent feature vector (this is a "structured latent code" attached to the body). For a given frame with a certain pose, the SMPL model is posed (its vertices move to new positions). Those latent features move accordingly (attached to the bones). Then, for any spatial point :math:`\mathbf{x}`, to query the NeRF we do the following: transform :math:`\mathbf{x}` into the SMPL's local coordinate system (basically find where that point would be on the canonical T-pose body by applying the inverse skeletal pose). Interpolate the latent codes of nearby SMPL vertices to get a feature for :math:`\mathbf{x}`. Feed that feature (plus :math:`\mathbf{x}` and view direction) into an MLP to output density and color.
+
+This way, the radiance field is conditioned on the pose – because the latent codes are fixed to the body parts. At training time, they optimize those latent codes and the MLP so that for all training images (of a person moving), the model produces correct renderings. The use of SMPL ensures that when the person moves to a new pose, the same learned radiance field can be applied, by simply moving the latent codes with the body.
+
+Neural Body demonstrated that with multi-view video training (using the ZJU-MoCap dataset they created, which has 21 cameras capturing people in motion), the system can generate novel views of the person in unseen poses with realistic detail. Essentially, Neural Body learned a dynamic neural avatar: it disentangles human identity/appearance (stored in the latent codes and MLP weights) from pose (controlled by the SMPL parameters).
+
+One advantage of this approach is it enforces consistency across frames – unlike training a separate NeRF per frame (which would treat each frame independently, possibly yielding inconsistent geometry), Neural Body uses one model for all frames, leading to a coherent 3D representation that explains the whole sequence. They found it outperformed prior methods including per-frame NeRF and neural volumetric video (Lombardi's Neural Volumes) in both quality and ability to handle novel poses. Notably, they showed better geometry and appearance consistency (evaluated against ground-truth scans in ZJU-MoCap).
+
+**Animatable NeRF / A-NeRF (2021)**: Concurrently, A-NeRF by Su et al. (NeurIPS 2021) took a similar approach: they equipped a NeRF with a skeleton so that it can be posed. A-NeRF's key idea was to apply the inverse of forward kinematics to the NeRF's coordinate input. They define a coordinate system for each bone of the skeleton and learn a latent code in those local frames (or some neural features in a spatial grid around each bone). For a query point, they figure out which bone's local frame it lies in (by inverting the pose transform for that bone) and use the associated features. Their "inverse kinematics for implicit models" ensures the model can be driven by new poses, similar to Neural Body's approach but formulated slightly differently. They also refine the pose estimation as part of training (so the method can improve the given pose data). The outcome is a generative model for a human that can synthesize novel views and poses from monocular video.
+
+In essence, A-NeRF and Neural Body both create a NeRF that is conditioned on pose in a learned, part-based manner. The SMPL model provides geometry prior (shape of the person, initial guess for where each point belongs on the body), which dramatically reduces the complexity of learning – the network doesn't have to figure out human anatomy from scratch, it's given a template.
+
+**Other human NeRF models**: Xu et al. (2022) proposed a Surface-Aligned NeRF – instead of latent codes at vertices, they map query points onto the SMPL mesh surface and use the barycentric coordinates plus a height above the surface to condition the NeRF. This gave a more direct physical meaning to the coordinates and improved generalization to novel poses. Peng et al. also had Neural Human Performer and others that improved fidelity and training. HumanNeRF (Weng et al., 2022) combined SMPL with NeRF in a way that even a single video could be used to train a human avatar by enforcing symmetry and other constraints. Another line of work, not fully NeRF but related, is using implicit surfaces with NeRF – e.g., NeuS (Wang et al., 2021) learn an SDF for the human shape and a radiance field on it. There's also work integrating texture maps or UV maps from SMPL with NeRF to factor appearance.
+
+**Benefits and challenges**: Using a body model makes the problem more tractable and the result controllable – one can drive the learned model with motion capture data or new pose parameters, making it very practical. The challenge is that the quality must compete with image-based rendering or graphics avatars. Current NeRF-human models can produce free-viewpoint videos of a person with realistic clothes and hair, which is impressive. But they might struggle with very loose clothing or long hair (which don't follow the rigid bones of SMPL) – some methods add secondary deformation fields to handle that. There's also the question of speed – many of these are still slow to train, though some can render quickly if converted to explicit form (e.g., Neural Body could be accelerated by caching features on the mesh).
+
+Overall, combining NeRF with strong geometric priors like SMPL is a compelling direction, as it brings us closer to controllable neural actors. The NeRF contributes photorealistic rendering (something traditional graphics models have to work hard to achieve for real people), and the SMPL contributes semantic structure (body parts, pose) and generalization. We can expect further work to improve the generalization (e.g., train on many people to get a model that can synthesize arbitrary new people with given shape and pose – some recent works do this with conditional NeRF). Already, results like Neural Body show high-quality novel view synthesis for human motions, and the approach outperforms prior geometry-based methods (like COLMAP or PIFuHD) in capturing dynamic humans.
+
+Other Notable Extensions
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Beyond what was detailed above, NeRF has seen numerous other extensions:
+
+- **NeRF in the Wild (NeRF-W)** by Martin-Brualla et al. handled uncontrolled photo collections by modeling illumination and transient objects
+- **PixelNeRF** and other generalization methods trained networks to predict NeRFs from as few as one image
+- **Semantic NeRFs** integrated semantic labels
+- **Editing NeRFs** allow shape or appearance modifications via learned latent spaces or by manipulating underlying representations (e.g., using point cloud intermediates)
+- **Hybrid models** like NeRF-SDF that combine implicit surfaces with radiance fields for better geometry
+
+Comparison with Other 3D Representations
+---------------------------------------------
+
+NeRFs represent a new point on the spectrum of 3D scene representation, distinct from classical explicit models. Here we compare NeRF and its variants with other approaches in terms of performance, accuracy, efficiency, and applicability:
+
+Vs. Polygonal Meshes
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Meshes (with textures/materials) are very efficient to render with graphics pipelines (real-time achievable) and are the standard in AR/VR applications. They provide explicit surfaces and allow physical simulation or collision detection easily. Compared to NeRF, meshes are parametric (finite list of vertices), whereas NeRF is implicit (infinite continuous field).
+
+In terms of accuracy, a NeRF can capture subtleties like soft shadows, transparency, or view-dependent reflectance directly from images, which a mesh + static texture cannot (one would need complex material/lighting estimation). Mesh reconstruction from images can also struggle with thin structures or non-Lambertian surfaces; NeRF tends to do better in those cases by modeling them as radiance density. However, NeRF lacks an explicit surface – extracting a mesh from NeRF (via marching cubes on the density) can be noisy or less accurate on fine details (though techniques like NeuS improve that).
+
+Efficiency: Mesh pipelines are currently far ahead for realtime – NeRF required significant innovations to approach real-time rendering. Also, NeRF's memory footprint is small (if just an MLP) but the computation per view is large, whereas a mesh's memory might be larger (store all vertices) but computation per view is minimal. In terms of editing, meshes are straightforward to deform or edit with existing tools, while editing a NeRF is non-trivial (researchers are working on NeRF editing tools, often converting to mesh or point cloud first).
+
+In summary, NeRFs excel in visual fidelity and automatic scene capture, whereas meshes excel in interactivity, explicitness, and integration into existing graphics pipelines. It's likely that hybrid approaches will combine them (e.g., using NeRF for rendering appearance on top of a mesh that provides geometry and collision).
+
+Vs. Point Clouds / 3D Splatting
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Point clouds alone are not a complete rendering solution without additional measures (like splatting or reconstructing a surface). However, recent methods like 3D Gaussian splatting (Kerbl et al. 2023) have shown that rendering a point-based representation with learned anisotropic Gaussians can achieve quality on par with NeRF at vastly lower rendering cost. These methods optimize a set of points (with position, orientation, radius, color) to fit the input images, rather than a network. The result is essentially an explicit NeRF: a cloud of thousands of translucent discs that approximate the radiance field. They can be rendered extremely fast with graphics techniques (rasterization of ellipses), even allowing real-time performance, and are editable (one can move points, etc.).
+
+The quality, surprisingly, matched or exceeded NeRF on some scenes, and the training is also quite fast (minutes). The drawback is memory – storing millions of point primitives can be heavy (though still often < memory of a dense voxel grid). Point clouds also don't inherently handle occlusion ordering without a rendering algorithm (but splatting algorithms do handle it by depth-sorting or using depth test).
+
+Compared to NeRF MLP, point-based representations sacrifice the compactness and implicit continuity for direct speed and editability. For performance, methods like Gaussian splats have essentially caught up in quality and far exceed NeRF in rendering speed (5-10 ms per image vs. seconds). This suggests that for many practical purposes, one might convert a NeRF into a point-based format (just as PlenOctree does with voxels) to deploy it.
+
+Vs. Voxel Grids and Volumetric Methods
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A voxel grid representation of a radiance field (with color and density at each cell) is conceptually similar to NeRF but discretized. If one had infinite memory, one could achieve the same quality as NeRF by a sufficiently fine voxel grid and tri-linear interpolation. NeRF's advantage was representing that huge grid implicitly with a small MLP.
+
+Early NeRFs were slow, but with Instant-NGP, the gap closed: Instant-NGP essentially uses a hashed voxel grid of features with an MLP, and others like Plenoxels use a sparse voxel grid outright. The performance of voxel methods (with interpolation) is very high – Plenoxels can train in minutes and render quickly. But memory is a challenge: storing a high-res grid (say :math:`512^3` or :math:`1024^3`) is heavy, though sparse structures mitigate that (most of space is empty typically).
+
+NeRF vs. voxel is a trade-off of continuous vs. discrete: NeRF's continuous nature avoids grid artifacts and can scale to any resolution (in theory), but voxel methods explicitly capture detail at a set resolution. Also, optimization on a grid (which has millions of parameters) can be more data-hungry, whereas an MLP's capacity is constrained.
+
+In practice, now with faster hardware and clever data structures, voxel or hybrid approaches often outperform the original NeRF in both speed and quality, because they can directly allocate degrees of freedom to tiny scene details that a NeRF MLP might blur out. For example, NSVF and Instant-NGP show that memory-intensive representations can drastically cut down computation time with minimal quality loss. So depending on the use-case (memory-rich GPU vs. memory-limited scenario), one might choose an explicit voxel field or an implicit network.
+
+Vs. Multi-Plane Images (MPIs) / Light Fields
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before NeRF, one popular approach for view synthesis from sparse views was to use MPIs – a set of frontal-parallel planes with semi-transparent textures that approximate the scene (as in LLFF). LLFF (Mildenhall et al. 2019) trained a network to predict an MPI for each input view and blended them to render new views. MPIs can be rendered fast (just alpha compositing a few textured quads) and were effective for small view perturbations (e.g., moving a bit in a captured window).
+
+However, they often require many planes to cover depth range without artifacts, and each MPI is tied to a particular reference view (extrapolating far from that view leads to holes). NeRF can be seen as an infinite continuous collection of planes (every sample along a ray is like a tiny plane). NeRF's quality surpassed MPI methods, especially for larger view changes or complex geometry, because MPIs had to discretize depth (leading to discretization "slices" artifacts and memory use proportional to number of planes).
+
+In terms of performance, MPIs are faster to train (LLFF took minutes) and faster to render (real-time), but they trade off generality – it's hard for MPI to represent truly 360° scenes or very disoccluded views, whereas NeRF handles 360° inherently. There have been hybrid approaches (e.g., MVSNeRF uses multiple local NeRFs akin to MPIs for large scenes). In summary, MPIs are a simpler representation – essentially a truncated light field – good for certain view ranges, while NeRF is a more global representation. NeRF's use of a neural network also gave it more compositing flexibility (it wasn't limited to a fixed number of planes).
+
+Accuracy and Fidelity
+~~~~~~~~~~~~~~~~~~~~~~~
+
+When it comes to pure novel view synthesis quality (in terms of reproducing pixel-perfect images), NeRF-based methods (including its explicit derivatives) currently achieve state-of-the-art results on many benchmarks (like the Synthetic-NeRF dataset, real indoor scenes, etc.). Traditional methods (COLMAP + mesh + texture) often have lower photometric accuracy and noticeable artifacts because they don't capture reflectance changes or fine details as well. A quantitative metric like PSNR is usually several points higher for NeRF vs. classical methods on the same data.
+
+On the other hand, if the goal is geometric accuracy (e.g., a precise 3D model for measurement), NeRF's density may not be as directly useful as a mesh from photogrammetry – one might have to extract a surface and possibly lose some precision. So NeRFs are tuned for view synthesis fidelity rather than exact geometric reconstruction.
+
+Applicability
+~~~~~~~~~~~~~~~~
+
+NeRF's implicit nature makes it very flexible – it can, in principle, represent any appearance (even things like volumetric participating media, which meshes cannot). It also naturally handles transparency and semi-transparent geometry (e.g., fine foliage, smoke to some extent) by distributing density. However, NeRF currently requires knowing camera intrinsics/extrinsics fairly accurately; other methods like SfM or SLAM handle unknown poses better (though some works integrate pose optimization into NeRF).
+
+For large outdoor scenes, NeRF-like approaches had to evolve (NeRF++, mip-NeRF 360) whereas traditional GIS or photogrammetry might use other cues (like lidar). Another factor: learning-based vs. non-learning. NeRF needs a neural network and a lot of processing, while a method like COLMAP is mostly linear algebra and multiview geometry; the latter might be easier to run on a CPU or integrate into certain pipelines without a GPU. That said, the trend is that NeRF variants are becoming more accessible (some run on browsers now).
+
+In conclusion, NeRFs provide an excellent solution for novel view rendering with unparalleled visual quality, at the expense of initial computational cost and an implicit form that is not as directly usable as explicit models for some tasks. With the rapid improvements in efficiency, NeRFs are closing the gap in speed. We can envision a future system where a NeRF is just part of the toolbox: one might capture a scene, get a NeRF, and then either use it as-is for rendering or convert it to a mesh or point cloud if needed for other purposes. The lines between representations are blurring – e.g., one might use a mesh for collisions, but render it with a NeRF-like texture for realism. NeRF has effectively bridged vision and graphics: it learns from images like a vision model, but produces an asset that can be rendered like a graphics model, thus comparisons depend on what aspect of performance we care about (visual vs. geometric vs. speed vs. memory).
+
+Datasets for NeRF Training and Evaluation
+-----------------------------------------
+
+The development of NeRF models has been facilitated by several key datasets. We list important datasets commonly used for training or evaluating static and dynamic NeRFs, along with their characteristics:
+
+Blender Synthetic NeRF Dataset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Introduced by Mildenhall et al. (2020) for the original NeRF, this dataset consists of 8 synthetic objects/scenes (e.g., Lego truck, Hotdog, Mic, Chair, Drums, Ficus plant, etc.). These scenes were rendered using path tracing in Blender, providing ground-truth images with known camera parameters. They feature complex geometry and materials (shiny metals, translucency).
+
+NeRF's high PSNR on this dataset demonstrated its ability to capture fine detail and reflections. Researchers continue to use this dataset as a baseline for comparing novel view synthesis methods, since it provides an absolute ground truth and unlimited training data (since it's synthetic, one can render more views). Typical usage: train on 100 views and test on held-out views. The dataset is small (800x800 images usually) but challenging due to the reflectance and occlusions.
+
+Local Light Field Fusion (LLFF) Real Forward-Facing Dataset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+From Mildenhall et al. (2019), this dataset contains 8 real-world scenes captured with a handheld smartphone, each with 20–62 images taken roughly forwards (inward-facing). Examples: a room with plants, a flower, a lego bulldozer, etc. The scenes are partial scans (the camera captures a limited viewing hemisphere, not full 360).
+
+LLFF provided camera poses (estimated via structure-from-motion) and images at ~1008×756 resolution. It was used to evaluate NeRF on real data with moderate complexity. LLFF (the method) generates MPIs for these scenes and had some artifacts, whereas NeRF significantly outperformed it, rendering thin structures and filling disocclusions correctly. The LLFF dataset highlights NeRF's ability to handle real photo imperfections and less-than-ideal capture conditions. It's a standard benchmark for comparing to other image-based rendering methods.
+
+Tanks and Temples
+~~~~~~~~~~~~~~~~~~~
+
+Originally by Knapitsch et al. (2017) for multi-view stereo, this is a set of large-scale indoor/outdoor scenes (e.g., a courtyard, a church, tanks, room). NeRF++ and other variants targeting unbounded scenes often test on a subset of Tanks & Temples (like Truck, Barn, etc.) to show they can handle large scenes with varying depth.
+
+These scenes have many images (hundreds), known poses, and challenging geometry (thin wires, large empty spaces). NeRF without modifications struggles here (background infinity issue, etc.), but NeRF++ and mip-NeRF 360 tackle them. Metrics include PSNR, SSIM, and perhaps completeness of geometry. This dataset is useful for evaluating scalability of NeRF methods to bigger, outdoor or mixed content scenes.
+
+DTU Dataset
+~~~~~~~~~~~~~
+
+A multi-view scan dataset (indoor objects on a turntable with fixed cameras). Some NeRF works (e.g., those focusing on geometry like NeuS) use DTU to evaluate geometry accuracy, comparing reconstructed surfaces to ground-truth scans. DTU provides ~49 views per scene and scanned ground-truth geometry, so it's good for checking if NeRF-derived density can match actual surfaces.
+
+Human3.6M
+~~~~~~~~~~~~
+
+A widely-used human pose dataset by Ionescu et al. (2014), it has 11 actors performing various actions in a lab, captured by a multi-camera system (4 synchronized HD cameras) with a green screen. It provides accurate 3D joint annotations (from a motion capture suit).
+
+While originally for pose estimation, Human3.6M has been used in NeRF-based human reconstruction. For example, Neural Body (Peng et al. 2021) tested on Human3.6M to show their method can reconstruct a human from as few as 4 camera views. In Human3.6M, backgrounds are usually removed (since green screen) so models can focus on the person. It's a dynamic dataset (people moving) but multi-view, making it suitable for dynamic NeRF training (each time frame has 4 views). Typically, one subject's sequence might be used to train, and novel poses of that same person (from the dataset) used to evaluate generalization.
+
+The advantage of Human3.6M is the availability of ground truth SMPL or skeleton data, which methods like Neural Body leverage to condition their models.
+
+ZJU-MoCap Dataset
+~~~~~~~~~~~~~~~~~~~
+
+Introduced by Peng et al. (2021) alongside Neural Body, this dataset contains 9 sequences of different human performers doing various motions (e.g., exercise, dancing) captured by 21 synchronized cameras in a dome setup. High-resolution images and calibrated poses are provided. It also includes fitted SMPL models for each frame (which they improved with EasyMocap).
+
+This dataset is designed for free-viewpoint video of humans – one can train on some camera views and test on others. It's been used to evaluate many human NeRF models. For instance, they measure novel view synthesis quality and the ability to handle novel poses (by holding out some frames). ZJU-MoCap is challenging due to complex motions and clothing, and it's a good test of how well a method can integrate multi-view information to learn a dynamic model. Neural Body's results on ZJU-MoCap showed high-fidelity renderings that were temporally consistent. This dataset is now a common benchmark for dynamic human rendering.
+
+People-Snapshot
+~~~~~~~~~~~~~~~~~
+
+A dataset of people rotating in an A-pose (from Alldieck et al. 2018). It provides monocular video (one person turning 360 degrees) along with SMPL fits. Neural Body and others use it to test reconstruction from a single video (since the pose is just rotation, it's like a turntable of a human). It's simpler than ZJU (no motion, just rotation), but good for evaluating geometry and appearance on a static pose. Neural Body and others compare to methods like PIFuHD on this dataset.
+
+Synthetic dynamic scenes
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For testing dynamic NeRFs, authors sometimes create simple synthetic scenes where geometry moves in a known way. For example, D-NeRF paper includes synthetic sequences (like a cube moving or a human model deforming) to validate that the method can learn the deformation field correctly. These come with ground-truth canonical frames for quantitative error of deformation.
+
+Other datasets
+~~~~~~~~~~~~~~~~
+
+- **KITTI or Waymo Open Dataset**: Autonomous driving datasets with multi-camera rigs have been used in some large-scale NeRF variants (e.g., Urban NeRF) to reconstruct portions of outdoor scenes.
+- **Replica/ScanNet**: Indoor scans used to test NeRFs on room-scale data (often to see if NeRF captures fine details and lighting in real indoor environments).
+- **Phototourism datasets** (like the Dubrovnik, Trevi Fountain from NeRF-W) for testing NeRF under varying illumination. However, those introduce additional complexities (transient objects, lighting changes) so specialized models like NeRF-W were devised.
+
+In summary, static NeRFs are often benchmarked on Blender synthetic (for absolute quality) and LLFF real (for real-case performance). Dynamic NeRFs are evaluated on multi-view video datasets like Human3.6M and ZJU-MoCap (for humans) or other custom sequences, focusing on temporal consistency and generalization to novel poses. The availability of ground truth geometry (for static scenes) or ground truth motion (for humans) helps quantitatively evaluate how well a NeRF approach is capturing the scene's 3D structure, beyond just image reproduction error.
+
+Conclusion
+------------
+
+Neural Radiance Fields have revolutionized the field of view synthesis and 3D representation in a very short time. They blend concepts from vision and graphics – volume rendering, multi-view geometry, implicit neural modeling – into a single cohesive framework that achieves state-of-the-art results in reconstructing scenes from images. This document traced the lineage of NeRF from earlier representations (voxel grids, point clouds, meshes, light fields), through the details of the original NeRF formulation (volume rendering equations, positional encoding, MLP architecture), and into the many extensions that have arisen (handling aliasing with mip-NeRF, unbounded scenes with NeRF++, speeding up training with Instant-NGP and others, extending to dynamic scenes with D-NeRF/Nerfies, and integrating domain knowledge like human body models via SMPL).
+
+In comparing NeRF to traditional representations, we see that NeRF offers unmatched fidelity and a flexible, continuous scene definition, at the cost of implicitness and initial computational expense. However, ongoing research is rapidly mitigating these costs – making NeRFs faster, smaller, and more user-friendly – while also expanding their capabilities (for example, enabling editing, compositionality, or generalization across scenes). The synergy between neural networks and 3D representations in NeRF has also spurred new lines of research in both computer vision (e.g., using NeRFs for camera pose estimation, SLAM, etc.) and graphics (neural rendering in content creation).
+
+NeRF's development showcases an interesting paradigm: rather than explicitly programming a 3D reconstruction, we let a neural network learn the 3D structure by rendering it. This opens possibilities to capture phenomena that are hard to model explicitly (like complex materials or translucency) as the network will learn to reproduce them from data. We are likely to see further improvements in NeRF's theoretical understanding (e.g., what functions can a NeRF represent, how to regularize it for better geometry), as well as more practical systems (perhaps NeRF-based 3D scanners, or NeRF in mobile devices for instant AR scenes).
+
+In conclusion, Neural Radiance Fields represent a significant milestone in 3D scene representation. By building on classical ideas and adding the power of neural function approximation, NeRF has achieved a level of performance in novel view synthesis that was previously unattainable. The historical context and theoretical foundations discussed in this overview underline that NeRF is not an isolated idea, but rather the product of a long evolution in both computer vision and graphics. As research continues, NeRF and its derivatives are poised to become a foundational technology for virtual reality, robotics, movies, and anywhere we need realistic 3D scenes constructed from images.

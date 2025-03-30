@@ -1,0 +1,393 @@
+.. _lecture_06_1_smpl_fitting:
+
+Lecture 06.1 - Fitting the SMPL Model to Images via Optimization
+================================================================
+
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/t44EmLGK9sI" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Fitting the SMPL Model to Images via Optimization <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_06_1_Fitting_SMPL_to_Images_Optimization.pdf>`_
+
+
+
+
+Introduction
+---------------
+
+In this lecture, we explore the process of fitting a 3D parametric human body model (specifically SMPL) to 2D images through optimization techniques. This process enables us to recover 3D human pose and shape from a single image—a fundamentally ill-posed problem that requires sophisticated mathematical formulations and careful optimization strategies.
+
+Mathematical Background: Pinhole Camera and Projections
+------------------------------------------------------------
+
+Before fitting a 3D model to 2D images, we must understand how 3D points are projected onto the 2D image plane. The pinhole camera model provides a mathematical abstraction of this imaging process.
+
+Perspective Projection
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In a pinhole camera, 3D points in the world are projected through an optical center onto a flat image plane. The projection can be described with intrinsic and extrinsic camera parameters:
+
+- **Intrinsic parameters** (matrix :math:`K`): focal length (:math:`f`) and principal point offsets (:math:`c_x, c_y`), which define how coordinates in the camera coordinate system map to pixel coordinates.
+  
+- **Extrinsic parameters** (:math:`R, t`): rotation and translation that transform world coordinates to the camera's coordinate frame (i.e., the camera pose in the world).
+
+Using homogeneous coordinates, the full perspective projection can be written as:
+
+.. math::
+
+   \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = \mathbf{K}\,[\,\mathbf{R}\mid \mathbf{t}\,]\, \begin{bmatrix} X \\ Y \\ Z \\ 1 \end{bmatrix}
+
+where :math:`(X, Y, Z)` is a point in 3D (world coordinates), :math:`(u,v)` is its resulting pixel coordinate on the image.
+
+Expanded into scalar form, this perspective projection implies:
+
+- :math:`u = f_x \frac{X_c}{Z_c} + c_x`
+- :math:`v = f_y \frac{Y_c}{Z_c} + c_y`
+
+where :math:`(X_c, Y_c, Z_c) = R (X,Y,Z)^T + t` are the 3D coordinates of the point in the camera coordinate system, and :math:`f_x, f_y` are the focal lengths (in pixels) in the :math:`x` and :math:`y` directions (often :math:`f_x=f_y=f` for square pixels).
+
+The parameters :math:`c_x, c_y` denote the principal point (the projection of the camera center onto the image plane, often near the center of the image).
+
+This formulation uses homogeneous coordinates to succinctly express the projection as a matrix multiplication. The :math:`3\times 4` camera matrix :math:`P = K [R|t]` combines all intrinsic and extrinsic parameters and maps homogeneous world coordinates to homogeneous image coordinates.
+
+Weak-Perspective Projection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A special case of the pinhole model, often used for 3D human fitting, is the weak-perspective projection (also called scaled orthographic projection). This model assumes the depth variation of the subject is small relative to the distance from the camera, so all points are roughly at an average depth :math:`Z_0`.
+
+One can then approximate :math:`s = f/Z_c \approx f/Z_0` as a constant scale factor. The projection simplifies to:
+
+- :math:`u \approx s \, X_c + c_x`
+- :math:`v \approx s \, Y_c + c_y`
+
+where :math:`s = f/Z_0` is an overall isotropic scale, and translations :math:`t_x = c_x, t_y = c_y` account for 2D positioning.
+
+In other words, a weak-perspective camera performs an orthographic projection (parallel projection) followed by a uniform scaling. This is less accurate than full perspective but avoids nonlinearity in :math:`Z` and can be convenient when the subject's distance is unknown.
+
+Many 3D human fitting methods initially assume a weak-perspective model to simplify optimization. For instance, the person's scale and 2D image location can be estimated from the bounding box before refining with a full perspective model.
+
+Camera Extrinsics vs. Model Pose
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In a generative fitting context, one can either optimize the camera extrinsic parameters :math:`(R,t)` or, equivalently, the global orientation and position of the 3D subject. In practice, fitting a human model to an image often involves introducing a global rotation :math:`\theta_{\text{global}}` and translation :math:`t` for the model. These effectively play the same role as the camera's :math:`R` and :math:`t` (with the camera assumed fixed).
+
+We can treat the root joint of the human model as the world origin and adjust its pose and location to align with the camera. The goal of fitting will be to find the model's pose parameters and the camera parameters such that the model's projected 2D joints match the observed 2D keypoints in the image.
+
+2D Keypoints and Projection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Modern pose estimation methods (e.g., OpenPose or DeepLabCut) can detect 2D positions of human joints in an image. Let :math:`\{\mathbf{p}_i^{\text{obs}}\}` be the set of observed 2D joint coordinates (e.g., for :math:`i=1,\dots, J` joints). Let :math:`\mathbf{J}(\beta,\theta)` be the 3D joint positions of our parametric model for shape :math:`\beta` and pose :math:`\theta`.
+
+To compare :math:`\mathbf{J}` with image evidence, we project these model joints into the image with the camera model :math:`\Pi` (which may be perspective or weak-perspective). The projected point is :math:`\mathbf{p}_i^{\text{pred}} = \Pi(\mathbf{J}_i(\beta,\theta))`.
+
+For a perspective model, :math:`\Pi(X,Y,Z) = \big(f_x X/Z + c_x, f_y Y/Z + c_y\big)` as described above.
+
+The fitting procedure will try to minimize the reprojection error between the predicted 2D joints and the detected 2D joints:
+
+.. math::
+
+   E_{\text{joint}}(\beta,\theta,R,t) = \sum_{i=1}^{J} w_i \,\|\,\Pi(R\,\mathbf{J}_i(\beta,\theta) + t)\;-\;\mathbf{p}_i^{\text{obs}}\|^2
+
+where :math:`w_i` are weights reflecting detection confidence for each joint.
+
+In practice, a robust penalty :math:`\rho` is often used instead of a simple square, to reduce the influence of outliers (e.g., a misdetected keypoint). A common choice is the Geman-McClure or Huber robust function, which behaves like least-squares for small errors but less aggressively penalizes large errors, thus improving robustness to mis-detections or occlusions.
+
+By formulating the objective in terms of 2D reprojection error, we leverage well-established techniques from camera calibration and multiple-view geometry: effectively, the algorithm is solving the inverse problem of finding 3D pose from 2D projections, which is inherently ill-posed due to depth ambiguity. This is why additional prior terms and constraints (discussed next) are crucial for a successful fit.
+
+The SMPL Model as a Differentiable Function of Shape and Pose
+---------------------------------------------------------------
+
+SMPL (Skinned Multi-Person Linear model) is a parametric 3D human body model that provides a mapping from shape parameters :math:`\beta` and pose parameters :math:`\theta` to a complete triangulated mesh of the human body.
+
+In SMPL, the shape is controlled by a low-dimensional vector :math:`\beta` (usually :math:`\mathbb{R}^{10}`) which coefficients a set of principal components of body shape, and the pose is controlled by a set of joint rotation parameters :math:`\theta` (usually :math:`\mathbb{R}^{72}`, i.e., 24 joints each with 3 DOF axis-angle rotation).
+
+Formally, SMPL defines a differentiable function:
+
+.. math::
+
+   M(\beta, \theta) = W\!\big( T(\beta,\theta), J(\beta), \theta, \mathcal{W} \big)
+
+where:
+
+- :math:`T(\beta,\theta)` is the template mesh after applying shape and pose deformations
+- :math:`J(\beta)` is the set of joint locations for the given shape
+- :math:`\mathcal{W}` are fixed blend skinning weights
+- :math:`W(\cdot)` is the linear blend skinning function that applies the pose articulations to the mesh vertices
+
+The model can be understood in stages:
+
+Shape Blend Shapes
+^^^^^^^^^^^^^^^^^^^
+
+First, a base template mesh :math:`T_0` (an average human shape in a reference pose, e.g., standing T-pose) is deformed according to :math:`\beta`:
+
+.. math::
+
+   \mathbf{V}_{\text{shape}}(\beta) = T_0 + B_S\,\beta
+
+where :math:`B_S` is a matrix of shape blend shapes. This yields a person-specific mesh in the rest pose.
+
+Intuitively, :math:`\beta` might encode variations like height, weight, limb lengths, etc., learned from a dataset of body scans.
+
+Pose Blend Shapes
+^^^^^^^^^^^^^^^^^^
+
+Even for a fixed person shape, certain poses cause non-rigid deformations of the body (e.g., muscle bulging, twisting of limbs flattening the flesh). SMPL captures typical pose-dependent deformations with another linear model:
+
+.. math::
+
+   \mathbf{V}_{\text{posed}}(\beta,\theta) = \mathbf{V}_{\text{shape}}(\beta) + B_P(\theta)
+
+The pose blend shapes :math:`B_P` are a set of corrective shapes that account for how bending a joint changes the mesh geometry.
+
+In practice, :math:`B_P(\theta)` is implemented by first converting each relative joint rotation :math:`\theta_j` (usually represented in axis-angle or quaternion form) into its rotation matrix :math:`R_j`. For each joint, the deviation from the rest pose is :math:`R_j - I` (a :math:`3\times 3` matrix, flattened to 9-dimensional vector).
+
+The pose blend shape model multiplies each of these by a learned coefficient matrix and sums the contributions for all joints. This produces a :math:`3N`-vector of vertex displacements that make the limbs bend more naturally.
+
+Joint Positions
+^^^^^^^^^^^^^^^^
+
+We also compute the joint positions :math:`J(\beta)` for this mesh. SMPL defines :math:`J(\beta)` by a linear regression from the vertex positions.
+
+The regression matrix :math:`J_{\text{reg}}` (dimension :math:`K\times N` for :math:`K` joints and :math:`N` vertices) was learned from training scans so that :math:`J(\beta) = J_{\text{reg}}\cdot \mathbf{V}_{\text{shape}}(\beta)` gives the 3D coordinates of each joint (in the rest pose) as a linear combination of nearby vertices.
+
+This means taller or larger bodies (different :math:`\beta`) will have joints that are farther apart, reflecting the shape change.
+
+Linear Blend Skinning
+^^^^^^^^^^^^^^^^^^^^^^
+
+Finally, the mesh is articulated by rotating and translating each part according to the pose. SMPL uses standard linear blend skinning (LBS), which is a weighted sum of rigid transformations.
+
+Each vertex :math:`i` of the mesh is associated with a fixed set of weights :math:`\{w_{i1}, \dots, w_{iK}\}` (one weight for each joint, where :math:`K=24` for SMPL) that sum to 1. These weights define how much the vertex moves with each bone.
+
+Given the pose :math:`\theta`, we can compute a transformation :math:`G_j(\theta,\beta)` for each joint :math:`j` that takes the vertex from the rest pose to its posed location for that joint's movement (this is essentially forward kinematics).
+
+Applying LBS, the final vertex position :math:`v_i` is:
+
+.. math::
+
+   v_i(\beta,\theta) = \sum_{j=1}^{K} w_{ij} G_j(\theta,\beta) \tilde{v}_{i}(\beta,\theta)
+
+where :math:`\tilde{v}_{i}(\beta,\theta)` is the homogeneous coordinate of the vertex :math:`i` in the rest pose (after the blend shapes), and :math:`G_j(\theta,\beta)` is the :math:`4\times 4` homogeneous transformation matrix of joint :math:`j`.
+
+In simpler terms, we rotate and translate the entire mesh according to each joint's motion, weighted by the skinning weights. The result :math:`M(\beta,\theta)` is a set of 3D vertices representing the fully posed mesh.
+
+Differentiability of SMPL
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+SMPL's formulation is fully differentiable. It consists of linear operations (addition, multiplication) and smooth nonlinearities (mainly the sines/cosines inside the rotation matrices).
+
+This means we can compute analytical gradients :math:`\partial M / \partial \beta` and :math:`\partial M / \partial \theta` if needed, or rely on automatic differentiation. Modern implementations of SMPL use packages like PyTorch or TensorFlow to get these derivatives, enabling gradient-based optimization or integration into neural networks.
+
+In summary, SMPL provides a function that takes :math:`(\beta,\theta)` to joint locations :math:`\mathbf{J}(\beta,\theta)` and vertex coordinates :math:`M(\beta,\theta)` in 3D. The joints can be projected into the image for 2D alignment, and the vertices can be used for silhouette alignment or collision tests. Because :math:`M` is differentiable, one can fit SMPL to data by optimizing :math:`\beta` and :math:`\theta` via gradient-based methods.
+
+Fitting SMPL to Images via Optimization (SMPLify)
+---------------------------------------------------------
+
+Given an input image (RGB) with detected 2D keypoints, the goal is to recover the underlying 3D body shape :math:`\beta` and pose :math:`\theta` (and often the camera parameters).
+
+In a generative optimization approach, we define an objective function that measures how well a hypothesized model explains the image evidence, and then we adjust the model parameters to minimize this objective. This approach was popularized by the SMPLify algorithm (Bogo et al., 2016), which provided the first automatic system to fit SMPL to single-image 2D joint detections.
+
+Objective Function
+^^^^^^^^^^^^^^^^^^^^
+
+The objective function :math:`\mathcal{E}` typically contains multiple terms designed to enforce both data fit (reprojection error) and prior knowledge (to resolve ambiguities and ensure plausible humans):
+
+1. **Keypoint Reprojection Term** (:math:`E_J`):
+
+   This is the data term we formulated above. It penalizes differences between observed 2D joint locations and the projected 3D model joints:
+
+   .. math::
+
+      E_J(\beta,\theta, R, t; \,J^{\text{obs}}) = \sum_{i=1}^{J} w_i\, \rho\!\Big(\| \Pi(R\,J_i(\beta,\theta) + t) - u_i^{\text{obs}}\|^2\Big)
+
+   where :math:`u_i^{\text{obs}}` is the detected 2D position of joint :math:`i` in the image. The function :math:`\rho` is a robust penalty (SMPLify uses a Geman-McClure penalty), and :math:`w_i` is the detection confidence for joint :math:`i`.
+
+   This term drives the optimization to explain the 2D keypoints by projecting the 3D model's joints. If the model's projected knees are, say, too far to the left of the image knee points, this term's gradient will pull the model's knees inwards in 3D.
+
+2. **Pose Prior** (:math:`E_\theta`):
+
+   Reprojection error alone is insufficient because many 3D poses can explain the same 2D joints due to depth ambiguity. To regularize the solution, we introduce a prior on human pose. The pose prior penalizes implausible or extreme joint angles.
+
+   In SMPLify, a mixture of Gaussians prior over the pose joint angles is used. This prior was learned from a large motion-capture dataset (e.g., CMU Mocap) and encodes typical human poses. The cost can be written as:
+
+   .. math::
+
+      E_\theta(\theta) = -\log P_{\text{pose}}(\theta)
+
+   where :math:`P_{\text{pose}}` is the probability of pose :math:`\theta` under the Gaussian mixture model.
+
+   In practice, this results in a sum of quadratic penalties for certain joint angle combinations, with higher weight on rarely observed configurations. For example, if :math:`\theta` encodes the knee angle, the prior will strongly penalize hyperextension beyond the normal range.
+
+   In the SMPLify implementation, there was also a specific term :math:`E_a(\theta)` to prevent unnatural bending of elbows and knees. This ensures that even if the 2D keypoints might be fit by an inverted limb, the optimizer will favor the normal bending direction.
+
+3. **Shape Prior** (:math:`E_\beta`):
+
+   The shape parameters :math:`\beta` need regularization as well. With only a single view, body shape is difficult to infer – for instance, a taller but farther person can project similarly to a shorter but closer person.
+
+   SMPLify uses a simple Gaussian prior on shape, assuming that :math:`\beta` is drawn from a zero-mean distribution (since the SMPL shape space is learned such that :math:`\beta=0` corresponds to an average physique).
+
+   The shape prior can be:
+
+   .. math::
+
+      E_\beta(\beta) = \lambda_\beta \|\beta\|^2
+
+   a weighted L2 norm on the shape coefficients. This keeps the solution near the mean body shape unless the data strongly suggests otherwise. It helps prevent the optimizer from producing extreme body shapes just to marginally improve the keypoint alignment.
+
+4. **Interpenetration Penalty** (:math:`E_{\text{coll}}`):
+
+   A common problem in model fitting is self-intersection – the model might fold or twist into an implausible pose where limbs interpenetrate each other (e.g., an arm going through the torso, or legs interlocking).
+
+   These collisions can satisfy 2D joint alignment (since 2D joints don't "see" the collision), but are physically impossible. To address this, SMPLify introduced an interpenetration term that penalizes intersections of mesh geometry.
+
+   They approximate each body limb as a capsule (a cylinder with round caps) and further approximate capsules by sets of spheres for computational efficiency. If two body parts that shouldn't normally touch have overlapping spheres, a cost is added proportional to the volume of intersection.
+
+   This term :math:`E_{\text{coll}}(\beta,\theta)` is zero for collision-free poses, and grows when, say, the forearm pokes into the torso. By making this differentiable (using smooth approximations of overlap), the optimizer can compute gradients that push intersecting parts apart.
+
+   The effect is to preserve body realism: the algorithm will prefer a slightly worse 2D fit if it avoids implausible self-intersection.
+
+5. **(Optional) Silhouette Term** (:math:`E_{\text{silh}}`):
+
+   If a segmentation of the person in the image is available (i.e., the 2D silhouette), an additional term can be included to improve the alignment of the 3D model's outline with the image.
+
+   Silhouette alignment is not used in the original SMPLify, but later works and variations have explored it. One way to define this term is to project the 3D mesh vertices (or a set of sampled points on the mesh) onto the image and enforce that they fall inside the detected silhouette, and vice versa.
+
+   A common implementation is to use the silhouette distance transform: for each projected vertex, add a cost equal to its distance to the nearest silhouette pixel (this drives vertices into the silhouette); and for each silhouette pixel, measure distance to the nearest projected vertex or edge of the mesh (driving the model to explain the silhouette).
+
+   In practice, :math:`E_{\text{silh}}` helps refine shape and some pose details (like limb thickness or slight rotation) that 2D joints alone cannot constrain. However, it requires a decent image segmentation and increases computational cost. It's an optional term that can be toggled on when segmentation masks are available.
+
+Combined Objective
+^^^^^^^^^^^^^^^^^^^^
+
+Combining these terms, the full objective for single-image fitting can be written as:
+
+.. math::
+
+   \mathcal{E}(\beta,\theta,R,t) = E_J(\beta,\theta,R,t) + \lambda_\theta E_\theta(\theta) + \lambda_a E_a(\theta) + \lambda_\beta E_\beta(\beta) + \lambda_{\text{coll}} E_{\text{coll}}(\beta,\theta) + \lambda_{\text{silh}} E_{\text{silh}}(\beta,\theta,R,t)
+
+Here we explicitly list separate weights :math:`\lambda` for each term (pose prior, angle-limit prior, shape prior, collision, silhouette). In the original SMPLify, :math:`\lambda_{\text{silh}}=0` (no silhouette term used) and the other weights are set empirically.
+
+The optimization problem is to find the parameters :math:`(\hat\beta,\hat\theta,\hat{R},\hat{t}) = \arg\min \mathcal{E}`. This is a non-linear least squares problem with many variables (72 pose params + 10 shape params + possibly 3 orientation + 3 translation = 88 unknowns, if camera intrinsics like focal length are known a priori).
+
+It is solved with iterative numerical optimization.
+
+Optimization Strategy
+^^^^^^^^^^^^^^^^^^^^^^^
+
+A naive attempt to optimize all parameters jointly from random initialization will likely get stuck in a poor local minimum – the problem is high-dimensional and multimodal. SMPLify addresses this by breaking the optimization into stages:
+
+**Stage I – Initialization:**
+
+The detected 2D joints are used to initialize global position and scale. SMPLify assumes the person is upright and facing the camera initially. They estimate an initial scaling/translation by using the torso keypoints: for example, the distance between shoulders in the image suggests a depth (given an assumed real shoulder width).
+
+In practice, Bogo et al. fixed the camera focal length (using a typical value or known camera intrinsics) and initialized the depth of the person by assuming the person's height is about 1.7m (or using a rough heuristic). The global rotation is initialized so the model faces the camera and is aligned vertically. This yields initial :math:`R,t`.
+
+The pose :math:`\theta` can be initialized to a mean pose (standing pose), or some simplistic initialization like all joint angles zero. The shape :math:`\beta` is initialized to zero (mean shape) unless there is prior information about the body.
+
+**Stage II – Camera/Global Pose Fit:**
+
+First, keep pose :math:`\theta` and shape :math:`\beta` at their initial values except the global orientation (which is part of :math:`\theta` for the root joint) and translation. Optimize :math:`E_J` with respect to the global rotation and translation only, to roughly align the model to the image.
+
+In this stage, the limbs are not posed yet – they might remain in a default pose. Essentially, we fit the root position of the model so that the hip, shoulder center, etc., match the image.
+
+Since :math:`\beta` is fixed, the model has average body size, which might not perfectly match the person, but it's sufficient for initial alignment. Because of perspective, depth (translation in Z) and overall scale are coupled; with a known focal length, moving the model closer or farther changes the apparent size. The optimizer adjusts these to minimize reprojection error.
+
+One constraint used is to assume the person's depth such that the model not only aligns in 2D but also has reasonable depth (for example, the model's feet are on the ground plane if known). After this, we have an initial :math:`(R,t)`.
+
+**Stage III – Pose Fit:**
+
+Next, the joint angles :math:`\theta` are optimized to match the 2D joints, while the priors :math:`E_\theta` and :math:`E_a` are applied to keep the pose plausible.
+
+This is done in a multi-step or multi-scale way: SMPLify starts with a high weight on the pose prior, ensuring the pose stays close to natural, then gradually decreases that weight to allow the model to better fit the data. This technique (called graduated optimization) helps avoid unnatural jumps early on.
+
+For example, initially the optimizer might not bend the knee much because the prior is strong, but as the weight reduces, it will bend the knee to match an observed crouch if the data clearly shows it.
+
+The fitting might also be done limb by limb or with different parts sequentially, though the SMPLify paper primarily did all joints together with a robust penalty.
+
+The angle limit term :math:`E_a` prevents the optimizer from flipping the limbs the wrong way. At the end of this stage, :math:`\theta` is roughly consistent with the 2D joints.
+
+**Stage IV – Shape Fit:**
+
+Once the pose is aligned, the body shape :math:`\beta` is refined. Shape changes can account for residual systematic offsets in joints – for instance, if all joints of the model are slightly lower than the image points, the optimizer can achieve a better fit by increasing the leg length in :math:`\beta` rather than moving every joint individually (which pose might not allow if the person is consistently taller).
+
+The shape prior :math:`E_\beta` is important here to prevent absurd solutions. In SMPLify, the shape was updated after pose: the algorithm observed that body shape does subtly affect 2D joint alignment (especially at shoulders and hips).
+
+By fitting shape, SMPLify demonstrated that even from just 2D joints one can infer whether the person is, say, very lanky or more stout. This was an intriguing result, as it showed 2D pose alone carries some shape information. Typically, :math:`\beta` is solved with pose fixed, or alternated a couple of times with pose to fine-tune both.
+
+**Stage V – Full Refinement:**
+
+Optionally, one can then let all parameters :math:`(\beta,\theta,R,t)` vary together for a few final iterations to fine-tune the fit. At this point, good initialization from previous stages means the solution is in the basin of a correct minimum, so joint optimization should converge to a fine result.
+
+Interpenetration penalty :math:`E_{\text{coll}}` is activated to push limbs out if any collision is happening. This sometimes requires a trade-off: the optimizer might slightly sacrifice keypoint reprojection accuracy to remove a collision (because :math:`E_J` and :math:`E_{\text{coll}}` compete).
+
+The weights :math:`\lambda_{\text{coll}}` are tuned so that avoiding impossible interpenetrations is more important than shaving off the last pixel of joint error.
+
+Optimization Algorithms
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Throughout these stages, one must choose an appropriate optimization algorithm. SMPLify was implemented using a quasi-Newton optimizer (LBFGS) and also a specialized Dogleg trust-region method for non-linear least squares (from the Chumpy library).
+
+In general, algorithms like Levenberg-Marquardt (which blends Gauss-Newton with gradient descent) are well-suited for bundle-adjustment-type problems like this. They require computing the Jacobian of all residuals (which we get via autodiff).
+
+Alternatively, one can use Powell's method (a derivative-free direction set method) or CMA-ES (an evolutionary strategy) for the pose, but these tend to be slower.
+
+SMPLify's success came from leveraging the analytic gradients – by having a differentiable model, they could use efficient gradient-based optimization to fit dozens of parameters in under a minute.
+
+Each term contributes to the gradient: for instance, the pose prior gives a gradient pushing :math:`\theta` towards the mean pose, the collision term gives a gradient pushing intersecting parts away from each other, etc.
+
+The use of robust loss (Geman-McClure) means the influence of a single bad keypoint detection on the gradient is capped, improving stability.
+
+Automatic Differentiation and Jacobians
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As mentioned, the SMPL function is differentiable. Frameworks like Chumpy (used in the original SMPLify) or modern autograd libraries can provide :math:`\partial \Pi/\partial \theta` and :math:`\partial \Pi/\partial \beta`, etc., automatically.
+
+However, it's instructive to consider the complexity: the Jacobian of the full model w.r.t. all parameters is a large matrix (e.g., projecting 24 joints gives 48 residuals (2D coords for each) and we have ~82 unknowns, so Jacobian is 48×82).
+
+Fortunately, many entries are zero due to the sparse influence of parameters (e.g., finger rotations don't affect leg joints). Exploiting sparsity is key in speeding up Gauss-Newton steps.
+
+In practice, one might not form the full Jacobian explicitly but rather use iterative gradient methods (like LBFGS) that only require Jacobian-vector products, which autograd can compute efficiently.
+
+Autodiff also makes it easy to experiment with new terms: e.g., if we add a silhouette IOU term, we can implement its computation and rely on autodiff for gradients, rather than deriving them by hand.
+
+By the end of the optimization, we obtain :math:`\beta` and :math:`\theta` that (hopefully) explain the image: the model's projected joints align with the image joints, the pose looks natural (thanks to priors), and limbs are not interpenetrating. The output is a full 3D mesh (the SMPL model) in a pose and shape that matches the person in the image.
+
+This can be used for downstream tasks like generating novel views, estimating metrics (heights, limb lengths), or serving as initialization for further refinement with image-based losses.
+
+Result of SMPLify
+^^^^^^^^^^^^^^^^^^^
+
+It's worth noting that SMPLify was a breakthrough in 2016, demonstrating that even without any manual intervention, one could get a reasonable 3D humanoid mesh from just a single photo's 2D keypoints.
+
+It showed superior 3D pose accuracy on benchmarks like Human3.6M and HumanEva compared to earlier 3D pose estimation methods at the time. However, it is not without limitations: it can be slow (on the order of 30-60 seconds per image), sometimes gets stuck in local minima (especially if the 2D keypoints are noisy or occluded), and the quality of results depends heavily on the quality of the 2D joint detector.
+
+Historical Progression and Method Comparisons
+------------------------------------------------
+
+The field of single-image 3D human pose and shape estimation has rapidly evolved since SMPLify (2016). Early approaches like SMPLify are optimization-based: they rely on minimizing a carefully designed objective at test time for each image.
+
+Subsequent approaches explored regression-based models: using deep learning to directly predict :math:`\beta,\theta` from the image in a single forward pass. Each paradigm has strengths and weaknesses, and recent works often combine ideas from both.
+
+Here we survey key developments:
+
+SMPLify (Bogo et al. 2016)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+As detailed above, this was a seminal work using an optimization approach. It established the feasibility of fitting a full-body parametric model to 2D joints. The method achieved state-of-the-art accuracy on 3D pose benchmarks of the time (e.g., Human3.6M) by virtue of the strong body prior and accurate 2D keypoint detectors.
+
+Its outputs are interpretable (every term in the objective has semantic meaning) and relatively free of "training bias" (it can be applied to any person image, even outside the distribution of some training set, as long as 2D joints can be detected).
+
+However, SMPLify was slow and sometimes required manual cleanup (for extreme poses or when the detector failed). It also did not model hands and face – it used the basic SMPL (body only). Extensions soon followed.
+
+SMPLify-X (2019)
+^^^^^^^^^^^^^^^^^^^^
+
+SMPLify-X represents a significant extension of SMPLify, addressing key limitations of the original approach. While SMPLify could only recover body pose and shape, SMPLify-X enables comprehensive whole-body capture by jointly optimizing for face, hands, and body in a single framework. 
+It works with SMPL-X (eXpressive SMPL), a more expressive parametric model that extends SMPL with 54 parameters for the body, detailed hand articulation with 15 joints per hand (30 additional degrees of freedom), and a facial blendshape model with 10 expression parameters. The optimization objective in SMPLify-X incorporates several new components. 
+It uses specialized detectors for facial landmarks and hand keypoints, adding facial landmark reprojection error and hand keypoint reprojection error terms to the objective function. It also introduces learned hand and face pose priors (derived from a new expressive whole-body dataset) to ensure anatomically plausible configurations of fingers and facial expressions. 
+These priors are critical since finger motion and facial expressions are highly constrained by anatomy, yet exhibit significant variety. A key technical contribution was an improved self-interpenetration avoidance model. The original SMPLify used approximate capsules for collision detection, but this became impractical with the detailed finger and face geometry. 
+SMPLify-X introduces a collision model with a mixture of 3D Gaussians attached to the body surface for efficient detection of self-penetrations involving fingers, face, and other body parts, with analytical gradients for optimization.
