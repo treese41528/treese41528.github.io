@@ -1,0 +1,233 @@
+.. _lecture_fitting_smpl_to_imu_optimization:
+
+Lecture 07.1: Fitting SMPL to IMU Data Using Optimization-Based Methods
+===========================================================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/ISFp6gfP2V4" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Fitting SMPL to IMU Data Using Optimization-Based Methods <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_07_1_Fitting_SMPL_to_IMU_Optimization.pdf>`_
+
+
+Introduction
+-----------------
+
+In this lecture, we explore how to fit a parametric human body model (SMPL) to inertial measurement unit (IMU) data using optimization techniques. We begin with a historical perspective on classical IMU-based pose estimation methods, highlighting how the field evolved from strapdown navigation and filtering approaches to modern model-based optimization. We then introduce the mathematical foundations of inertial sensors, covering how accelerometers and gyroscopes measure motion and orientation, as well as how we represent rotations (using matrices, quaternions, etc.) while accounting for gravity alignment, drift, and sensor biases. With these foundations, we formulate a rigorous optimization pipeline for fitting the SMPL model to IMU data. This includes calibrating IMUs to body segments, choosing a pose parameterization, defining objective functions based on orientation and acceleration consistency, adding anthropomorphic priors, deriving gradients, and solving the nonlinear least squares problem (e.g., via Levenberg–Marquardt or L-BFGS). Pseudocode is provided to outline the full pipeline for estimating a sequence of poses from IMU readings. Finally, we discuss key datasets for IMU-based human pose estimation – such as DIP-IMU, TotalCapture, and AMASS – including their scope and how they can be accessed.
+
+Classical IMU-Based Pose Estimation: A Historical Perspective
+---------------------------------------------------------------
+
+Early approaches to human pose estimation with IMUs drew heavily from strapdown inertial navigation and classical state estimation techniques developed in aerospace and robotics. In a strapdown inertial navigation system, gyroscopes and accelerometers rigidly attached ("strapped down") to a body are integrated to track the body's orientation and position. The gyroscopes measure the body's angular velocity in its local (body-fixed) frame, providing signals :math:`\omega_i(t)` along each local axis. Integrating these angular rates over time (solving :math:`\dot{R}=R[\Omega]_{\times}` for rotation matrix :math:`R(t)`) yields the orientation trajectory. Likewise, accelerometers measure specific force – the difference between the body's linear acceleration and gravity – in the body frame. Double integration of accelerometer readings (after adding back gravity in the global frame) can yield position, but with unbounded drift errors in practice. Traditional strapdown algorithms demonstrated that orientation can be maintained accurately over short periods by pure integration, but drift accumulates in yaw and position, requiring additional corrections. These methods were initially applied to vehicles and rigid bodies; applying them directly to human motion is challenging due to segments' complex motion and the lack of direct position references on the body.
+
+Attitude and Heading Reference Systems
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To stabilize orientation estimates, researchers introduced attitude and heading reference systems (AHRS) and complementary filtering techniques. Notably, Mahony et al. (2008) proposed a nonlinear complementary filter on :math:`SO(3)` that fuses gyroscope data with accelerometer (and optionally magnetometer) measurements to track orientation. The Mahony filter treats orientation estimation as a deterministic observer on the rotation group, using accelerometer readings to correct the tilt (roll/pitch) drift and magnetometer readings to correct heading, while also estimating gyroscope bias online. This approach is essentially a real-time feedback loop that blends high-frequency gyro integration with low-frequency gravity/magnetic corrections, achieving near-zero steady-state error on orientation. Around the same time, Madgwick's filter (2010) introduced a gradient-descent based orientation estimator using quaternions. The Madgwick filter also fuses gyro and accelerometer (and magnetometer in a MARG sensor setup) by minimizing an orientation error function, and it demonstrated accuracy comparable to Kalman filtering while being computationally light. Both Mahony and Madgwick filters became popular in embedded IMU applications for orientation tracking, as they require minimal processing yet substantially reduce drift by using the accelerometer to "anchor" the gravity direction and magnetometer to fix yaw.
+
+Kalman Filter Approaches
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In parallel, the Kalman filter and its variants (Extended Kalman Filter, Unscented Kalman Filter) were applied to human motion tracking. In commercial inertial motion capture systems like Xsens MVN, an EKF is used to fuse the inertial sensor data (accelerometers, gyros, magnetometers on each body segment) and constrain them with a kinematic human model. The full body is modeled as a chain of segments, each with an IMU, and the EKF estimates the 3D orientation of each segment. Known joint constraints or contact events can be incorporated as additional measurements. These systems achieve real-time full-body pose capture with many sensors (Xsens uses 17 IMUs for 23 body segments), and serve as a ground truth reference for reduced-sensor approaches. Academic works also explored Kalman filtering for lower-limb or upper-body tracking with fewer IMUs by modeling the human as an articulated system and updating joint angles from IMU measurements. Kalman filters provide a probabilistic framework to handle sensor noise and can incorporate prior knowledge of motion dynamics, but designing the state-space model and filter for a high-dimensional human skeleton is complex and computationally heavy. Simpler complementary filters (like Mahony/Madgwick) became prevalent for just orientation estimation of each segment, due to ease of tuning and stability.
+
+Early Sparse-Sensor Approaches
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The desire to reduce the number of worn sensors (to make motion capture less obtrusive) led to data-driven pose estimation methods in the late 2000s and early 2010s. Slyper and Hodgins (2008) demonstrated an early system with only five accelerometers (no gyros, thus measuring only accelerations) placed on the upper body. They used a database of example motions and a nearest-neighbor search to map the sparse accelerometer signals to likely full-body poses. This "lazy learning" approach showed that even with very limited inertial data, one could retrieve plausible motions from a large motion library. Tautges et al. (2011) extended this idea by adding temporal scaling, allowing motions performed at different speeds to be matched via time-warping of the sensor signals. Riaz et al. (2015) further reduced the sensor count to three accelerometers (on the lower back and both wrists) by incorporating heuristic foot-ground contact detection to aid pose estimation. These early sparse-sensor methods demonstrated the possibility of "mocap in the wild" with minimal equipment, but they suffered from the fundamental limitations of using only accelerometers. Accelerometers provide information about changes in motion (specific force) but not the static orientation of limbs – as a result, these methods could capture dynamic movements but struggled with slow or static poses, and they relied heavily on prior motion data for plausibility. In summary, before 2015, sparse IMU pose estimation either required many sensors with filtering (as in Xsens) or used very few sensors with data-driven reconstructions, but no approach yet provided accurate, model-consistent 3D poses from a truly minimal IMU set without external infrastructure.
+
+Model-Based Optimization Methods
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A breakthrough came with the introduction of model-based optimization methods that explicitly fit a parametric human model to IMU data. The seminal work Sparse Inertial Poser (SIP) by von Marcard et al. (2017) was the first to recover full 3D human pose using only 6 IMUs (located on the wrists, ankles, pelvis, and head) by leveraging a statistical body model and temporal optimization. SIP made the problem tractable by combining two key ideas: (i) using a realistic skinned body model (SMPL) which enforces anthropometric consistency (i.e. bone lengths and shape are human-like) and (ii) formulating a joint optimization over multiple frames to fit the model's pose to the IMUs' orientation and acceleration readings. Instead of frame-by-frame pose estimation, they solved for an entire motion trajectory that best explains the sensor data in a batch optimization. By incorporating pose priors and physics (acceleration consistency), SIP overcame the ambiguity of sparse sensors. Their results showed accurate reconstruction of complex motions (walking, running, climbing, etc.) using a small set of inertial sensors without any cameras. This was a significant improvement over earlier methods and even outperformed a baseline that used the same six sensors plus a large motion database. SIP's analysis-by-synthesis approach – simulate the IMU measurements from the model and adjust the model to match the measurements – became a foundation for subsequent research.
+
+Learning-Based Methods
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Following SIP, researchers explored learning-based methods to improve speed and generalization. Deep Inertial Poser (DIP) by Huang et al. (2018) introduced a neural network approach to map IMU data to human pose in real time. They noted that while optimization (as in SIP) effectively exploits temporal information and physical constraints, it is too slow for real-time use and can get stuck in poor local minima without a good initialization. DIP addressed these issues by training a bi-directional recurrent neural network on a large corpus of motions (including synthesized IMU data from motion capture). The network learns a temporal pose prior, effectively imitating the role of the optimizer but running orders of magnitude faster at inference. DIP's introduction of a dedicated IMU-motion dataset (DIP-IMU, see Section on Datasets) and an open-source implementation made sparse IMU pose estimation more accessible. In the years since, further improvements have been made: for example, Transformer-based models have been used to better capture long-term dependencies in IMU sequences, and approaches like TransPose and PIP (Physics-informed Inertial Poser) integrate learned models with physical knowledge for drift correction. Researchers have also looked at combining IMUs with other sensors (e.g., cameras or ultrawide-band): von Marcard et al. (2018) showed that coupling 6 IMUs with a moving camera (e.g., a smartphone filming the person) allows full global pose estimation in outdoor scenes, leveraging both visual and inertial cues. Nonetheless, the focus of this lecture is on the optimization-based fitting paradigm, as it provides a clear framework to understand the problem's constraints and serves as the basis upon which many learning approaches build or to which they are compared.
+
+Inertial Sensor Fundamentals and Orientation Representations
+--------------------------------------------------------------
+
+To fit a body model to IMU data, we must understand what information IMUs provide and how to represent rotations and orientations mathematically. An inertial measurement unit (IMU) typically consists of a tri-axial accelerometer and tri-axial gyroscope (often also a magnetometer, though many methods consider 6-DoF IMUs without magnetometers). We denote an IMU's local coordinate frame as the sensor frame, and assume it is rigidly attached to a body segment. The sensor provides two primary measurements at each time step:
+
+1. **Angular velocity** :math:`\Omega_y` in the body (sensor) frame, measured by the gyroscope. The gyroscope reading (a 3D vector) relates to the true angular velocity :math:`\Omega` of the sensor by :math:`\Omega_y=\Omega+b+\mu`, where :math:`b` is a (slowly-varying) bias and :math:`\mu` is noise. In other words, the gyro outputs the actual instantaneous rotation rate of the sensor plus some constant offset and noise. Integrating these readings yields orientation change. However, even a small bias can integrate into a large drift in orientation over time, since the gyro has no absolute reference.
+
+2. **Linear acceleration (specific force)** minus gravity, measured by the accelerometer. Formally, an ideal accelerometer gives :math:`a=R^T(\ddot{p}-g_0)`, where :math:`\ddot{p}` is the linear acceleration of the sensor in world coordinates, :math:`g_0` is the gravity vector in world frame (approximately :math:`(0,0,-9.81\text{ m/s}^2)`), and :math:`R` is the rotation matrix from world frame to sensor frame. The accelerometer also has bias and noise (denoted :math:`b_a` and :math:`\mu_a`), but a key point is that when the sensor is static (no linear movement), :math:`\ddot{p}=0` and thus the accelerometer's reading is just the gravity vector expressed in the sensor's frame (plus bias/noise). This fact allows accelerometers to act as an absolute inclination reference: by normalizing the measured acceleration :math:`a` when motion is slow, one obtains a unit vector :math:`v_a \approx -R^T e_3` that points opposite to gravity (here :math:`e_3=(0,0,1)^T` is the upward unit vector). Thus, the accelerometer can tell us "which way is down," i.e., the sensor's tilt (roll and pitch angles) with respect to horizontal. It cannot, however, observe rotation about the gravity axis (yaw), since spinning about a vertical axis does not change the gravity projection. This is why a magnetometer (sensing the Earth's magnetic field) or other reference is needed to fix absolute heading if gyro drift in yaw must be corrected.
+
+Gravity Alignment and Drift Correction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In practice, IMU orientation tracking algorithms (like Mahony/Madgwick filters or Kalman filters) use the accelerometer to correct gyro integration drift in the roll/pitch directions by comparing the expected gravity direction from the current orientation estimate to the measured acceleration direction. For example, if the IMU is estimated to be level but the accelerometer reads a significant horizontal component of gravity, the filter will apply a corrective rotation to align the estimated orientation with gravity over time. This forms a complementary behavior: gyros dominate the high-frequency motion tracking (since they respond instantaneously to rotation), while accelerometers provide a low-frequency reference (gravity). Magnetometers, when available, do the same for yaw, comparing the device's heading to the Earth's magnetic north and correcting drift about vertical. In an optimization context, we will similarly use accelerometer readings to constrain the orientation and even the translational acceleration of body segments, essentially anchoring the solution to gravity.
+
+Orientation Representations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To perform computations on orientations, we need a mathematical representation. The orientation of a rigid body (or IMU) can be represented by a rotation matrix :math:`R \in SO(3)`, which is an orthonormal :math:`3 \times 3` matrix rotating vectors from the local frame to the global frame. Rotation matrices are unique and convenient for transforming vectors, but have 9 parameters with 6 constraints (not minimal). Another popular representation is the unit quaternion :math:`q=(w,x,y,z)` (with :math:`w^2+x^2+y^2+z^2=1`), which is a 4-parameter representation of the rotation. Unit quaternions can be converted to matrices and composed (multiplied) to combine rotations; they avoid the singularities (gimbal lock) that Euler angles have. We often use quaternions in IMU filtering because they are numerically stable for integration (the differential equation :math:`\dot{q}=\frac{1}{2}q \otimes (0,\Omega)` integrates the gyro reading :math:`\Omega` into the quaternion over time). In optimization, however, one may prefer the axis-angle (exponential map) representation for each joint's rotation: this is a 3D vector :math:`\theta=\theta u` encoding a rotation of :math:`\theta` radians about axis :math:`u`. The rotation matrix can be obtained as :math:`R=\exp([{\theta}]_{\times})` using Rodrigues' formula. The axis-angle vector is an efficient minimal representation (3 parameters for any 3D rotation), and is the format used for pose parameters in the SMPL model. We denote by :math:`\log(R)` the inverse operation, giving an axis-angle vector in :math:`\mathbb{R}^3` from a rotation matrix. This is useful for measuring differences: for two orientations :math:`R_1,R_2 \in SO(3)`, one measure of discrepancy is the rotation :math:`R_{err}=R_1 R_2^T`; we can represent :math:`R_{err}` as an axis-angle vector :math:`\delta` and use its magnitude :math:`\|\delta\|` (which equals the rotation angle) as the geodesic distance between orientations.
+
+Sensor Calibration
+^^^^^^^^^^^^^^^^^^^^
+
+Before fitting IMUs to a body model, a one-time calibration is usually performed. This involves determining the orientation offset between each IMU's axis alignment and the body segment's anatomical orientation. For example, an IMU strapped to a person's thigh might not be perfectly aligned with the thigh's coordinate frame as defined by the body model (SMPL's joint frame). Calibration can be done by having the user assume a known pose (like T-pose or stand straight) and computing a constant rotation that aligns the IMU reading to the model's expected orientation for that pose. This yields a static rotation :math:`R_{cal,i}` for each sensor :math:`i` that transforms from the sensor's frame to the corresponding body segment frame. We will assume these calibration rotations are known, so we can directly compare sensor measurements with model predictions in a common coordinate system.
+
+Optimization-Based SMPL Fitting with IMU Data
+---------------------------------------------
+
+With sensor models and orientation math established, we now formulate the optimization problem of fitting the SMPL body model to a sequence of IMU measurements. SMPL (Skinned Multi-Person Linear model) is a parametric model that represents the 3D human body with pose and shape parameters. The shape parameters :math:`\beta` (a low-dimensional vector, e.g. 10 coefficients) define a neutral body mesh and joint lengths, while the pose parameters :math:`\Theta` (usually 24 joints × 3 axis-angle values = 72-D) define the rotation of each joint in the kinematic chain. SMPL provides a function :math:`M(\beta,\Theta)` that outputs a full mesh and joint locations. For our purposes, we care about the global transforms of certain body segments where IMUs are attached. We assume we have :math:`N` IMUs on the subject, attached to known segments (e.g., N=6 in SIP: IMUs on head, torso, two wrists, and two ankles). We are given a time sequence :math:`t=1,\ldots,T` of IMU data: typically this includes an orientation estimate (often as a quaternion :math:`Q_{i,t}^{meas}`) for each sensor :math:`i`, and linear acceleration readings :math:`a_{i,t}^{meas}` from each sensor's accelerometer. Our goal is to find the sequence of SMPL pose parameters :math:`\Theta_1,\Theta_2,\ldots,\Theta_T` (and possibly a fixed shape :math:`\beta` for the subject) that best explain these IMU measurements.
+
+Kinematic Model and Sensor Prediction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+We first describe how, for a given pose :math:`\Theta_t`, we can predict the measurements an IMU would read. Using forward kinematics on SMPL's skeleton, we can compute the global rotation :math:`R_{i,t}^{pred}` of each body segment :math:`i` at time :math:`t` (this is obtained by composing the rotations from the root up to that segment in the kinematic tree). We then apply the calibration offset for that IMU, i.e. :math:`R_{i,t}^{pred}=R_{i,t}^{segment} \cdot R_{cal,i}`, which gives the predicted global orientation of the IMU box. This predicted orientation can be compared to the IMU's reported orientation :math:`R_{i,t}^{meas}` (from the sensor's internal filter or a localization algorithm). We quantify the orientation discrepancy by the rotation :math:`R_{i,t}^{err}=R_{i,t}^{pred}(R_{i,t}^{meas})^{-1}`. Let :math:`\delta\theta_{i,t}=\log(R_{i,t}^{err})` be the axis-angle vector of this small rotation. Ideally, :math:`\delta\theta_{i,t}=0` if the model's segment orientation matches the sensor. So one component of our cost function will be the orientation residual:
+
+.. math::
+   E_{orient}=\sum_{t=1}^{T}\sum_{i=1}^{N} \| \delta\theta_{i,t} \|^2,
+
+the sum of squared geodesic angle differences between predicted and measured orientations for all sensors over all frames. This term encourages the model's pose to have each instrumented limb oriented correctly relative to the global frame.
+
+Next, consider the accelerometer readings. The IMU provides :math:`a_{i,t}^{meas}`, which (after subtracting any known bias) equals :math:`\mathbf{R}_{i,t}^{\text{sensor}}\!^T (\ddot{\mathbf{p}}_{i,t} - \mathbf{g}_0)`, where :math:`\ddot{p}_{i,t}` is the global acceleration of the sensor and :math:`R_{i,t}^{sensor}` is the sensor's orientation (global-to-local rotation). If we rotate the measured acceleration into the global frame using the measured orientation, we get:
+
+.. math::
+   a_{i,t}^{global}=R_{i,t}^{meas} a_{i,t}^{meas} \approx \ddot{p}_{i,t}-g_0.
+
+We can predict :math:`\ddot{p}_{i,t}` from the model by taking second differences of the IMU's position on the model. Let :math:`p_{i,t}^{pred}` be the global 3D position of IMU :math:`i` at time :math:`t` according to the SMPL model (this is obtained from the forward kinematics, using the joint angles to get the segment pose and then adding the offset from joint to the IMU's location). A simple approximation of the second time derivative is :math:`\ddot{p}_{i,t} \approx (p_{i,t+1}^{pred}-2p_{i,t}^{pred}+p_{i,t-1}^{pred})/\Delta t^2` for :math:`2 \leq t \leq T-1`. Using this, our model-predicted specific force in global frame is :math:`\ddot{p}_{i,t}^{pred}-g_0`. We then define the acceleration residual as the difference between predicted and measured specific force:
+
+.. math::
+   r_{i,t}^{acc}=(\ddot{p}_{i,t}^{pred}-g_0)-a_{i,t}^{global},
+
+and include its squared norm in the cost:
+
+.. math::
+   E_{accel}=\sum_{t=2}^{T-1}\sum_{i=1}^{N} \| r_{i,t}^{acc} \|^2.
+
+This term encourages the model's motion to have the correct linear acceleration for each sensor. Intuitively, if the person kicks their leg, the leg's IMU will sense a forward acceleration followed by a backward acceleration (when the leg decelerates); the optimizer will try to make the leg in the model move such that its accelerations match that pattern. Note that including acceleration couples the poses across time – this provides a form of temporal smoothing constraint, as physically plausible accelerations cannot be caused by jittery, frame-wise independent poses. It also helps correct drift in position/orientation: e.g. if the model starts to drift, the accelerometer residuals will grow, pushing the solution back in line. In practice, orientation measurements (from the IMU's onboard filter) are much less noisy than acceleration, so algorithms often weight the orientation residual more heavily than the acceleration residual (e.g., :math:`w_{acc} < w_{orient}`). Some implementations even filter or integrate acceleration information over windows to reduce noise. Nonetheless, acceleration data is crucial for capturing fast dynamics and for observing the translational components of motion which a pure orientation-only approach would miss (orientation alone cannot tell if a person is stationary or jumping, for example).
+
+Regularization and Prior Terms
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In addition to these sensor consistency terms, we must include regularization and prior terms to ensure the estimated pose is physically and biologically plausible (and to prevent the solution from drifting in unobservable directions). One key prior is the anthropometric consistency provided by the SMPL model's shape parameters. If the shape :math:`\beta` is known (e.g., measured or estimated from the person's height/weight), we can fix it; if not, it can be treated as an unknown and optimized as well, but with a strong prior to avoid overfitting the IMU data. A common approach is to include a penalty on deviations from a mean shape or known limb lengths. For example, if no shape estimate is given, one could add :math:`E_{shape}=\|\beta\|^2/\sigma^2` assuming a zero-mean Gaussian prior on shape coefficients. In SIP, anthropometric consistency means the body model will not produce impossible limb lengths or proportions, which already constrains the pose search space heavily. Beyond shape, we often add a pose prior term :math:`E_{pose}`. This can be a statistical prior learned from motion capture data (e.g., a Gaussian mixture model over joint angles as in SMPLify), or simply a quadratic penalty on joint angle deviations from a neutral pose. The prior discourages extreme or nonsensical poses (e.g., limbs bending in unlikely ways) especially under noisy measurements or in areas where the IMUs have no sensitivity. For instance, if the subject's lower body has no sensors, the prior will keep the legs in a reasonable posture unless accelerometers force a change. Another regularizer can be a temporal smoothness prior, such as :math:`E_{smooth}=\sum_t\|\Theta_t-\Theta_{t-1}\|^2`, to penalize abrupt changes in pose between frames (though the acceleration term already implicitly encourages smooth motion).
+
+Combining all terms, the full objective function can be written as:
+
+.. math::
+   E(\beta,\Theta_{1..T})=w_o E_{orient}+w_a E_{accel}+w_p E_{pose}+w_s E_{shape},
+
+with weights :math:`w_o,w_a,w_p,w_s` set according to the confidence in each component. The goal is to find the pose parameters :math:`\Theta_{1..T}` (and possibly shape :math:`\beta`) that minimize this energy. This is a nonlinear least-squares problem, since the residuals are nonlinear functions of the pose parameters.
+
+Gradient and Jacobian Computation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To solve the optimization, we typically use gradient-based algorithms. The function is differentiable with respect to the pose parameters (assuming we use a smooth representation like axis-angles or quaternions for the orientation; quaternions would require adding a unit-norm constraint, so often axis-angles are easier to handle in unconstrained optimization). Let :math:`x` denote the stacked unknowns (all poses and perhaps shape). We need the gradient :math:`\nabla_x E` and ideally the Hessian or Jacobian structure. The objective is a sum of squared residuals, which makes it suitable for Gauss-Newton or Levenberg–Marquardt (LM) optimization. We can derive the Jacobian of each residual (orientation or acceleration) with respect to the pose parameters. This essentially involves the kinematic Jacobians of the body model. For example, the orientation of sensor :math:`i` depends on all joint rotations from the root up to that segment. We can compute the partial derivative of the sensor's orientation (in axis-angle form) with respect to each joint angle on that path. In practice, one can derive that a small change in a parent joint angle :math:`\delta\theta_j` will induce a small rotation of the sensor frame equal to :math:`\delta\theta_j` rotated into the sensor's frame (this is related to the concept of screw axes in robotics). Similarly, the position :math:`p_{i,t}` of a sensor has a well-known Jacobian in terms of the joint angles (this is the translational part of the spatial Jacobian in robotic kinematics). Analytically deriving all these Jacobians is complex but feasible; however, modern implementations often use automatic differentiation or the chain rule on the computational graph of the model. The SMPL model provides derivatives of joint positions with respect to pose and shape parameters, since it's essentially a linear blend skinning model. For orientation residuals, one convenient strategy is to map the rotation difference to a 3D angle-axis error :math:`\delta\theta` as we did, and use the fact that for a small orientation error, the gradient with respect to a parent joint is proportional to the cross product of the parent joint's axis and the sensor's orientation error vector. More concretely, if joint :math:`j` affects sensor :math:`i`, :math:`\frac{\partial\delta\theta_i}{\partial\theta_j} \approx R_j^{global}a_j`, where :math:`a_j` is the joint's rotation axis in its local frame (and :math:`R_j^{global}` brings it to global coordinates). This yields a vector in the direction the sensor would rotate if joint :math:`j` is rotated by a small amount, which can be compared to :math:`\delta\theta_i`. The full derivation is beyond our scope, but essentially one builds a large sparse Jacobian matrix :math:`J` that maps changes in all joint angles (and shape) to changes in all residuals.
+
+Crucially, the Jacobian :math:`J` is quite sparse: each residual involves only a subset of joints (for orientation, a sensor's residual involves only the joints on the kinematic chain from the root to that sensor; for acceleration, it involves those joints across two adjacent time frames as well). The problem size for a sequence can be large (e.g., 6 IMUs, 100 frames, 72 pose params per frame = 7200 unknowns), but the sparsity can be exploited by sparse solvers. The original SIP implementation used a Gauss-Newton optimizer with the LM damping strategy and solved the normal equations :math:`J^T J \Delta x = -J^T r` using a sparse Cholesky factorization. Each LM iteration refines the pose estimates, and it typically converges in 10–20 iterations for a given motion sequence. An alternative is to use a quasi-Newton method like L-BFGS (limited-memory BFGS), which requires only function and gradient evaluations (no explicit second-order step) and is memory-efficient for large problems. L-BFGS has been used in similar human pose optimization tasks (such as SMPLify for image-based fitting) and can be effective if the residuals have nice smooth behavior. However, the bundle-adjustment style structure of this problem (many frames, shared parameters) is well-suited to Gauss-Newton. Levenberg–Marquardt offers robustness by interpolating between Gauss-Newton (when close to minimum) and gradient descent (when far, via a damping factor). Each iteration will adjust the pose parameters to reduce the total error. The process may need a good initialization to succeed – typically, one could initialize all poses :math:`\Theta_t` to some default (e.g., T-pose or the static pose indicated by initial IMU orientations) and velocities to zero. If a rough estimate of the subject's orientation is known (say, from averaging IMU orientations over a second), that can initialize the global root orientation to reduce ambiguities (especially yaw, which accelerometers don't provide).
+
+Pseudocode: SMPL Pose Estimation from IMU Sequence
+------------------------------------------------------
+
+Below is a pseudocode outline of the entire pipeline for fitting SMPL to IMU data using optimization.
+
+.. code-block:: none
+
+    # Inputs:
+    #   - SMPL model M(beta, Theta) with known shape beta (or initial beta with prior)
+    #   - IMU calibration rotations R_cal[i] for each sensor i (sensor->segment frame)
+    #   - Sensor measurements for t = 1...T:
+    #        Orientation quaternions Q_meas[i][t]  (global orientation of sensor i)
+    #        Acceleration vectors a_meas[i][t]    (local accelerometer readings of sensor i)
+    #   - Weights: w_o, w_a for orientation/accel terms; and pose/shape priors as needed
+    # Output:
+    #   - Estimated pose parameters Theta[1..T] (and possibly refined shape beta)
+
+    # Initialization:
+    for each frame t:
+        Theta[t] := Theta_initial   (e.g., all joints to zero angles or a guessed pose)
+    beta := beta_initial (e.g., average shape or given measurements)
+    # Optionally, initialize global root orientation from IMU on torso to align model
+
+    # Optimization loop (Gauss-Newton or L-BFGS):
+    for iter = 1 to MaxIters:
+        # Compute residuals and Jacobians
+        total_error := 0
+        J := zero_matrix() 
+        r := zero_vector()
+        for t = 1 to T:
+            # Forward kinematics for this frame:
+            compute global rotations R_segment[j] for each joint j using Theta[t]
+            for each sensor i:
+                # Predicted orientation = segment rotation * calibration offset
+                R_pred = R_segment[seg(i)] * R_cal[i] 
+                Q_pred = quaternion(R_pred)
+                # Orientation residual (quaternion difference)
+                Q_err = Q_pred * inv(Q_meas[i][t])
+                delta_theta = axis_angle(Q_err)    # 3D angle-axis difference
+                append delta_theta to residual vector r (orientation part)
+                # Compute Jacobian rows for orientation residual wrt relevant Theta[t] joints
+                for each joint j affecting sensor i:
+                    J_orient_part = d(delta_theta)/d(theta_j[t])   # use kinematic jacobian
+                    insert into J matrix
+                # (If using quaternion directly, residual could be 4D with constraint)
+                
+                # Acceleration residual (if t is not first/last frame):
+                if 2 <= t <= T-1:
+                    p_pred_prev = joint_position(seg(i), Theta[t-1], beta)
+                    p_pred_curr = joint_position(seg(i), Theta[t], beta)
+                    p_pred_next = joint_position(seg(i), Theta[t+1], beta)
+                    ddp_pred = (p_pred_next - 2*p_pred_curr + p_pred_prev) / (dt^2)
+                    a_global = quat_to_matrix(Q_meas[i][t]) * a_meas[i][t]
+                    acc_res = ddp_pred - g - a_global
+                    append acc_res to residual vector r (accel part)
+                    # Jacobians for accel residual:
+                    for each joint j affecting seg(i) at times t-1, t, t+1:
+                        J_acc_part = d(acc_res)/d(theta_j[s])   # includes terms from pos jacobians
+                        insert into J matrix
+        # Add pose prior residuals & Jacobians (e.g., (Theta[t] - Theta_prior)/sigma)
+        # Add shape prior residuals & Jacobians (if optimizing beta)
+
+        # Check convergence criteria (e.g., small gradient or small error change)
+        if ||r||^2 is below threshold:
+            break
+
+        # Solve for update step:
+        if using Gauss-Newton/LM:
+            # Normal equations: (J^T J + lambda I) dx = -J^T r
+            solve for dx (e.g., via sparse Cholesky)
+        if using L-BFGS:
+            compute dx = -H_approx * (J^T r)    # uses accumulated info of gradients
+
+        # Update parameters:
+        apply dx to Theta and beta:
+        for each frame t and joint j:
+            theta_j[t] += dtheta_j[t]   (add the small rotation to the axis-angle, or compose quaternions)
+        beta += dbeta  (update shape if applicable)
+
+    end for
+
+    Return Theta[1..T] (and beta)
+
+IMU-Based Human Pose Datasets and Resources
+----------------------------------------------
+
+Public datasets have been crucial for advancing IMU-based pose estimation, both for evaluating optimization methods and for training learning-based models. We highlight a few key datasets and resources, along with their URLs and characteristics:
+
+DIP-IMU Dataset (2018)
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Introduced by Huang et al. alongside Deep Inertial Poser, DIP-IMU is one of the first large-scale datasets for sparse IMU human motion capture. It contains 10 subjects (9 male, 1 female) each performing a variety of motions in 5 categories (walking, running, sports, etc.), recorded with a full Xsens suit of 17 IMUs at 60 Hz. In total it has 64 sequences comprising about 330,000 time instants of data. Each frame has the 3D orientation (quaternion) of each IMU (from Xsens's on-board EKF) and the raw accelerometer readings. Ground-truth poses (3D joint angles) were obtained via a high-end optical motion capture system simultaneously recorded, and then post-processed to fit the SMPL model. DIP-IMU is publicly available for research – the project page provides a download link after registration. This dataset has become a standard benchmark: SIP's optimization was tested on it, and DIP used it for validation. It enables researchers to test their algorithms on common motions and compare error metrics (e.g., mean joint error in degrees or centimeters). The DIP-IMU dataset's size (over 300k frames) also made it suitable for training deep networks, and indeed DIP and subsequent methods (TransPose, etc.) train on a mix of DIP-IMU and synthetic data. (URL: http://dip.is.tue.mpg.de)
+
+TotalCapture (2017)
+^^^^^^^^^^^^^^^^^^^^^^
+
+The TotalCapture dataset, released by Trumble et al., is a multimodal motion capture dataset that includes synchronized video, IMU, and Vicon marker data for human motions. It features 5 subjects (4 male, 1 female) each performing four distinct sets of actions (ROM exercises, walking, acting, and freestyle) with each sequence repeated 3 times. The dataset provides data at 60 Hz from 8 calibrated cameras and 120 Hz data from a set of 13 IMUs (the subjects likely wore a Motion Analysis or Xsens set covering most body segments). With nearly 1.9 million frames of synchronized data, TotalCapture was the first dataset to offer IMU data aligned with ground-truth 3D poses (from a Vicon optical system) on such a large scale. Researchers have used TotalCapture to evaluate IMU-only pose estimation as well as fusion of video and IMUs. For instance, the SIP paper compared their 6-IMU method against a baseline on TotalCapture sequences. The DIP authors also utilized TotalCapture by fitting SMPL to the Vicon data to create reference poses for testing their network. The dataset can be obtained by request from the University of Surrey's website (it requires a signup due to its size and to agree to usage terms). TotalCapture provides diverse indoor motions and challenging freeform activities (like acting out scenarios) which test an algorithm's generalization. It is particularly useful for methods that combine visual and inertial data, but also for pure-inertial methods that can use the IMU streams and the "ground truth" SMPL pose fits provided by DIP authors for quantitative evaluation. (URL: https://cvssp.org/data/totalcapture/)
+
+AMASS (2019)
+^^^^^^^^^^^^^^
+
+The Archive of Motion Capture as Surface Shapes (AMASS) is a large collection of mocap datasets unified into a common format of human model parameters. AMASS gathers 15 different mocap datasets (recorded with marker-based systems) and fits the SMPL (and SMPL+H for hands) model to all of them using the MoSh++ algorithm. The result is a dataset of 11,000+ motions, over 40 hours of data from more than 300 subjects, all represented consistently as sequences of SMPL pose and shape parameters. AMASS does not contain IMU data per se, but it has been hugely beneficial for IMU research because one can simulate IMU measurements from the AMASS motions. For example, given a sequence of SMPL poses from AMASS, one can compute the orientations and accelerations of virtual IMUs placed on the SMPL body (this is exactly what DIP and others do to generate training data). The TransPose repository's preprocessing script demonstrates this: it takes AMASS sequences, assumes 6 IMU placement as in SIP, and computes "synthetic" IMU sensor data (orientation and acceleration) for each sequence. This synthetic data can be used to train networks so that they don't overfit to the specific motions of DIP-IMU or TotalCapture, and it covers a far broader range of movements (since AMASS includes data from CMU MoCap, Human3.6M, gait datasets, etc.). AMASS is accessible for research; users must register on the AMASS website and can then download the parameter files for the various sub-datasets. By using AMASS, one can also compute pose priors – many optimization methods (including SIP) leverage the fact that AMASS provides a distribution of typical human poses and shapes. In summary, while AMASS is not an IMU dataset in itself, it is an invaluable resource to generate data for algorithm development and to serve as a prior on human motion. (URL: https://amass.is.tue.mpg.de)
+
+Other Datasets and Resources
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A number of other datasets and tools are worth mentioning. The TNT15 Dataset referenced in the SIP paper refers to a motion capture dataset from Tübingen (likely containing various motions) that was used as a baseline; it may be available through MPI. More recently, researchers have begun collecting IMU data in outdoor or clinical settings: for example, IMUPoser (CHI 2023) used smartphone IMUs to capture daily activities, and MM-fit dataset provides IMUs for workout motions. The KIT Motion Dataset and MPI Limitations Dataset have also been used for evaluating how methods handle extreme or unusual motions. On the software side, many open-source implementations for IMU pose estimation exist: the original SIP code (in C++) was available as a research prototype, and there are re-implementations like the one by Yan et al. in the Fusion Pose project. The DIP authors released their PyTorch code and pretrained model on the DIP project page, allowing researchers to directly use the DIP network for comparison. The TransPose project (2021) provides code that includes not only a neural network but also an example of using a solver (Ceres) to refine global pose with IMUs, giving a practical example of combining learning with optimization. When developing an optimization-based method, one can use these datasets to test: for instance, start by fitting a single frame's pose to one frame of DIP-IMU orientation data (which should be similar to solving a PSO problem per frame), then extend to a window of frames to incorporate acceleration.
+
+By leveraging these datasets, the community has established evaluation protocols – common metrics include MPJPE (Mean Per Joint Position Error) in millimeters between the estimated pose and ground-truth pose, as well as orientation errors in degrees for each joint. For example, on DIP-IMU, DIP (the neural method) reports an average joint position error around 60~80mm, whereas SIP (optimization) achieves around 100mm on certain motions, illustrating the trade-off between real-time inference and global accuracy. Datasets like TotalCapture allow comparisons against vision-based methods: e.g., combining IMUs with video can reduce errors compared to video-only, especially for occluded limbs. Overall, the availability of data and code has greatly accelerated research, enabling more advanced techniques like hybrid model-learning methods and domain adaptation for different sensor configurations.

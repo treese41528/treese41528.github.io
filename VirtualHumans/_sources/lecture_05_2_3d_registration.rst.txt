@@ -1,0 +1,391 @@
+.. _lecture_05_2_3d_registration:
+
+Lecture 05.2 - 3D Registration: From Classical ICP to Modern Methods
+====================================================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/NAIyqnAQULE" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: 3D Registration 5.2.1 <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_05_1_TrainingBodyModel_FittingSMPLtoScans.pdf>`_
+
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/TvsjvmclAVM" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+
+`Lecture Slides: 3D Registration 5.2.2 <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_05_2_Learning_Based_Registration.pdf>`_
+
+
+
+
+Introduction
+-----------------
+
+3D registration is the process of aligning two or more 3D datasets (such as point clouds or meshes) into a common coordinate frame. Given a "source" shape and a "target" shape, registration finds the spatial transformation that best superimposes the source onto the target. This is a fundamental problem in computer vision and graphics, with applications ranging from scanning and mapping to medical imaging and character animation.
+
+Registration methods can be broadly categorized as rigid (assuming the object is solid and only rotated/translated) or non-rigid (allowing deformation of the object). Over the past few decades, researchers have developed a spectrum of techniques for 3D registration, from classical geometry-based algorithms to sophisticated learned models.
+
+This lecture provides a comprehensive treatment of 3D registration, covering:
+
+1. Rigid Registration and the ICP Algorithm
+2. Classical Non-Rigid Registration
+3. Parametric Models and the SMPL Body Model
+4. Modeling Clothing and Fine Details: SMPL+D
+5. Survey of 3D Registration Methods: From ICP to Deep Learning
+
+1. Rigid Registration and the ICP Algorithm
+------------------------------------------------
+
+Rigid registration assumes the shapes differ only by a 3D rigid transform (rotation :math:`\mathbf{R}\in SO(3)` and translation :math:`\mathbf{t}\in\mathbb{R}^3`). The goal is to find :math:`\mathbf{R},\mathbf{t}` minimizing a distance between the source and target point sets.
+
+If we have :math:`N` points :math:`{\mathbf{x}_i}` in the source and corresponding points :math:`{\mathbf{y}_i}` in the target, a common objective is the sum of squared distances:
+
+.. math::
+
+   F(\mathbf{R},\mathbf{t}) = \sum_{i=1}^N\|\mathbf{R}\mathbf{x}_i+\mathbf{t}-\mathbf{y}_i\|^2
+
+To minimize :math:`F`, we can use the method of Procrustes alignment. The optimal translation is:
+
+.. math::
+
+   \mathbf{t}^* = \bar{\mathbf{y}} - \mathbf{R}\bar{\mathbf{x}}
+
+This aligns the centroids :math:`\bar{\mathbf{x}}, \bar{\mathbf{y}}`. The optimal rotation :math:`\mathbf{R}^*` is found by centering the points and solving a Wahba's problem. One solution is via singular value decomposition (SVD):
+
+1. Form the cross-covariance matrix :math:`\mathbf{C} = \sum_i (\mathbf{x}_i - \bar{\mathbf{x}})(\mathbf{y}_i - \bar{\mathbf{y}})^T`
+2. Compute :math:`\mathbf{R}^* = \mathbf{U}\cdot\mathrm{diag}(1,\dots,1,\det(\mathbf{U}\mathbf{V}^T))\cdot\mathbf{V}^T`, where :math:`\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T = \mathbf{C}` is the SVD
+
+This yields the least-squares rigid transform (essentially the algorithm of Umeyama (1991)). If correspondences are known and outlier-free, this solution is global and exact.
+
+The Iterative Closest Point (ICP) Algorithm
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In practice, correspondences between source and target points are usually unknown. The Iterative Closest Point (ICP) algorithm addresses this by alternating between finding correspondences and updating the transform. Introduced simultaneously by Chen & Medioni (1991) and Besl & McKay (1992), ICP has become "the dominant method for aligning three-dimensional models based purely on geometry."
+
+The algorithm assumes a reasonably good initial pose and then iteratively:
+
+1. Finds the closest point on the target for each source point (choosing a "corresponding" point pair)
+2. Updates the transform :math:`(\mathbf{R},\mathbf{t})` by solving the Procrustes problem for these pairs
+
+Each iteration non-increasingly improves the alignment error (it is a coordinate-descent on :math:`F`), and ICP converges to a local minimum.
+
+In pseudocode form:
+
+.. code-block:: rst
+   :linenos:
+
+   # ICP Algorithm
+   Initialize R ← R₀, t ← t₀ (initial guess)
+   
+   Repeat until convergence:
+       For each source point x_i, find its closest point y_j on the target (e.g. using a k-d tree)
+       Solve for (R,t) = arg min ∑_i |R·x_i + t - y_{j(i)}|² (closed-form via SVD as above)
+   
+   Output final R,t and aligned shapes
+
+ICP is simple and empirically effective when the shapes have good initial alignment and sufficient overlap. It is widely used for registering multiple scans from 3D scanners into a single model. Numerous variants improve its robustness and speed:
+
+- **Point-to-plane ICP**: Replaces point-to-point distance with the distance of source points to tangent planes on the target, leading to faster convergence
+- **Outlier rejection**: Discarding pairs with distance beyond a threshold
+- **Weighting schemes**: Downweight uncertain correspondences
+- **Sampling strategies**: Different approaches for selecting subsets of points to match
+
+Modern implementations (such as in PCL or Open3D libraries) can align point clouds in real time by combining these techniques.
+
+Convergence Analysis and Failure Modes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Under certain conditions (e.g., the shapes are roughly convex and the initial alignment is close), ICP converges linearly to the nearest local optimum. Each iteration's correspondence step is non-expansive in terms of the error metric, and the alignment step finds the optimal transform for those correspondences, so error decreases or stays the same.
+
+Despite its popularity, ICP has important failure modes:
+
+- The algorithm guarantees convergence only to a local minimum, so if the initial guess is far from the correct alignment or the shapes have symmetric/ambiguous geometry, ICP may converge to a wrong pose
+- It is a greedy approach: the closest-point matching can jump into incorrect correspondences if there are repetitive structures or if one shape is a partial view of the other
+
+Global methods have been developed to mitigate this, such as Go-ICP (which uses branch-and-bound to find the global optimum), or by using feature-based initial alignment (e.g., matching 3D descriptors like FPFH or spin images before ICP).
+
+In practice, a good heuristic is to run ICP multiple times from random initial perturbed poses (or use a global optimizer for initialization) to increase the chance of finding the global alignment. When successful, ICP produces an accurate rigid transformation (often within sensor noise levels, e.g., millimeter accuracy for object scans).
+
+2. Classical Non-Rigid Registration
+---------------------------------------
+
+Rigid alignment is insufficient when the source shape is a deformed version of the target (e.g., different poses of a person, or an object that bends). Non-rigid registration allows more general transformations such as anisotropic scaling or free-form deformations.
+
+Mathematically, we seek a mapping :math:`T: \mathbb{R}^3 \to \mathbb{R}^3` (not just rigid) that aligns the shapes. This is an ill-posed problem without regularization – many mappings can align a sparse set of points perfectly, including physically implausible ones. Thus, methods introduce smoothness constraints or parametric deformation models to regularize :math:`T`.
+
+Thin Plate Spline Robust Point Matching (TPS-RPM)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+TPS-RPM, introduced by Chui and Rangarajan (2003), integrates the Robust Point Matching strategy with a Thin-Plate Spline deformation model. The thin-plate spline is a smooth interpolating function defined by a set of control points; it minimizes bending energy, making it well-suited to model plausible deformations.
+
+TPS-RPM treats correspondences in a soft manner: rather than a binary assignment of each source point to a single target point (like ICP), it introduces a fuzzy correspondence matrix :math:`P` where :math:`P_{ij}\in[0,1]` indicates the probability or weight of :math:`\mathbf{x}_i` mapping to :math:`\mathbf{y}_j`.
+
+An annealing (graduated optimization) scheme is used:
+
+1. Start with very smooth (high regularization, correspondences nearly uniform)
+2. Gradually allow more flexibility and crisper correspondences
+3. At each stage, alternate between:
+   - Solving for the correspondence weights :math:`P` (analogous to an E-step, often via softmin of distances)
+   - Solving for the TPS warp parameters (analogous to an M-step, fitting a smooth spline to the weighted correspondences)
+
+As the "temperature" lowers, :math:`P` tends toward a permutation matrix (hard assignment) and the spline converges to a final mapping.
+
+TPS-RPM was one of the first algorithms to robustly handle non-rigid 2D and 3D point-set alignment without known correspondences. It remains conceptually important as it framed non-rigid registration as a joint optimization of correspondence and shape deformation.
+
+Coherent Point Drift (CPD)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The CPD algorithm, introduced by Myronenko and Song (2010), takes a probabilistic perspective. It assumes one point set (the source) represents the centroids of a Gaussian Mixture Model (GMM), and the other (target) points are observed data points. The alignment is treated as maximizing the likelihood of the target given a transformed source.
+
+A key insight of CPD was to enforce motion coherence: all the Gaussian centroids (source points) move as a group via a smooth deformation field, rather than independently. 
+
+In the rigid CPD, this means the centroids move rigidly (the GMM centroid positions are parameterized by a global :math:`\mathbf{R},\mathbf{t}`), leading to essentially a probabilistic ICP with an EM algorithm:
+
+- E-step: Soft assignments of points to GMM centroids
+- M-step: Update :math:`\mathbf{R},\mathbf{t}` by closed form
+
+In the non-rigid CPD, the motion of centroids is parameterized by a smooth radial basis function (like Thin-Plate or Gaussian kernel), with a regularization term that penalizes large deviations of neighboring centroids.
+
+The EM formulation naturally yields soft correspondences (via posterior probabilities of Gaussian components) and handles outliers by including a uniform "noise" component in the mixture. CPD tends to preserve the topological structure of the point cloud during deformation (hence "coherent drift").
+
+Other Non-Rigid Methods
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Numerous other techniques exist. Non-Rigid ICP (NR-ICP) algorithms extend ICP by incrementally deforming a template with regularization. For example, Amberg et al. (2007) introduced an "optimal step" NR-ICP that represents the source shape as a mesh and at each iteration solves a linear system to update vertex positions under an as-rigid-as-possible (ARAP) penalty.
+
+Another approach is the embedded deformation technique (Sumner et al. 2007), which uses a deformation graph (sparse set of nodes in the volume) that undergo affine transformations, blending those to deform the entire shape. This reduces degrees of freedom and ensures local rigidity.
+
+In summary, classical non-rigid registration methods turned the ill-posed problem into a (mostly) solvable one by combining soft correspondence estimation with smooth deformation models. They paved the way for many applications, such as building datasets like MPI FAUST (2014), which was created by registering 300 raw 3D scans of people into alignment and establishing point-to-point correspondences across scans.
+
+3. Parametric Models and the SMPL Body Model
+------------------------------------------------------
+
+While generic non-rigid algorithms make minimal assumptions about object shape, in some domains we have strong prior models of how shape can vary. Human bodies are a prime example: a human scan has :math:`N\approx 10^4` points (if meshed, 6890 vertices in the commonly used template), which is a huge number of degrees of freedom for arbitrary deformation, but the true variability of human bodies lies in a much lower-dimensional space (body shape and pose).
+
+Parametric human models exploit this by encoding body shape and pose in a compact set of parameters. The most widely used model today is SMPL (Skinned Multi-Person Linear model) by Loper et al. 2015. SMPL provides a differentiable function :math:`M(\boldsymbol{\beta}, \boldsymbol{\theta})` that outputs a full 3D mesh of a human given shape parameters :math:`\boldsymbol{\beta}` and pose parameters :math:`\boldsymbol{\theta}`.
+
+Model Structure
+^^^^^^^^^^^^^^^^^^
+
+SMPL's output is a triangulated mesh with :math:`N=6890` vertices (a standard template topology). The model has :math:`|\boldsymbol{\beta}|=10` shape parameters and :math:`|\boldsymbol{\theta}|=24\times 3=72` pose parameters (3 for each joint's rotation in axis-angle). Internally, SMPL has a rig (skeleton) of :math:`K=24` joints in a kinematic tree (including the root).
+
+There are three main components in the SMPL function:
+
+Shape Blend Shapes (Identity Variation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The model learns a low-dimensional shape space (capturing different body proportions and details across individuals). Mathematically, this is a linear blend shape model:
+
+.. math::
+
+   \mathbf{T}(\boldsymbol{\beta}) = \bar{\mathbf{T}} + \mathbf{B}_S \boldsymbol{\beta}
+
+where:
+- :math:`\bar{\mathbf{T}}\in\mathbb{R}^{3N}` is the mean shape (a reference mesh in a neutral pose, e.g., T-pose)
+- :math:`\mathbf{B}_S=[\mathbf{S}_1,\mathbf{S}_2,\ldots,\mathbf{S}_{|\beta|}]\in\mathbb{R}^{3N\times|\beta|}` is a matrix of principal shape directions
+- Each :math:`\mathbf{S}_n` is a shape blend shape (essentially a vertex displacement vector corresponding to one principal component of human shape variation)
+
+Given a coefficient vector :math:`\boldsymbol{\beta}`, the shaped template :math:`\mathbf{T}(\boldsymbol{\beta})` is a 3N vector stacking all vertices of the mesh in the zero-pose, but morphed to the body shape defined by :math:`\boldsymbol{\beta}`.
+
+As a byproduct, SMPL computes the locations of the skeleton joints for this body using a learned joint regressor :math:`J_{\text{reg}}` (a fixed :math:`K\times N` matrix) that picks a linear combination of vertex positions to define each joint coordinate:
+
+.. math::
+
+   J(\boldsymbol{\beta}) = J_{\text{reg}} \cdot \mathbf{T}(\boldsymbol{\beta})
+
+This yields :math:`K=24` joint locations in the posed space.
+
+Pose Blend Shapes (Pose-Dependent Deformation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If we were to articulate the shaped mesh :math:`\mathbf{T}(\beta)` purely by rotating limbs (via skinning), we would see artifacts. SMPL addresses this by learning pose-dependent deformations.
+
+These are also linear blend shapes, but their "weights" depend on the pose :math:`\boldsymbol{\theta}`. SMPL represents the pose by relative rotation matrices :math:`R_1,\dots,R_{K}` for each joint. A pose feature :math:`\mathbf{f}(\boldsymbol{\theta})` is constructed by concatenating the rotation matrices (excluding the root) after subtracting the identity:
+
+.. math::
+
+   \mathbf{f}(\boldsymbol{\theta})=[\text{vec}(R_1-I), \text{vec}(R_2-I), \ldots, \text{vec}(R_{K-1}-I)] \in\mathbb{R}^{(K-1)\times 9}
+
+This vector (of length 207 when :math:`K=24`) is zero in the zero-pose and captures how each joint's rotation deviates from rest.
+
+SMPL then has a pose blend shape matrix :math:`\mathbf{B}_P \in \mathbb{R}^{3N\times 207}` that maps this pose feature to a corrective displacement on the vertices:
+
+.. math::
+
+   \mathbf{P}(\boldsymbol{\theta}) = \mathbf{B}_P \mathbf{f}(\boldsymbol{\theta}) \in\mathbb{R}^{3N}
+
+After computing pose blend shapes, we add them to get the posed template in zero pose:
+
+.. math::
+
+   \mathbf{T}_P(\boldsymbol{\beta},\boldsymbol{\theta}) = \mathbf{T}(\boldsymbol{\beta}) + \mathbf{P}(\boldsymbol{\theta}) \in\mathbb{R}^{3N}
+
+or equivalently:
+
+.. math::
+
+   \mathbf{T}_P = \bar{\mathbf{T}} + \mathbf{B}_S\boldsymbol{\beta} + \mathbf{B}_P(\boldsymbol{\theta})
+
+Linear Blend Skinning (LBS) for Articulation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Now we have a mesh :math:`\mathbf{T}_P(\boldsymbol{\beta},\boldsymbol{\theta})` in the canonical pose (T-pose) that reflects the person's shape and pose-dependent deformations. The final step is to pose the model: apply the joint rotations :math:`\boldsymbol{\theta}` to the mesh to obtain the vertices in the target pose.
+
+SMPL uses Linear Blend Skinning (also known as skeleton subspace deformation). Each vertex :math:`i` is attached to the :math:`K` skeleton joints with weights :math:`w_{ik}` (these are given by a skinning weight matrix :math:`W\in \mathbb{R}^{N\times K}`, where each row sums to 1).
+
+For each joint :math:`k`, we compute a :math:`4\times 4` homogeneous global transform :math:`G_k(\boldsymbol{\theta}, J(\boldsymbol{\beta}))` that takes a point in the rest pose coordinate system of joint :math:`k` to the new posed location. This is done by forward kinematics along the kinematic tree.
+
+The deformed position of vertex :math:`i` is:
+
+.. math::
+
+   \mathbf{v}'_i = \sum_{k=1}^K w_{ik} (G_k(\boldsymbol{\theta},J(\boldsymbol{\beta})) [ \mathbf{v}_i, 1 ]^T)_{1..3}
+
+where :math:`\mathbf{v}_i` is the :math:`i`-th vertex of :math:`\mathbf{T}_P(\boldsymbol{\beta},\boldsymbol{\theta})`.
+
+Putting it all together, the SMPL function can be written as:
+
+.. math::
+
+   M(\boldsymbol{\beta},\boldsymbol{\theta}) = W(\bar{\mathbf{T}}+\mathbf{B}_S\boldsymbol{\beta}+\mathbf{B}_P(\boldsymbol{\theta}), J(\boldsymbol{\beta}), \boldsymbol{\theta}, W)
+
+where :math:`W(\cdot)` denotes the Linear Blend Skinning operation.
+
+Learning SMPL
+^^^^^^^^^^^^^^^^^
+
+The parameters :math:`\mathbf{B}_S`, :math:`\mathbf{B}_P`, :math:`J_{\text{reg}}`, and :math:`W` were learned from a training set of thousands of registered 3D body scans. In training, the identity of each scan (which person) and the pose (from a motion capture) were known, so one could solve for the blend shapes by linear regression.
+
+One important design choice: SMPL's pose blend shapes are pose-dependent offsets that are independent of identity. This factorization makes the model simple and additive, but it cannot capture any idiosyncratic pose deformation (e.g., two people with different body fat might deform slightly differently in the same pose).
+
+Using SMPL for Registration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A major advantage of SMPL is that it reduces a complex registration problem (deforming a high-dimensional surface) to a low-dimensional parameter estimation problem. To fit SMPL to a 3D scan, one needs to find :math:`\boldsymbol{\beta},\boldsymbol{\theta}` (and possibly a global translation) that makes :math:`M(\boldsymbol{\beta},\boldsymbol{\theta})` align the scan as closely as possible.
+
+This is typically done by minimizing an objective that measures distance from the scan points to the SMPL surface (and vice versa) while regularizing the parameters (e.g., keeping :math:`\boldsymbol{\beta}` near the mean and :math:`\boldsymbol{\theta}` in plausible ranges). Because SMPL is differentiable, one can use gradient-based optimization for this fitting.
+
+Classical approaches like SMPLify (Bogo et al., 2016) did exactly this: they fit SMPL to 2D keypoints or 3D scans by iterative closest point alignment with priors. When properly initialized, such model-based fitting is very robust and yields a complete, watertight mesh even from partial data.
+
+4. Modeling Clothing and Fine Details: SMPL+D
+-------------------------------------------------
+
+SMPL+D refers to extending the SMPL model by adding a free-form displacement field on top of the regular SMPL surface. The "+D" stands for extra per-vertex displacements (often called offsets or D-vertices).
+
+Intuitively, SMPL models a naked or minimally-clothed body. SMPL+D says: in addition, each vertex can shift by some small 3D vector to capture person-specific details not in SMPL (e.g., the shape of their clothing, hair, or subtle geometry like muscle tone).
+
+Mathematically, if :math:`M(\boldsymbol{\beta},\boldsymbol{\theta})` is the SMPL surface, then:
+
+.. math::
+
+   M^+(\boldsymbol{\beta},\boldsymbol{\theta},D) = M(\boldsymbol{\beta},\boldsymbol{\theta}) + D
+
+where :math:`D\in \mathbb{R}^{3N}` is a vector of displacements for each vertex (in the same order as the SMPL mesh).
+
+In practice, :math:`D` is usually defined in the rest pose and then rotated with the body. That is, we actually add :math:`D` to the template before skinning. Many works simply optimize :math:`D` as 3D free parameters (with smoothing regularization) when fitting a scan, allowing the fitted model to exactly coincide with the scan even if it has wrinkles or garments not represented by SMPL.
+
+Why SMPL+D?
+^^^^^^^^^^^^
+
+SMPL, being linear and low-dimensional, cannot capture high-frequency details or cloth wrinkles. By adding :math:`D`, we get a piecewise linear model: the base is linear in :math:`\boldsymbol{\beta}` and pose elements (SMPL), and then an extra term linear in :math:`D` (trivial identity mapping).
+
+Crucially, SMPL+D retains the parametric, controllable nature of SMPL for the big deformations, while :math:`D` accommodates all the remaining detail. This concept was hinted at even in the original SMPL paper and has been explicitly used in works like "Learning to Reconstruct People in Clothing" by Alldieck et al. (CVPR 2019).
+
+From a registration perspective, SMPL+D is extremely useful. A common approach to fit a clothed 3D scan is:
+
+1. First fit SMPL (getting the underlying body shape and pose)
+2. Then compute the residual difference between the scan and the SMPL surface as :math:`D`, assigning each vertex a displacement to reach the scan
+
+This results in an exact fit to the scan (if vertex correspondences are established). The output is a mesh that has the same connectivity as SMPL but matches the scan closely – effectively a registered mesh.
+
+How Displacements Are Applied
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Typically, :math:`D` is defined in the model's rest pose. So the pipeline becomes:
+
+1. Start with :math:`\bar{T}+\mathbf{B}_S\boldsymbol{\beta}` (the naked body shape)
+2. Add :math:`D` (now it's a clothed shape in T-pose)
+3. Add :math:`\mathbf{B}_P(\boldsymbol{\theta})` pose correctives
+4. Skin the whole thing
+
+Since :math:`D` moves some vertices outwards (like away from the body for a jacket), those vertices will still follow along with the nearest joints' rotations thanks to skinning weights. Thus the clothing moves approximately correctly with the body.
+
+This approach treats clothing as if it were "painted onto" the body with the same rig. It cannot capture secondary motion or sliding of loose clothing, but it is surprisingly effective for moderately tight apparel.
+
+Limitations
+^^^^^^^^^^^^^
+
+One must be careful when adding :math:`D`: large displacements can distort skinning if the clothing extends far from the body (e.g., a long skirt might clip through legs when animated because SMPL's single skinning weight per vertex might not suffice for cloth).
+
+SMPL+D also increases the dimensionality of the model tremendously (:math:`3N \approx 20k` new parameters), so it's usually used when one has actual scan data to fit (not as a generative model by itself, unless combined with neural nets that predict :math:`D`).
+
+Applications
+^^^^^^^^^^^^^
+
+Once you have a SMPL+D model of a person (i.e., :math:`\boldsymbol{\beta}` fit to their body, and :math:`D` fit to their clothes/hair), you can animate it by changing :math:`\boldsymbol{\theta}`. The :math:`D` stays attached to the same vertices, so as the body moves, the clothes move too.
+
+This makes SMPL+D a straightforward solution for clothed avatar animation without needing physical simulation. It won't exhibit cloth dynamics (no secondary motion like a skirt swaying), but for many purposes (AR/VR avatars, games) it provides a good trade-off of realism and simplicity.
+
+5. Survey of 3D Registration Methods: From ICP to Deep Learning
+-----------------------------------------------------------------
+
+Let's now trace the historical progression of 3D registration methods, highlighting key representative works and showing how ideas evolved and how new technologies (like neural networks) have influenced the field.
+
+5.1 Early Pioneering Works (1990s) – Foundational Rigid Registration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The 1990s established the foundations for rigid registration:
+
+- **Horn (1987) and Arun & Huang (1987)**: Developed closed-form solutions for absolute orientation (the Procrustes problem) using quaternions or SVD
+- **Chen & Medioni (1991) and Besl & McKay (1992)**: Introduced the ICP algorithm, establishing the first general solution to align 3D shapes with unknown correspondences
+- **Zhang (1994)**: Improved ICP with a space partitioning technique for speed and discussed convergence properties
+- **Feldmar & Ayache (1996)**: Extended ICP to deformable medical image registration using splines
+- **Rusinkiewicz & Levoy (2001)**: "Efficient Variants of ICP", a landmark paper that systematically reviewed many enhancements and made ICP fast enough for real-time use
+
+By 2000, rigid registration became largely a solved problem with ICP and its variants, as long as a decent initial guess is available. Challenges remained in global alignment (overcoming local minima) and speed, but the basic algorithmic toolbox was established.
+
+5.2 The 2000s – Robust and Non-Rigid Registration Emerges
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The 2000s saw significant advances in non-rigid registration:
+
+- **Gold, Rangarajan et al. (1998)**: Proposed Robust Point Matching (RPM) with softassign and deterministic annealing for 2D point sets
+- **Chui & Rangarajan (2003)**: TPS-RPM combined RPM with Thin Plate Splines for non-rigid alignment, a breakthrough in non-rigid registration
+- **Amberg, Romdhani, Vetter (2007)**: Optimal Step Nonrigid ICP introduced a general framework for embedded deformation in ICP
+- **Myronenko & Song (2009-2010)**: Released CPD, providing a principled probabilistic approach that became extremely popular due to its ease of use and robustness
+
+By 2010, a typical pipeline might be: use CPD or TPS-RPM to get an initial non-rigid alignment, then project into a known template (like a human model) for fine-tuning.
+
+5.3 2010s – Template-based and Parametric Model Registration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The 2010s saw the rise of template-based registration:
+
+- **Anguelov et al. (2005)**: SCAPE model – an earlier parametric human model (nonlinear blend shapes) used to fit meshes of people
+- **Bogo et al. (2014)**: FAUST dataset – provided 300 meshes of humans in correspondence, and an evaluation for registration algorithms
+- **SMPL (2015)**: As described, SMPL provided a ready-made template with a parametric function. Fitting SMPL to a scan (with or without D) became a common approach
+- **SMPLify (2016)**: Bogo et al. showed fitting SMPL to 2D keypoints in images to recover 3D pose/shape
+- **3D-CODED (2018)**: A deep learning approach by Groueix et al. that introduced the idea of a deformation-based autoencoder for shapes
+
+5.4 2020s – Learning-Based Parametric Registration and Hybrid Approaches
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Around 2019-2020, we see an explosion of methods that leverage deep learning to improve 3D registration, especially for humans:
+
+- **IP-Net (ECCV 2020)**: Implicit Part Network by Bhatnagar et al. combines implicit surface reconstruction with model fitting
+- **LoopReg (NeurIPS 2020)**: Tackled the problem of registering an entire corpus of 3D scans to a common model in a self-supervised way
+- **Neural Deformation Fields (2021+)**: Recent approaches represent the deformation by neural networks. For instance, SNARF (Chen et al., ICCV 2021) learns a neural forward skinning field
+- **Learned Vertex Descent (LVD, ECCV 2022)**: Takes a hybrid approach, training an ensemble of tiny networks, one per vertex of the template, that output a descent direction for that vertex towards the data
+
+These newer methods aim to make the registration pipeline partially neural so it can learn to avoid local minima and cope with data imperfections, while still maintaining the logical structure of ICP (correspondence & update).
+
+Summary
+--------
+
+The field of 3D registration has evolved from deterministic algorithms operating on point sets to highly learned systems that leverage data-driven priors:
