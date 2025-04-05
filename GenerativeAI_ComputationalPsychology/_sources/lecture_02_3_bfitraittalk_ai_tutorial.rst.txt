@@ -1,0 +1,1082 @@
+.. BFITraitTalk_AI Tutorial
+
+Lecture 02.4 - Conversational AI Survey (BFITraitTalk_AI Tutorial)
+======================================================================
+
+**Lecture Objectives:** In this tutorial, we walk through a working prototype app that delivers a standard psychology survey (the Big Five Inventory) via a conversational AI interviewer. This is the practical follow-up to Lecture 01.2 (survey design) and Lecture 02.1 (interactive AI interviewing). By the end, you should understand how the app's code integrates a large language model into a survey, how it handles the dialog and data, and how this approach aligns with (and challenges) traditional survey methodology.
+
+Overview
+---------
+
+BFITraitTalk_AI is a Flask-based web application that administers the **Big Five Inventory (BFI)** personality questionnaire in a chat format. Instead of filling out a form with checkboxes, the user interacts with an AI persona (named "Kaya") through a chat interface. **Kaya** asks each BFI question in a conversational manner, understands the user's free-text answers, and then suggests a numeric score (1 through 5) for that item based on the answer. The user can confirm or correct this suggested score before the AI moves on. The interface dynamically updates a survey form on the side with the confirmed answers and, once all questions are answered, shows a personalized Big Five profile summary.
+
+**How this fits into AI-augmented survey research:** Traditionally, surveys present fixed statements and ask respondents to select predefined options (e.g. "Strongly Agree" to "Strongly Disagree"). This ensures standardized data but can feel impersonal and may miss nuances of why a respondent chose an answer. Conversely, human-led interviews allow open-ended responses and clarification but are costly and hard to scale. Lecture 02.1 introduced the idea that large language models (LLMs) can act as *adaptive interviewers*, potentially offering the best of both: the **scalability and structure of surveys** with the **rapport and adaptiveness of interviews**. BFITraitTalk_AI is a proof-of-concept of this idea. It uses **Google's Gemma 3** LLM running locally to conduct the interview. All conversation occurs on the user's machine, ensuring privacy (no data leaves to an external API). The primary goal is to explore whether an AI interviewer can make the survey experience more engaging and insightful while still collecting quantifiable, standardized responses.
+
+**Key Features:**
+
+- *Conversational Delivery:* The AI asks BFI statements one by one in a natural, dialogic way (e.g. *"Would you say you see yourself as someone who is talkative?"* instead of a dry prompt). Users respond in their own words.
+- *Dynamic Interpretation:* The AI interprets each free-text answer and **proposes a Likert score** (1=Strongly Disagree to 5=Strongly Agree). For example, if a user responds *"I'm only talkative around close friends"*, Kaya might say *"Sounds like you're moderately talkative. I'd score that around 3 out of 5. Does that feel right?"*.
+- *Adaptive Flow:* If the user confirms, the AI records the score and **seamlessly proceeds to the next question**. If the user disagrees or is unsure, the AI can ask for clarification or let the user provide the correct number. The AI can also handle follow-up questions from the user (e.g., "What does 'talkative' mean in this context?") by offering an explanation and then re-asking the item.
+- *Local and Privacy-Preserving:* The app runs the Gemma 3 model via Hugging Face on the local machine, so all personal responses stay local. This design was chosen to address ethical concerns about data privacy (discussed later).
+- *Result Summary:* After all 44 BFI items are answered, the app computes the Big Five trait scores and displays a summary profile (e.g., *"You scored high on Extraversion"* along with a brief interpretation).
+
+**A Sample Dialog:** The following excerpt illustrates a typical interaction:
+
+**Kaya (AI):** *"Let's begin! First, thinking about yourself, how much do you agree with the statement: 'I see myself as someone who is talkative'? You can answer in your own words."*
+
+**User:** *"Hmm, I'm actually pretty quiet around new people, but very chatty once I get comfortable."*
+
+**Kaya (AI):** *"Got it. So you're talkative in some situations but not others. It sounds like you **somewhat agree** with the statement. I'd tentatively put that at a **3 out of 5**. Does that feel right to you?"*
+
+**User:** *"Yeah, that sounds about right."*
+
+*(The app records a score of 3 for "is talkative" and Kaya continues to the next item.)*
+
+This approach keeps the user engaged and allows them to explain their answers. Meanwhile, the system still obtains a structured numeric score for each question, maintaining compatibility with traditional survey analysis.
+
+Setup
+-------
+
+In this section, we cover how to install and run BFITraitTalk_AI on your local machine. The app has a few heavy dependencies (like the LLM model itself), so be prepared for a large download and the need for a decent GPU for best performance.
+
+Prerequisites
+~~~~~~~~~~~~~~~~~~
+
+- **Python 3.9+** – The code is tested on Python 3.10.
+- **Git** – To clone the repository.
+- **PyTorch and GPU drivers** – An NVIDIA CUDA-compatible GPU is **highly recommended**. The Gemma-3 model has billions of parameters, so running on CPU will be extremely slow (though possible). Ensure you have appropriate NVIDIA CUDA drivers installed for your GPU.
+- **Disk Space** – Several gigabytes free for the model files.
+
+.. note::
+   The Gemma-3 models come in different sizes (4B, 12B, 27B parameters). The larger the model, the better the AI's responses *and* the more VRAM required. For example, the 4B model can run in ~5 GB GPU memory (8-bit quantized), whereas the 12B and 27B models need substantially more. In this tutorial, we'll assume use of the 4B or 12B model on a typical modern GPU.
+
+Installation Steps
+~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Clone the Repository:** Get the code from GitHub.
+
+   .. code-block:: console
+
+      $ git clone https://github.com/treese41528/BFITraitTalk_AI.git
+      $ cd BFITraitTalk_AI
+
+2. **Create a Virtual Environment:** (optional, but good practice) Create an isolated environment for the project and activate it.
+
+   .. code-block:: console
+
+      $ python -m venv venv
+      $ source venv/bin/activate   # on Linux/Mac
+      $ .\\venv\\Scripts\\activate  # on Windows
+
+   *(After activation, your console prompt should show `(venv)`.)*
+
+3. **Install Python Dependencies:** Use pip to install required libraries.
+
+   .. code-block:: console
+
+      (venv)$ pip install --upgrade pip
+      (venv)$ pip install -r requirements.txt
+
+   This will install Flask, Transformers (for the Hugging Face LLM integration), **BitsAndBytes** (for 4-bit quantization), and other necessary packages.
+
+4. **Download the Gemma 3 Model:** The LLM weights are not shipped with the repository due to size. You have two options:
+
+   - **Automated download script (recommended):** The repo provides ``utils/gemma_downloader.py`` which uses Hugging Face Hub. You must have git LFS installed or be logged in to Hugging Face if the model requires it. For example, to download the 12B instruction-tuned Gemma-3 model:
+
+     .. code-block:: console
+
+        (venv)$ python utils/gemma_downloader.py --model_size 12b --variant it
+
+     This will fetch the model files (several GB) and place them under ``data/hf_models/gemma-3-12b-it/``. You can similarly download ``4b`` or ``27b`` by changing the argument.
+
+   - **Manual download:** Alternatively, download the model files for *``google/gemma-3-4b-it``*, *``gemma-3-12b-it``*, etc. from Hugging Face using your browser or ``huggingface-cli``. Then place the files under ``BFITraitTalk_AI/data/hf_models/<model-folder>`` exactly as the script would (e.g., ``data/hf_models/gemma-3-4b-it/``). Ensure the directory name matches one of the expected names (see next step).
+
+5. **Configure the App (optional):** Open the ``config.py`` file in the project. Here you can set which model size and quantization to use, among other settings. For instance:
+
+   .. code-block:: python
+
+      MODEL_SIZE = "4b"       # Options: "4b", "12b", "27b"
+      QUANTIZATION = "4bit"   # Use 4-bit compression to save VRAM
+      DEVICE = "auto"         # "cuda" to force GPU, "cpu" to force CPU (auto picks GPU if available)
+
+   By default, MODEL_SIZE is "12b" and QUANTIZATION is "4bit". If you downloaded a 4B model, set this to "4b" or the app won't find the model files. You can also leave these as-is and use environment variables to override (e.g., export GEMMA_MODEL_SIZE=4b before running, as described in the README).
+
+6. **Run the App:** With everything in place, start the Flask server:
+
+   .. code-block:: console
+
+     (venv)$ python survey_app.py
+
+   The first time, the model will load into memory, which can take up to a few minutes. You'll see log messages indicating the model is being loaded (and possibly that weights are being quantized to 4-bit). Once ready, the console will show a message like:
+
+   * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+
+   Now open a web browser and go to http://localhost:5000. You should see the BFITraitTalk_AI interface. Click the "Start Interview" button to begin the chat.
+
+Codebase Walkthrough
+-----------------------
+
+Now, let's dive into how the app is structured under the hood. The repository is organized into several modules:
+
+* **Flask App (survey_app.py)**: The main web application code, including route handlers and integration of all components.
+* **LLM Module (llm/ directory)**: Code for loading the Gemma 3 model and handling LLM interactions (prompt formatting, generating responses, etc.).
+* **Utilities (utils/ directory)**: Helper logic, including the session manager (tracking interview state), response parser, BFI scoring, and the model downloader.
+* **Frontend (HTML/JS/CSS in templates/ and static/)**: The user interface files.
+
+We'll examine each part to see how the conversational survey works end-to-end.
+
+Frontend Design (User Interface)
+-----------------------------------
+
+BFITraitTalk_AI uses a classic web stack for the UI: HTML templates + CSS + JavaScript, served by Flask. There is no heavy front-end framework; the focus is on simplicity and transparency. The UI is split into two main panels:
+
+* **Left Panel – Chat Interface**: This panel shows the conversation between the user and Kaya (the AI). It has a scrollable chat history and an input box for the user to type their messages. When you click "Start Interview," the first AI question appears here. As you continue, user messages and AI replies appear in this chat log.
+* **Right Panel – Questionnaire Form**: This panel lists the BFI questions and records answers as they are confirmed. Each question displays a 5-point Likert scale plus a skip option. The current question being discussed is highlighted with a blue border. As answers are confirmed, they appear in the form with the selected score highlighted.
+
+The HTML template ``templates/index.html`` defines this two-panel structure, with a chat panel and a form panel:
+
+.. code-block:: html
+
+   <div class="container">
+       <!-- Chat Panel (Left Side) -->
+       <div class="panel chat-panel">
+           <!-- Chat messages go here -->
+           <div class="chat-messages" id="chatMessages">
+               <!-- Messages will be added here dynamically -->
+               <div class="typing-indicator" id="typingIndicator">
+                   <span></span><span></span><span></span>
+               </div>
+           </div>
+           <!-- Chat input form -->
+           <div class="chat-input">
+               <form id="chatForm">
+                   <input type="text" id="userInput" placeholder="Type your response here..." disabled>
+                   <button type="submit" id="sendButton" disabled>
+                       <!-- Send icon SVG here -->
+                   </button>
+               </form>
+               <div class="control-buttons">
+                   <button id="startButton" class="primary-button">Start Interview</button>
+                   <button id="resetButton" class="secondary-button" style="display: none;">Reset</button>
+               </div>
+           </div>
+       </div>
+       
+       <!-- Form Panel (Right Side) -->
+       <div class="panel form-panel">
+           <!-- Questions are rendered here with Likert scales -->
+           <div class="questions-container" id="questionsContainer">
+               <!-- Each question is structured like this: -->
+               <div class="question-item" id="question-{{ question.id }}" data-question-id="{{ question.id }}" data-trait="{{ question.trait|lower }}">
+                   <div class="question-text">
+                       <span class="question-number">{{ loop.index }}.</span>
+                       <span class="statement">I see myself as someone who {{ question.text }}</span>
+                       {% if question.reverse %}
+                       <span class="reverse-indicator">(R)</span>
+                       {% endif %}
+                       <span class="trait-badge {{ question.trait|lower }}">{{ question.trait }}</span>
+                   </div>
+                   
+                   <div class="likert-scale">
+                       <!-- 5-point scale plus skip option -->
+                       {% for value in range(1, 6) %}
+                       <div class="scale-option" data-value="{{ value }}" data-question-id="{{ question.id }}">
+                           <span class="scale-number">{{ value }}</span>
+                       </div>
+                       {% endfor %}
+                       <div class="scale-option skip" data-value="skipped" data-question-id="{{ question.id }}">
+                           <span class="scale-number">S</span>
+                       </div>
+                   </div>
+                   
+                   <div class="answer-status" id="status-{{ question.id }}"></div>
+               </div>
+               <!-- Results section (initially hidden) -->
+               <div id="resultsSection" class="results-section" style="display: none;">
+                   <h3>Your Big Five Personality Profile</h3>
+                   <div class="trait-results" id="traitResults">
+                       <!-- Results will be added here dynamically -->
+                   </div>
+               </div>
+           </div>
+       </div>
+   </div>
+
+The styling is handled by ``static/css/style.css``, which defines the colors, layouts, and interactive elements like the chat bubbles and Likert scale options.
+
+**Interactive Behavior**: The JavaScript (``static/js/interview.js``) manages all client-side interactivity. It handles:
+
+1. **Starting the interview**: When the user clicks the "Start Interview" button, it makes a POST request to ``/api/start`` and then displays the AI's first message.
+
+2. **Sending and receiving messages**: The ``handleChatSubmit()`` function captures user input and sends it to ``/api/chat``, then displays the AI's response when it comes back.
+
+3. **Updating the form**: When the AI confirms a score, the ``updateForm()`` function highlights the selected option in the form panel and updates the answer status.
+
+4. **Highlighting the current question**: The ``highlightQuestion()`` function adds a CSS class to visually indicate which question is currently being discussed.
+
+5. **Managing the progress bar**: As questions are answered, the progress percentage is updated via the ``updateProgress()`` function.
+
+6. **Displaying results**: When all questions are complete, the ``displayResults()`` function shows the personality profile summary.
+
+Users can answer questions either by typing in the chat or by directly clicking the Likert scale options in the form panel. Direct scale clicks are handled by the ``initializeScaleOptions()`` function, which automatically sends the selected value to the chat.
+
+**LLM Integration (Gemma 3 Model)**
+
+The core "intelligence" of the app comes from the Gemma 3 large language model integrated via the Hugging Face Transformers library. Let's examine how the actual code handles the integration, focusing particularly on the `GemmaConversationHandler` class from `llm/gemma_handler.py`.
+
+The conversation handler is responsible for managing interactions with the Gemma 3 model. Here's how the key parts are implemented:
+
+1. **Initialization**:
+
+.. code-block:: python
+
+    def __init__(self, model, tokenizer, default_generation_params: Optional[Dict[str, Any]] = None):
+        """Initialize the conversation handler."""
+        self.model = model
+        self.tokenizer = tokenizer
+
+        # Store default generation params
+        self.default_generation_params = default_generation_params if default_generation_params else {}
+        # Set some basic defaults if none provided at all
+        if not self.default_generation_params:
+             self.default_generation_params = {
+                 "max_new_tokens": 200,
+                 "temperature": 0.7,
+                 "top_p": 0.9,
+                 "do_sample": True,
+                 "repetition_penalty": 1.1
+             }
+             logger.warning(f"No default generation params provided, using basic defaults: {self.default_generation_params}")
+        else:
+             logger.info(f"Conversation handler initialized with default generation params: {self.default_generation_params}")
+
+        # Verify we have a valid model and tokenizer
+        if not self.model or not self.tokenizer:
+            logger.error("Model or tokenizer is None. Cannot initialize conversation handler.")
+            raise ValueError("Model and Tokenizer must be provided to GemmaConversationHandler")
+        else:
+            logger.info("Conversation handler initialized successfully")
+
+2. **Formatting Conversations**:
+
+The handler formats the chat history into a prompt the model can understand using either the tokenizer's built-in chat template or a manual formatting method:
+
+.. code-block:: python
+
+    def format_conversation(self, chat_history: List[Dict[str, str]]) -> Optional[str]:
+        """
+        Formats the chat history for Gemma 3 model.
+
+        Args:
+            chat_history: List of dictionaries with 'role' and 'content' keys
+                          e.g., [{'role': 'user', 'content': '...'},
+                                {'role': 'model', 'content': '...'}]
+
+        Returns:
+            Optional[str]: Formatted prompt string for the model, or None if formatting fails
+        """
+        if not self.tokenizer:
+             logger.error("Tokenizer not available for formatting.")
+             return None
+        try:
+            logger.debug(f"Formatting chat history (length {len(chat_history)}): {chat_history}")
+            # Verify chat_history format
+            if not isinstance(chat_history, list):
+                 raise ValueError(f"chat_history must be a list, got {type(chat_history)}")
+            for turn in chat_history:
+                if not isinstance(turn, dict) or 'role' not in turn or 'content' not in turn:
+                    raise ValueError(f"Invalid turn format: {turn}. Must be dict with 'role' and 'content'.")
+                if turn['role'] not in ['user', 'model']:
+                    raise ValueError(f"Invalid role: {turn['role']}. Must be 'user' or 'model'.")
+            
+            # Check if tokenizer has chat template method
+            if hasattr(self.tokenizer, "apply_chat_template"):
+                # Use built-in chat template (recommended approach)
+                prompt = self.tokenizer.apply_chat_template(
+                    chat_history,
+                    tokenize=False,
+                    add_generation_prompt=True # Adds the final '<start_of_turn>model\n'
+                )
+                logger.debug(f"Using tokenizer's apply_chat_template method.")
+            else:
+                # Manual formatting for Gemma 3 (fallback)
+                logger.warning("Tokenizer does not have apply_chat_template method, using manual formatting")
+                prompt = self._manually_format_conversation(chat_history)
+
+            return prompt
+
+        except Exception as e:
+            logger.error(f"Error formatting conversation: {e}", exc_info=True)
+            return None
+
+If the tokenizer doesn't have an `apply_chat_template` method, the handler falls back to manual formatting:
+
+.. code-block:: python
+
+    def _manually_format_conversation(self, chat_history: List[Dict[str, str]]) -> str:
+        """ Fallback manual formatting """
+        # Simple implementation, might need refinement based on exact model expectations
+        prompt_str = ""
+        for turn in chat_history:
+             prompt_str += f"<start_of_turn>{turn['role']}\n{turn['content']}<end_of_turn>\n"
+        prompt_str += "<start_of_turn>model\n"
+        return prompt_str
+
+3. **Generating Responses**:
+
+The most critical method is `generate_response()`, which takes the chat history and generates the model's next response:
+
+.. code-block:: python
+
+    def generate_response(
+        self,
+        chat_history: List[Dict[str, str]],
+        max_new_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        do_sample: Optional[bool] = None,
+        repetition_penalty: Optional[float] = None,
+        **kwargs # Allow passing other generate() args
+    ) -> str:
+        """
+        Generates a response from the model based on chat history.
+        Uses stored default generation parameters, allowing overrides.
+        
+        Args:
+            chat_history: List of conversation turns
+            max_new_tokens (Optional[int]): Override default max_new_tokens.
+            temperature (Optional[float]): Override default temperature.
+            top_p (Optional[float]): Override default top_p.
+            do_sample (Optional[bool]): Override default do_sample.
+            repetition_penalty (Optional[float]): Override default repetition_penalty.
+            **kwargs: Additional keyword arguments passed directly to model.generate().
+            
+        Returns:
+            str: Generated response or error message
+        """
+        if not self.model or not self.tokenizer:
+             logger.error("Cannot generate response: Model or Tokenizer not initialized.")
+             return "Error: LLM components not ready."
+
+        # Format the conversation into a prompt
+        prompt = self.format_conversation(chat_history)
+        if prompt is None:
+            return "Error: Could not format conversation for the model."
+
+        # Combine default and override parameters
+        gen_params = self.default_generation_params.copy() # Start with defaults
+
+        # Apply overrides if provided
+        if max_new_tokens is not None: gen_params['max_new_tokens'] = max_new_tokens
+        if temperature is not None: gen_params['temperature'] = temperature
+        if top_p is not None: gen_params['top_p'] = top_p
+        if do_sample is not None: gen_params['do_sample'] = do_sample
+        if repetition_penalty is not None: gen_params['repetition_penalty'] = repetition_penalty
+
+        # Add any other kwargs passed directly
+        gen_params.update(kwargs)
+
+        # Ensure essential params have some value
+        gen_params.setdefault('max_new_tokens', 200)
+        gen_params.setdefault('pad_token_id', self.tokenizer.eos_token_id)
+
+
+        try:
+            # Get the device from the model
+            if not list(self.model.parameters()):
+                 logger.error("Model has no parameters loaded.")
+                 return "Error: Model parameters not loaded."
+            
+            device = next(self.model.parameters()).device
+            logger.info(f"Generating response using device: {device}")
+            logger.debug(f"Generation parameters being used: {gen_params}")
+
+            # Tokenize the prompt
+            inputs = self.tokenizer(
+                prompt,
+                return_tensors="pt",
+                add_special_tokens=False
+            ).to(device)
+
+            # Generate response
+            logger.info("Generating response...")
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    inputs.input_ids, # Pass input_ids directly
+                    **gen_params # Pass combined generation parameters
+                )
+
+            # Extract only the newly generated tokens, not the prompt
+            input_length = inputs.input_ids.shape[1]
+            # Handle potential edge case where output is shorter than input
+            if outputs[0].shape[0] > input_length:
+                 new_tokens = outputs[0][input_length:]
+            else:
+                 logger.warning("Output sequence length is not greater than input length. Returning empty.")
+                 new_tokens = []
+
+            # Decode the response
+            response_text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
+            logger.info(f"Generated {len(new_tokens)} tokens")
+
+            # Clean up response
+            response_text = self._clean_response(response_text)
+
+            return response_text
+
+        except Exception as e:
+            logger.error(f"Error generating response: {e}", exc_info=True)
+            return "I'm having difficulty generating a response. Let's try again."
+
+4. **Cleaning Responses**:
+
+After generating a response, the handler cleans it up to remove any special tokens:
+
+.. code-block:: python
+
+    def _clean_response(self, text: str) -> str:
+        """ Clean up the generated response. """
+        text = text.strip()
+        # Basic cleanup, may need refinement based on observed model outputs
+        text = text.replace("<|end_of_turn|>", "").replace("<|start_of_turn|>", "").strip() # Handle potential variations
+        text = text.replace("<end_of_turn>", "").replace("<start_of_turn>", "").strip()
+
+        if not text:
+            return "(The AI seems to have generated an empty response. Let's try again.)"
+        return text
+
+5. **Detecting Questions in AI Responses**:
+
+The handler includes a method to detect if the AI's response includes a new question:
+
+.. code-block:: python
+
+    def detect_next_question(self, response_text: str) -> bool:
+        """ Detects if the response includes a new question. """
+        if not response_text: return False
+        text_lower = response_text.lower()
+        
+        # Check for question marks (but not just clarifications like "Does that sound right?")
+        if '?' in text_lower and not re.search(r'(?:sound right|is that correct|okay)\?$', text_lower):
+            logger.debug("Detected '?' potentially indicating a next question.")
+            return True
+
+        # Look for common question starters, avoiding simple confirmations
+        question_starters = [ "how much do you", "thinking about", "next question", 
+                             "let's move on to", "how about", "do you see yourself" ]
+        for starter in question_starters:
+             if starter in text_lower:
+                  logger.debug(f"Detected potential question starter: '{starter}'")
+                  return True
+        return False
+
+These methods form the core of the GemmaConversationHandler, which enables the BFITraitTalk_AI application to have intelligent, conversational interactions with users. The handler takes care of properly formatting the conversation history, generating appropriate responses, and processing those responses before they're returned to the user.
+
+**Initial System Prompt**
+
+The AI's behavior is guided by an initial system prompt defined in ``survey_app.py``. This prompt establishes Kaya's role and instructions:
+
+.. code-block:: python
+
+   INITIAL_INTERVIEW_PROMPT = """
+   You are 'Kaya', a friendly and professional AI interviewer conducting a personality assessment using the Big Five Inventory (BFI).
+   Your goal is to guide the user through the questionnaire conversationally.
+
+   Instructions:
+   1. Introduce yourself briefly and explain the process (conversational survey, answer in own words).
+   2. Ask one BFI question at a time. Phrase the questions naturally, starting with "Thinking about yourself, how much do you agree with: 'I see myself as someone who... [statement text]?'" or similar conversational phrasing.
+   3. Wait for the user's response.
+   4. Practice active listening: Briefly acknowledge or summarize the user's answer (e.g., "Okay, so you feel...", "Got it, thanks for sharing.").
+   5. **Crucially**: After acknowledging, try to map their response to the 5-point Likert scale (1: Strongly Disagree, 2: Disagree, 3: Neutral, 4: Agree, 5: Strongly Agree). You **MUST state the score you are recording clearly using phrases like 'I will mark that as a [score]' or 'Okay, recording a [score] for that one.'** before asking if it feels right. For example: "Based on what you said, **I will mark that as a 4** out of 5 for Agree. Does that feel right?" or "Okay, **recording a 1** for Strongly Disagree."
+   6. **Wait for confirmation**: After stating the score, explicitly ask the user if that score is correct (e.g., "Does that feel right?", "Is that accurate?"). Do NOT ask the next BFI question until the user confirms the score for the current one (e.g., responds with 'yes', 'correct', etc.).
+   7. If the user corrects the score (e.g., "no, make it a 3"), acknowledge the correction and state the *new* score you are recording (e.g., "My apologies, recording a 3 then.") and proceed to the next question.
+   8. If the user asks to skip a question, acknowledge it supportively ("Okay, no problem, we can skip that one.") and record it as 'skipped', then ask the next question.
+   9. Maintain a warm, empathetic, and non-judgmental tone throughout.
+   10. After the user confirms a score/skip, seamlessly transition to the *next logical question* from the BFI sequence.
+   11. When all questions are done, provide a brief closing statement thanking the user.
+
+   Let's begin the interview now. Please start with your introduction and the first question from the inventory.
+   """ 
+
+This prompt plays a crucial role in guiding the LLM's behavior, ensuring it maintains the right tone and follows the specific protocol of asking questions, interpreting answers, and confirming scores.
+
+Survey Logic and Adaptive Interview Flow
+-------------------------------------------
+
+The heart of the application is the state machine that manages the interview flow. This is primarily handled by the ``InterviewSessionManager`` in ``utils/session_manager.py`` and the interview logic in ``survey_app.py``.
+
+**Session State Management**
+
+Each interview session maintains a state dictionary with the following key components:
+
+.. code-block:: python
+
+   session_state = {
+       'id': session_id,  # Unique identifier
+       'state': self.STATES['NOT_STARTED'],  # Current state in the state machine
+       'started_at': current_time,  # Timestamp
+       'last_updated': current_time,  # Timestamp
+       'chat_history': [],  # List of all messages exchanged
+       'current_question_id': None,  # ID of the question being asked
+       'last_question_id': None,  # ID of the most recently answered question
+       'answered_questions': {},  # Dictionary mapping question IDs to answers
+       'remaining_question_ids': question_ids,  # List of IDs still to be asked
+       'pending_answer': None,  # Temporary storage for proposed but unconfirmed answers
+       'completed_at': None  # Timestamp when completed
+   }
+
+The session state machine has five possible states:
+
+.. code-block:: python
+
+   STATES = {
+       'NOT_STARTED': 'not_started',
+       'IN_PROGRESS': 'in_progress',
+       'AWAITING_CONFIRMATION': 'awaiting_confirmation',
+       'COMPLETED': 'completed',
+       'ERROR': 'error'
+   }
+
+Let's trace the flow of a single question through this state machine:
+
+**1. Starting the Interview**
+
+When the user clicks "Start Interview", the ``/api/start`` route is called, which:
+
+.. code-block:: python
+
+   @app.route('/api/start', methods=['POST'])
+   def start_interview():
+       # Create and initialize a new session
+       session_state = session_manager.create_session()
+       session_state = session_manager.start_interview(session_state)
+       
+       # Get the first question
+       first_qid = session_state.get('current_question_id')
+       first_question_text_core = session_manager.get_question_text_by_id(first_qid)
+       first_question_full = f"I see myself as someone who {first_question_text_core}"
+       
+       # Create the initial prompt with instructions + first question
+       initial_prompt_with_q = f"""
+       {INITIAL_INTERVIEW_PROMPT}
+
+       Let's begin. Thinking about yourself, how much do you agree with: '{first_question_full}'?
+       """
+       
+       # Send this to the model and get the first response
+       initial_history_for_ai = [{"role": "user", "content": initial_prompt_with_q}]
+       ai_response = conversation_handler.generate_response(initial_history_for_ai, **generation_params)
+       
+       # Add both the prompt and the AI's response to the chat history
+       session_state = session_manager.add_message_to_history(session_state, 'user', initial_prompt_with_q)
+       session_state = session_manager.add_message_to_history(session_state, 'model', ai_response)
+       
+       # Save the state and return the AI's greeting + first question
+       session['session_state'] = session_state
+       return jsonify({
+           'success': True,
+           'ai_message': ai_response,
+           'interview_state': session_state['state'],
+           'current_question_id': session_state.get('current_question_id')
+       })
+
+At this point, the session state is ``IN_PROGRESS`` and the first question is being asked.
+
+**2. User Answers the Question**
+
+When the user responds to the question, the ``/api/chat`` route processes the message:
+
+.. code-block:: python
+
+   @app.route('/api/chat', methods=['POST'])
+   def process_chat():
+       # Get user message and current session state
+       data = request.json
+       user_message = data.get('message', '').strip()
+       session_state = session['session_state']
+       
+       # Add user message to chat history
+       session_state = session_manager.add_message_to_history(session_state, 'user', user_message)
+       
+       # Get current state information
+       current_internal_state = session_state.get('state')
+       current_qid = session_state.get('current_question_id')
+       last_qid = session_state.get('last_question_id')
+       pending_answer = session_state.get('pending_answer')
+       
+       # Clone history for generation
+       history_for_generation = session_state.get('chat_history', [])[:]
+       
+       # Process based on current state
+       if current_internal_state == session_manager.STATES['IN_PROGRESS']:
+           # User has answered a question, need to get AI's interpretation
+           if looks_like_direct_answer(user_message):
+               # If it's a direct answer (like just "4"), add instruction for AI
+               instruction = f"""
+               Based on the user's last message ('{user_message}'), please:
+               1. Briefly acknowledge their response naturally.
+               2. Analyze their sentiment regarding the statement.
+               3. Determine the most likely score (1-5) or if they indicated skipping.
+               4. State the score you are proposing clearly.
+               5. Explicitly ask for confirmation: 'Does that feel right?'.
+               """
+               history_for_generation[-1]['content'] += f"\n\n[System instruction: {instruction}]"
+           else:
+               # Regular conversational response
+               instruction = f"""
+               The user didn't provide a direct score rating in their last message ('{user_message}').
+               Instead, respond conversationally to their message, then re-ask the original question.
+               """
+               history_for_generation[-1]['content'] += f"\n\n[System instruction: {instruction}]"
+           
+           # Generate AI's response
+           ai_response_text = conversation_handler.generate_response(history_for_generation)
+           
+           # Check if AI proposed a score in its response
+           proposed_answer_details = response_parser.extract_confirmed_answer(ai_response_text)
+           if proposed_answer_details:
+               # AI included a clear score proposal
+               session_state['pending_answer'] = {'value': proposed_answer_details['value'], 'type': proposed_answer_details['type']}
+               session_state['state'] = session_manager.STATES['AWAITING_CONFIRMATION']
+               session_state['last_question_id'] = current_qid
+               session_state['current_question_id'] = None
+       
+       elif current_internal_state == session_manager.STATES['AWAITING_CONFIRMATION']:
+           # Checking if user confirmed or rejected the proposed score
+           user_confirmation = response_parser.check_user_confirmation(user_message)
+           confirmation_qid = last_qid
+           
+           if user_confirmation is True:
+               # User confirmed the score
+               session_state = session_manager.record_answer(session_state, confirmation_qid, pending_answer['value'])
+               form_update = {'question_id': confirmation_qid, 'answer': pending_answer['value']}
+               
+               if session_state['state'] == session_manager.STATES['COMPLETED']:
+                   # All questions answered
+                   ai_response_text = "Great, got it. That completes the questionnaire! Thank you."
+               else:
+                   # Ask next question
+                   next_qid = session_state.get('current_question_id')
+                   next_question_text_core = session_manager.get_question_text_by_id(next_qid)
+                   next_question_full = f"I see myself as someone who {next_question_text_core}"
+                   
+                   instruction= f"Great, thanks for confirming. Now, let's move to the next one. Thinking about yourself, how much do you agree with: '{next_question_full}'?"
+                   history_for_generation[-1]['content'] += f"\n\n[System instruction: {instruction}]"
+                   ai_response_text = conversation_handler.generate_response(history_for_generation)
+               
+           elif user_confirmation is False:
+               # User rejected the proposed score
+               question_text_core = session_manager.get_question_text_by_id(confirmation_qid)
+               instruction = f"My apologies. What score (1-5) should I record for '{question_text_core}' instead? Or 'skip'?"
+               history_for_generation[-1]['content'] += f"\n\n[System instruction: {instruction}]"
+               ai_response_text = conversation_handler.generate_response(history_for_generation)
+               
+               # Reset to IN_PROGRESS with the same question
+               session_state['state'] = session_manager.STATES['IN_PROGRESS']
+               session_state['current_question_id'] = confirmation_qid
+               session_state['pending_answer'] = None
+               
+           else:
+               # Unclear confirmation - acknowledge and guide back
+               instruction = f"""
+               I understand you might have more to say or questions. However, to keep us on track,
+               I just need to confirm the score for the last statement.
+               The score I suggested was {pending_answer['value']}.
+               Could you please tell me if that score feels right ('yes') or wrong ('no')?
+               Or tell me the score (1-5) you'd like me to record, or say 'skip'.
+               """
+               history_for_generation[-1]['content'] += f"\n\n[System instruction: {instruction}]"
+               ai_response_text = conversation_handler.generate_response(history_for_generation)
+               # Stay in AWAITING_CONFIRMATION state
+       
+       # Add AI's response to history
+       session_state = session_manager.add_message_to_history(session_state, 'model', ai_response_text)
+       
+       # Save updated state
+       session['session_state'] = session_state
+       
+       # Return response to frontend
+       return jsonify({
+           'success': True,
+           'ai_message': ai_response_text,
+           'form_update': form_update,
+           'current_question_id': session_state.get('current_question_id') or session_state.get('last_question_id'),
+           'is_completed': session_state['state'] == session_manager.STATES['COMPLETED'],
+           'progress': session_manager.get_interview_stats(session_state).get('progress_percentage', 0)
+       })
+
+The above code is simplified for clarity, but it demonstrates the core state machine logic. Let's trace through the key states:
+
+1. **IN_PROGRESS**: The AI has asked a question and is waiting for the user's answer. After the user responds, the AI interprets their answer and proposes a score, then the state changes to AWAITING_CONFIRMATION.
+
+2. **AWAITING_CONFIRMATION**: The AI has proposed a score and is waiting for the user to confirm. There are three possibilities:
+   - User confirms (e.g., "yes") → Record the answer, move to the next question (back to IN_PROGRESS), or complete if done
+   - User rejects (e.g., "no") → Ask for the correct score, go back to IN_PROGRESS for the same question
+   - User gives unclear response → Request clarification, stay in AWAITING_CONFIRMATION
+
+3. **COMPLETED**: All questions have been answered. The app displays the final personality profile.
+
+**Response Parsing**
+
+An important component is the ``ResponseParser`` class in ``utils/response_parser.py``, which analyzes text to:
+
+1. Extract score confirmations from the AI's responses using regex patterns:
+
+.. code-block:: python
+
+   def extract_confirmed_answer(self, text: str) -> Optional[Dict[str, Any]]:
+       """Extracts EXPLICIT score or skip confirmation from AI text."""
+       if not text: return None
+       text_lower = text.lower()
+
+       # 1. Check for EXPLICIT scores first
+       for pattern in self.score_patterns:
+           match = re.search(pattern, text_lower)
+           if match:
+               try:
+                   score = int(match.group(1))
+                   if 1 <= score <= 5:
+                       logger.debug(f"Parser extracted explicit score: {score} via pattern '{pattern}'")
+                       return {'value': score, 'type': 'score', 'match_text': match.group(0)}
+               except (ValueError, IndexError): continue
+
+       # 2. Check for EXPLICIT skips
+       for pattern in self.skip_patterns:
+           match = re.search(pattern, text_lower)
+           if match:
+               logger.debug(f"Parser detected explicit skip via pattern '{pattern}': {match.group(0)}")
+               return {'value': 'skipped', 'type': 'skip', 'match_text': match.group(0)}
+
+       logger.debug("No explicit score or skip confirmation found in AI text.")
+       return None
+
+The ``ResponseParser`` looks for specific patterns in the AI's text that indicate it has assigned a score or marked a question as skipped. The patterns are defined when the parser is initialized:
+
+.. code-block:: python
+
+   def __init__(self):
+       """Initialize the parser with relevant patterns."""
+       logger.debug("Initializing ResponseParser")
+       # Patterns for detecting explicit score confirmations
+       self.score_patterns = [
+           # Made 'as a' optional, added 'recording'
+           r'(?:mark|record|recording|put|rate|score|set)\s+(?:that|it|this|you)\s+(?:as\s+(?:a\s+)?|at\s+)?(\d)(?:\s+(?:out\s+of\s+5|on the scale|points))?',
+           r'sounds\s+like\s+(?:a\s+)?(\d)(?:\s+to\s+me)?',
+           r'put\s+you\s+down\s+as\s+(?:a\s+)?(\d)'
+       ]
+       # Patterns for detecting skips
+       self.skip_patterns = [
+           r'(?:we\s+(?:can|will)|I\'ll|I\s+will)\s+skip\s+(?:that|this|the\s+question|it)', # Added 'it'
+           r'(?:let\'s|we\s+can)\s+move\s+(?:on|to\s+the\s+next)', # Made broader
+           r'(?:mark|record)(?:ing|ed)?\s+(?:that|this|it)\s+as\s+skipped',
+           r'no\s+problem\b.{0,25}\b(?:skip|mov(?:e|ing)|next)', # Slightly longer context window
+           r'we\s+can\s+absolutely\s+(?:skip|move)',
+           r'okay\s+to\s+skip'
+       ]
+
+2. Check if a user message confirms or rejects a proposed score:
+
+.. code-block:: python
+
+   def check_user_confirmation(self, text: str) -> Optional[bool]:
+       """
+       Checks if user text indicates 'yes' or 'no' confirmation.
+
+       Args:
+           text: The user's response text.
+
+       Returns:
+           Optional[bool]: True for yes, False for no, None for unclear.
+       """
+       if not text:
+           return None
+       text_lower = text.lower().strip()
+
+       # Define patterns for 'yes' and 'no'
+       yes_patterns = [
+           r"^\s*yes\b.*", r"^\s*yeah\b.*", r"^\s*yep\b.*", r"^\s*correct\b.*",
+           r"^\s*that's right\b.*", r"^\s*sounds right\b.*", r"^\s*accurate\b.*",
+           r"^\s*confirm\b.*", r"^\s*ok(ay)?\b.*", r"^\s*sure\b.*",
+           # Specific positive responses to "Does that feel right?"
+            r"^\s*it does\b.*"
+       ]
+       no_patterns = [
+           r"^\s*no\b.*", r"^\s*nope\b.*", r"^\s*incorrect\b.*", r"^\s*wrong\b.*",
+           r"^\s*that's not right\b.*", r"^\s*not really\b.*",
+           # Specific negative responses like "no, make it a 3"
+           r"^\s*no,.*(?:score|rate|mark|value|make it).*\d",
+            r"^\s*actually,.*(?:score|rate|mark|value|make it).*\d",
+       ]
+
+       # Check for 'yes'
+       for pattern in yes_patterns:
+           if re.match(pattern, text_lower):
+               # Avoid matching things like "no problem" as yes
+               if "no problem" in text_lower and len(text_lower) < 15:
+                    continue # Treat "no problem" alone as ambiguous or skip-related
+               logger.debug(f"User confirmation detected: YES (pattern: '{pattern}')")
+               return True
+
+       # Check for 'no'
+       for pattern in no_patterns:
+           if re.match(pattern, text_lower):
+               logger.debug(f"User confirmation detected: NO (pattern: '{pattern}')")
+               return False
+
+       # If neither yes nor no is clearly detected
+       logger.debug("User confirmation unclear.")
+       return None
+
+This function analyzes user messages to determine if they're confirming or rejecting the AI's proposed score. It returns True for confirmation (e.g., "yes," "correct"), False for rejection (e.g., "no," "that's wrong"), or None if the message is unclear.
+
+The ResponseParser also has a method to detect which BFI question the AI is asking based on patterns in the AI's text:
+
+.. code-block:: python
+
+   def detect_asked_question(self, ai_response_text: str, questions_data: List[Dict[str, Any]]) -> Optional[int]:
+       """ Tries to identify which BFI question ID was asked in the AI's response. """
+       if not ai_response_text or not questions_data:
+           return None
+
+       extracted_text = None
+       # Try patterns in order of specificity
+       match = self.bfi_question_pattern_std.search(ai_response_text) or \
+               self.bfi_question_pattern_direct.search(ai_response_text) or \
+               self.bfi_question_pattern_quoted_core.search(ai_response_text)
+
+       if match:
+           extracted_text = match.group(1).strip().lower()
+           extracted_text = re.sub(r'^[.…,;:-]+|[.…,;:-]+$', '', extracted_text).strip()
+           logger.debug(f"Parser trying to match extracted question text: '{extracted_text}'")
+
+           if not extracted_text:
+                logger.debug("Extracted text was empty after cleaning.")
+                return None
+
+           best_match_id = None
+
+           # Exact Match First
+           for question in questions_data:
+               q_text_lower = question.get('text', '').lower()
+               # Remove "I see myself as someone who" prefix if present in data for robust matching
+               q_text_lower_core = re.sub(r"^i see myself as someone who\s*", "", q_text_lower).strip()
+               q_id = question.get('id')
+               if q_text_lower_core and q_id is not None:
+                   if q_text_lower_core == extracted_text:
+                        logger.info(f"Detected QID {q_id} via EXACT text match.")
+                        return q_id # Return immediately on exact match
+
+           # Try substring matching if no exact match found
+           possible_matches = []
+           for question in questions_data:
+               # ... substring matching logic ...
+
+       return best_match_id
+
+Through these parsing functions, the app can understand both the AI's responses (to extract proposed scores) and the user's responses (to determine confirmation or rejection). This enables the state machine to properly handle the interview flow.
+
+Backend Structure and Data Flow
+----------------------------------
+
+Now let's examine how the application components work together to manage the flow of data:
+
+**Component Initialization**
+
+When the Flask application starts, it initializes all the necessary components:
+
+.. code-block:: python
+
+   def initialize_components(app_instance):
+       """Initialize all global components."""
+       global model_manager, conversation_handler, session_manager, bfi_scorer, bfi_questions, response_parser
+       
+       # Load BFI questions from JSON file
+       bfi_questions = load_bfi_questions()
+       app_instance.config['BFI_QUESTIONS'] = bfi_questions
+       
+       # Initialize session manager
+       session_manager = InterviewSessionManager(questions_data=bfi_questions)
+       
+       # Initialize BFI scorer for processing results
+       bfi_scorer = BFIScorer(bfi_questions)
+       
+       # Initialize model
+       model_manager = GemmaModelManager(
+           model_size=config.MODEL_SIZE, 
+           quantization=config.QUANTIZATION, 
+           device=config.DEVICE, 
+           use_flash_attention=config.USE_FLASH_ATTENTION
+       )
+       model, tokenizer = model_manager.load_model_and_tokenizer()
+       
+       # Initialize conversation handler
+       generation_params = config.get_generation_params()
+       conversation_handler = GemmaConversationHandler(model, tokenizer, generation_params)
+       
+       return True
+
+This ensures all components are properly loaded before the application starts accepting requests.
+
+**Flask Routes**
+
+The application provides several API endpoints:
+
+1. **``/``**: The main route that serves the HTML interface
+2. **``/api/start``**: Initializes a new interview session
+3. **``/api/chat``**: Processes user messages and returns AI responses
+4. **``/api/results``**: Generates the final personality profile when the interview is complete
+5. **``/clear_session``**: Resets the current session
+6. **``/model_info``**: Returns information about the loaded model
+
+**Session Management**
+
+Flask sessions (via Flask-Session) are used to maintain state between requests. Each user's browser gets a unique session, which contains the ``session_state`` dictionary tracking their interview progress.
+
+**Results Generation**
+
+When all questions are answered, the ``/api/results`` endpoint uses the ``BFIScorer`` to calculate personality trait scores:
+
+.. code-block:: python
+
+   @app.route('/api/results', methods=['GET'])
+   def get_results():
+       # Get the completed session state
+       session_state = session['session_state']
+       if session_state.get('state') != session_manager.STATES['COMPLETED']:
+           return jsonify({'error': 'Interview not completed.'}), 400
+       
+       # Extract the answers
+       answers = session_state.get('answered_questions', {})
+       
+       # Generate a comprehensive report
+       report = bfi_scorer.generate_comprehensive_report(answers)
+       
+       return jsonify({'success': True, 'report': report})
+
+The ``BFIScorer`` performs several key functions:
+
+1. **Scoring individual traits** based on question answers
+2. **Reversing scores** for reverse-coded items
+3. **Calculating trait levels** (e.g., "High", "Moderate", "Low")
+4. **Generating interpretations** for each trait level
+
+The final report includes:
+
+.. code-block:: python
+
+   report = {
+       "scores": {
+           "traits": {
+               "openness": { /* scores for openness */ },
+               "conscientiousness": { /* scores for conscientiousness */ },
+               "extraversion": { /* scores for extraversion */ },
+               "agreeableness": { /* scores for agreeableness */ },
+               "neuroticism": { /* scores for neuroticism */ }
+           },
+           "summary": { /* overall completion stats */ }
+       },
+       "interpretations": {
+           "openness": { /* interpretation of openness score */ },
+           "conscientiousness": { /* interpretation of conscientiousness score */ },
+           /* etc. for all traits */
+       }
+   }
+
+This report is sent to the frontend, which displays the results in a visual format.
+
+Psychological Design Considerations
+--------------------------------------
+
+Beyond the technical workings, it's important to understand how this app implements psychological survey principles from earlier lectures:
+
+**Using a Standardized Instrument**: The Big Five Inventory (BFI) is a well-validated measure of personality. BFITraitTalk_AI adheres to this by asking the exact BFI statements (e.g., "I see myself as someone who is talkative") in order. Even though Kaya wraps the question in a conversational prompt, the core content is unchanged. This means we can compare the results from this conversational delivery to the known benchmarks of the BFI.
+
+**Adaptive Clarification**: In a traditional survey, if a respondent doesn't understand a question, they might answer incorrectly or not at all, and the researcher might never know. Here, if the user asks "What does 'tends to find fault with others' mean?", Kaya will pause and explain it in plain language before proceeding. This is a big advantage – it enhances respondent understanding, which is likely to improve the quality of the data.
+
+**Free-Response Before Forced-Choice**: One notable design choice is letting the user respond in free text before committing to a number. This can provide richer context. From a psychological standpoint, this might reduce priming or framing effects that fixed options can impose. The user articulates their true thoughts or examples ("I'm talkative with friends but shy at work"), which arguably gives a more ecologically valid picture of their personality in context. Only after expressing themselves does the system boil it down to a number.
+
+**Confirmation for Accuracy**: Having the user confirm the interpreted score is essentially a check on measurement accuracy. By asking "Does that feel right?", the system gives control back to the participant to correct any misinterpretation. This is analogous to an interviewer paraphrasing a respondent's answer and asking if they got it right – a technique sometimes used in qualitative interviewing to validate understanding. It helps ensure the data (the scores recorded) actually reflect what the participant meant.
+
+**Reduction of Straightlining and Inattentiveness**: In online surveys, respondents sometimes rush through using the same answer for everything or not truly considering each item. The conversational format might mitigate this by making each question feel more engaging (it's harder to ignore a question when it's asked by an interlocutor and when you have to justify your answer in words first). The presence of an interactive agent can encourage respondents to stay present and think about each answer.
+
+**Social Presence and Honesty**: Some research suggests people might be more honest to an AI interviewer than a human, especially on sensitive questions, because they don't feel judged. Personality items aren't extremely sensitive, but they do probe potentially unflattering traits (e.g., "tends to find fault with others" or "is lazy"). Having a non-judgmental AI that even apologizes for misunderstanding might make participants more comfortable admitting, say, "Yes, I can be lazy sometimes," which they might soften if just ticking a box on paper due to self-image concerns.
+
+**Contextualizing Personality**: One of the goals mentioned was measuring personality "in context". Traditional BFI scores provide a general measure but lose nuance (you don't know why someone chose 3 vs 4). With this approach, the context comes out in the conversation. For instance, the transcript may reveal "User finds they are talkative in familiar settings but not in public" – a nuance of Extraversion that a single score can't capture. While ultimately we still record a single number per item, the conversation can be recorded and later analyzed qualitatively.
+
+**Maintaining Validity**: There is a trade-off though. By deviating from the standard questionnaire procedure, are we affecting the instrument's psychometric properties? For example, the act of explaining one's answer might cause reflective equilibrium – the person might change their mind as they talk, or feel compelled to be consistent in later answers because they've set a narrative. These are things to consider:
+
+- The app tries to ensure each question is still answered independently and clearly. It doesn't show previous answers (aside from any allusions the user themselves might make) and the AI treats each question afresh.
+- The confirmation process might actually improve reliability: The user double-checks their answer, possibly catching inconsistency or error.
+- But the interpersonal aspect (even with an AI) could introduce an interviewer effect – e.g., perhaps people might give more moderate answers to not appear extreme, even though Kaya is not human. The AI's presence could subconsciously invoke social desirability bias (the user might phrase answers more positively because they feel like someone is listening).
+
+Ethical and Methodological Considerations
+---------------------------------------------
+
+Whenever we bring AI into data collection with human participants, we must examine ethical and methodological issues:
+
+**Data Privacy**: A major advantage of the BFITraitTalk_AI setup is that it runs locally. As noted, no survey responses or personal information are sent to a cloud service. This addresses privacy concerns because personality data can be sensitive. If this were deployed in a research study, participants could be assured that their raw answers and conversation stay on the device or within the researcher's server, not on Big Tech's servers.
+
+**Informed Consent and Participant Understanding**: If this method were used in a study, participants would need to know they're interacting with an AI, not a human (to avoid deception unless justified). They should consent to the conversation being recorded for research. One ethical upside is that participants might enjoy the interactive format more than a standard form, but they should also be told that the AI might not be perfect (to not overly trust any feedback it gives).
+
+**Bias and Fairness**: We must consider if the LLM could introduce bias. The BFI items themselves are neutral, but how the AI elaborates or interprets could be influenced by biases in training data. For example, if a user says something culturally specific, will Kaya misinterpret it due to not understanding that context? Or could Kaya inadvertently respond differently to users based on dialect or language fluency? We have to test the AI on diverse inputs.
+
+**Validity and Reliability**: From a methodological perspective, we should validate that this conversational method yields similar results to the traditional survey. Does a person get roughly the same Big Five scores through BFITraitTalk_AI as they would on a classic pen-and-paper or online form? If not, is the difference due to improved accuracy or due to bias introduced by the method? These questions need empirical testing.
+
+**Participant Well-being**: One must ensure the AI remains a beneficent presence. Personality surveys are generally low-risk, but if a participant becomes uncomfortable or starts divulging very personal information (outside the survey scope), the AI should handle it carefully. The current design doesn't deeply address off-topic sensitive disclosures (e.g., if in the middle of a question about talkativeness the user starts talking about feeling depressed). Kaya might not be equipped to give emotional support beyond polite redirection.
+
+**Transparency of AI Decisions**: Another ethical aspect is being transparent about how the AI is scoring responses. In this tutorial scenario, the AI explains why it suggests a certain score (by paraphrasing what the user said). This is good practice – it provides some rationale and invites correction. If the AI just said "Recorded your answer as 4" with no explanation, the user might not know if it understood them. By hearing the AI's summary, the user can gauge if Kaya got it right.
+
+**Handling "Out-of-scope" Situations**: Because the AI is a free-form model, users might test its limits. For example, a user might joke or flirt with Kaya, or try to get it to deviate ("Do you think that's a good trait to have?"). The initial prompt instructs Kaya to remain on task and maybe politely deflect such queries. This is an important consideration: keeping the AI within its domain (survey interviewing) and not letting it give advice or engage in therapy or other roles.
+
+**Future Data Use**: If this were used for research, another ethical point is what happens with the conversation logs. They contain personal reflections. Researchers must treat them as qualitative data with confidentiality. Possibly, identifiable info could emerge in what people say (someone might mention "my job at the bank" in an answer, revealing something). Proper data handling (anonymization if analyzing transcripts, secure storage) is essential.
+
+Customization and Extension Ideas
+------------------------------------
+
+Finally, let's consider how students or researchers could extend BFITraitTalk_AI for other purposes or improve it further. This app is a prototype, and its framework can be adapted in many ways:
+
+**Using a Different Questionnaire**: You could swap out the BFI with any other survey or set of interview questions. For example, imagine using an organizational culture survey or a clinical screening questionnaire in this format. To do this, you would replace the ``data/bfi_items.json`` with your own question set (ensuring a similar format). The session manager and logic can largely remain the same. You'd want to update the initial prompt instructions to reflect any differences and adjust the scoring interpretation logic or create a new scorer appropriate for the new instrument.
+
+**Scaling Up the Model or Using an API**: If one has access to better hardware or is comfortable with cloud services, one might try using the larger Gemma-3 27B model for even more fluent interactions, or even an API like OpenAI's GPT-4 for comparison. The modular design of ``GemmaModelManager`` means you can point it to a different model checkpoint as long as it's a causal language model. Keep in mind, using an online API would reintroduce privacy issues, so for sensitive data that might be a step backward.
+
+**Enhancing the UI/UX**: There are many possibilities:
+
+- **Add voice interaction**: Using text-to-speech for the AI's questions and speech-to-text for the user's answers can make it feel like a true interview.
+- **Add a progress bar or question counter**: The BFI has 44 items; letting users see progress ("Question 10 of 44") can be motivating and transparent.
+- **Implement skip logic or branching**: While BFI is linear, other surveys might have skip patterns (e.g., if user answers yes to something, skip the next question).
+- **Multi-language support**: If Gemma-3 is multilingual or you have models in other languages, you could translate the question set and adjust prompts so that non-English speakers can take the survey in their native language with the AI.
+- **Visual or multimedia context**: For some types of questions, you might present an image or a video and ask the participant about it.
+
+**Collecting Richer Data (paradata)**: The system could quietly log additional information like response times (how long the user took to respond to each question), which could be an interesting variable in research (e.g., hesitations might indicate uncertainty). It already logs the content of what user says, which is valuable qualitative data.
+
+**AI Improvement**: One could try fine-tuning the model on sample interview data to improve its performance. For example, feeding it examples of how to respond to various types of user answers could make Kaya more consistent. Right now, we rely on prompting alone. Fine-tuning or using a reinforcement learning approach could yield an AI that better adheres to the interview protocol out-of-the-box.
+
+**Alternate Personas or Styles**: We could experiment with the AI's persona. The instructions make Kaya empathic and neutral. But what if we deliberately tried a more formal interviewer vs. a more casual friend tone, and see which yields better data or user satisfaction? The prompt could be adjusted to change style.
+
+**Beyond Surveys – AI Interviewer for Clinical or Educational settings**: The same framework can drive an AI therapist intake (asking a patient about symptoms systematically) or an AI job interview practice partner (asking common interview questions and giving feedback). The difference is mostly in content and what you do with the data.
+
+**Integration with Databases or Research Platforms**: For real studies, one would want to save the data (scores, and possibly transcripts) to a database or at least CSV. Currently, BFITraitTalk_AI likely just keeps data in session memory (and maybe prints results to console). Adding a feature to export results (with consent) would be practical.
+
+In terms of pedagogy, modifying this app is a great exercise. Students can try changing one aspect and observe how it changes the interaction. For instance, "What if we remove the confirmation step? Does the AI sometimes mis-score the answers?" or "What if Kaya didn't give any intro and just asked the question bluntly?". Such experiments tie back to understanding both AI behavior and best practices in survey design.
+
+Conclusion
+--------------
+
+BFITraitTalk_AI shows how generative AI can be integrated into a survey in a way that complements survey methodology rather than replacing it. By walking through the code, we see a marriage of a deterministic survey structure with the probabilistic nature of AI language generation. The tutorial highlights how earlier conceptual discussions (designing clear surveys, using AI for interviews) materialize in code. As you work with or extend this system, keep asking: Does this preserve the integrity of the data? Does it improve the user experience? Balancing those two is key in any AI-augmented research tool.
+
+References
+--------------
+
+Abdurahman, S., Atari, M., Karimi-Malekabadi, F., Xue, M. J., Trager, J. P., Park, P. S., … & Dehghani, M. (2024). Perils and opportunities in using large language models in psychological research. *PNAS Nexus, 3*(7), pgae245. https://doi.org/10.1093/pnasnexus/pgae245
+
+Bender, E. M., Gebru, T., McMillan-Major, A., & Shmitchell, S. (2021). On the dangers of stochastic parrots: Can language models be too big? In *Proceedings of the 2021 ACM FAccT Conference*. https://doi.org/10.1145/3442188.3445922
+
+Groves, R. M., Fowler, F. J., Couper, M. P., Lepkowski, J. M., Singer, E., & Tourangeau, R. (2009). *Survey Methodology* (2nd ed.). Hoboken, NJ: Wiley.
+
+Jansen, B. J., Jung, S., & Salminen, J. (2023). Employing large language models in survey research. *Natural Language Processing, 4*, 100020. https://doi.org/10.1016/j.nlp.2023.100020
+
+Krosnick, J. A. (1999). Survey research. *Annual Review of Psychology, 50*, 537–567.
+
+Wuttke, A., Aßenmacher, M., Klamm, C., Lang, M. M., Würschinger, Q., & Kreuter, F. (2025). AI conversational interviewing: Transforming surveys with LLMs as adaptive interviewers. In *Proceedings of the LaTeCH-CLfL 2025 Conference*. https://doi.org/10.48550/arXiv.2410.01824
+
+Zou, Z., Mubin, O., Alnajjar, F., & Ali, L. (2024). A pilot study of measuring emotional response and perception of LLM-generated and human-generated questionnaires. *Scientific Reports, 14*, 2781. https://doi.org/10.1038/s41598-024-53255-1
