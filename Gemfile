@@ -1,4 +1,7 @@
 source 'https://rubygems.org'
+
+gem 'activesupport', '~> 7.0'
+
 group :jekyll_plugins do
     gem 'classifier-reborn'
     gem 'jekyll'
