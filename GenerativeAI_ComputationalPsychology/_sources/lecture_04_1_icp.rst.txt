@@ -1,0 +1,453 @@
+.. _lecture_04_1_icp:
+
+=======================================
+Lecture 4.1: Iterative Closest Point
+=======================================
+
+.. raw:: html
+
+   <iframe width="600" height="400" src="https://www.youtube.com/embed/NFx4vBkgKMg" 
+   title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; 
+   encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+`Lecture Slides: Iterative Closest Point <https://virtualhumans.mpi-inf.mpg.de/VH23/slides/pdf/Lecture_04_1_ICP.pdf>`_
+
+
+
+
+
+Introduction to Shape Alignment and Registration
+----------------------------------------------------
+
+In computer graphics, computer vision, and 3D modeling, we often need to align shapes, point clouds, or meshes to each other. The Iterative Closest Point (ICP) algorithm is a foundational method for solving this alignment problem, especially when the correspondences between points are unknown.
+
+In this lecture, we'll explore how to align shapes using transformations beyond simple rigid alignment, particularly focusing on non-rigid alignment where the shape might deform. We'll first review the Procrustes algorithm (covered in the previous lecture) that provides optimal rigid alignment when correspondences are known, then move to the more general problem where correspondences are unknown and must be estimated iteratively.
+
+The Registration Problem
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Given two shapes represented as point sets:
+
+- Source shape: :math:`X = \{x_1, x_2, \ldots, x_n\} \subset \mathbb{R}^3`
+- Target shape: :math:`Y = \{y_1, y_2, \ldots, y_m\} \subset \mathbb{R}^3`
+
+We want to find a transformation :math:`f` that maps points from :math:`X` to best align with :math:`Y`.
+
+For rigid alignment, this transformation is parameterized by:
+
+- A rotation matrix :math:`\mathbf{R} \in SO(3)`
+- A translation vector :math:`\mathbf{t} \in \mathbb{R}^3`
+- Optionally, a uniform scale factor :math:`s > 0`
+
+The fundamental problem in registration has two interrelated components:
+
+1. Finding the correct **correspondences** between points in the source and target shapes
+2. Computing the optimal **transformation** that aligns the source to the target
+
+Review: Procrustes Analysis
+-----------------------------
+
+If we already know the correspondences between points in both shapes (i.e., for each :math:`x_i` in the source, we know the corresponding :math:`y_i` in the target), then we can find the optimal rigid alignment using the Procrustes algorithm.
+
+The objective function to minimize is:
+
+.. math::
+
+   E(\mathbf{R}, \mathbf{t}, s) = \sum_{i=1}^{n} \|s\mathbf{R}x_i + \mathbf{t} - y_i\|^2
+
+where :math:`s` is the scale factor, :math:`\mathbf{R}` is the rotation matrix, and :math:`\mathbf{t}` is the translation vector.
+
+The solution is as follows:
+
+1. Compute the centroids of both point sets:
+
+   .. math::
+
+      \bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i, \quad \bar{y} = \frac{1}{n}\sum_{i=1}^{n} y_i
+
+2. Center both point sets by subtracting their respective centroids:
+
+   .. math::
+
+      x_i' = x_i - \bar{x}, \quad y_i' = y_i - \bar{y}
+
+3. Compute the cross-covariance matrix:
+
+   .. math::
+
+      \mathbf{H} = \sum_{i=1}^{n} x_i' (y_i')^T
+
+4. Compute the SVD of the cross-covariance matrix:
+
+   .. math::
+
+      \mathbf{H} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T
+
+5. Determine the optimal rotation matrix:
+
+   .. math::
+
+      \mathbf{R} = \mathbf{V}\mathbf{U}^T
+
+6. If we need to ensure a proper rotation (determinant = +1), we check:
+
+   - If :math:`\det(\mathbf{R}) = 1`, the rotation is already proper
+   - If :math:`\det(\mathbf{R}) = -1`, we compute:
+
+     .. math::
+
+        \mathbf{R} = \mathbf{V} \begin{pmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & \det(\mathbf{V}\mathbf{U}^T) \end{pmatrix} \mathbf{U}^T
+
+7. The optimal scale (if desired) is:
+
+   .. math::
+
+      s = \frac{\text{trace}(\mathbf{\Sigma})}{\sum_{i=1}^{n} \|x_i'\|^2}
+
+8. The optimal translation is:
+
+   .. math::
+
+      \mathbf{t} = \bar{y} - s\mathbf{R}\bar{x}
+
+This solution is closed-form and globally optimal when correspondences are known.
+
+Problem: Unknown Correspondences
+----------------------------------
+
+In practice, however, correspondences between shapes are typically unknown. This creates a chicken-and-egg problem:
+
+- If we knew the correct transformation, we could easily determine the correspondences
+- If we knew the correct correspondences, we could easily compute the optimal transformation using Procrustes
+
+The fundamental problem is that we need to jointly optimize over both the transformation parameters and the point correspondences:
+
+.. math::
+
+   \min_{f, C} E(f, C) = \min_{f, C} \sum_{i} \|f(x_i) - y_{c(i)}\|^2
+
+where :math:`C = \{c(i)\}` represents the set of correspondences that map each point :math:`x_i` in the source to a point :math:`y_{c(i)}` in the target, and :math:`f` is the transformation function.
+
+The Iterative Closest Point (ICP) Algorithm
+---------------------------------------------
+
+The key insight of the ICP algorithm, introduced independently by Besl & McKay (1992) and Chen & Medioni (1992), is to solve this problem by alternating between:
+
+1. Estimating the correspondences for a fixed transformation
+2. Optimizing the transformation for fixed correspondences
+
+Basic ICP Algorithm
+~~~~~~~~~~~~~~~~~~~~
+
+1. **Initialize** the transformation parameters:
+
+   - Typically set :math:`\mathbf{R}^0 = \mathbf{I}` (identity matrix)
+   - :math:`\mathbf{t}^0 = \frac{\sum y_i}{N} - \frac{\sum x_i}{N}` (align centroids)
+   - :math:`s^0 = 1` (unit scale)
+
+2. **Iterate** until convergence:
+
+   a. **Compute correspondences**: For each point :math:`y_i` in the target shape, find the closest point in the transformed source shape:
+
+      .. math::
+
+         x_i^{j+1} = \arg\min_{x \in X} \|f^j(x) - y_i\|^2
+     
+   b. **Compute optimal transformation**: Using these correspondences, solve for the optimal transformation parameters (using Procrustes):
+
+      .. math::
+
+         f^{j+1} = \arg\min_{f} \sum_{i} \|f(x_i^{j+1}) - y_i\|^2
+     
+   c. **Apply the transformation** to update the source shape
+   
+   d. **Check for convergence**: Terminate if the change in transformation parameters or alignment error is below a threshold
+
+The algorithm monotonically decreases the alignment error and is guaranteed to converge to a local minimum. However, it may not find the global optimum, especially if the initial alignment is poor.
+
+Computational Considerations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Closest Point Computation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Computing closest points naively is an :math:`O(n \times m)` operation, which can be prohibitively expensive for large point sets. Efficient implementations use:
+
+- **k-d trees**: Spatial data structures that reduce the average time complexity of nearest neighbor search to :math:`O(\log m)` per query
+- **Random sampling**: Instead of using all points, sample a subset for correspondence estimation
+- **Distance threshold**: Ignore correspondences beyond a maximum distance to handle partial overlaps
+
+Convergence and Local Minima
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+ICP converges to a local minimum but may not find the global optimum. Strategies to avoid poor local minima include:
+
+- Better initialization (e.g., using centroid alignment or feature matching)
+- Multi-resolution approaches (start with coarse alignment, then refine)
+- Annealing strategies (gradually decrease the matching distance threshold)
+- Running multiple ICP instances from different initial positions
+
+Point-to-Point vs. Point-to-Plane ICP
+-------------------------------------
+
+Point-to-Point ICP
+~~~~~~~~~~~~~~~~~~~~~
+
+The standard ICP algorithm minimizes the point-to-point distance between corresponding points. The error function is:
+
+.. math::
+
+   E(\mathbf{R}, \mathbf{t}, s) = \sum_{i} \|s\mathbf{R}x_i + \mathbf{t} - y_{c(i)}\|^2
+
+This has a closed-form solution via Procrustes analysis, but can lead to slow convergence, especially on surfaces with high curvature.
+
+Point-to-Plane ICP
+~~~~~~~~~~~~~~~~~~~~~
+
+Chen & Medioni (1992) proposed an alternative error metric that minimizes the distance from each source point to the tangent plane of its corresponding target point:
+
+.. math::
+
+   E(\mathbf{R}, \mathbf{t}, s) = \sum_{i} ((s\mathbf{R}x_i + \mathbf{t} - y_{c(i)}) \cdot \mathbf{n}_{c(i)})^2
+
+where :math:`\mathbf{n}_{c(i)}` is the surface normal at target point :math:`y_{c(i)}`.
+
+This formulation allows points to "slide" along the tangent planes, leading to:
+
+- Faster convergence, especially on smooth surfaces
+- More natural alignment along surfaces
+- Better handling of sampling differences between the shapes
+
+The point-to-plane error function is non-linear in the transformation parameters and doesn't have a closed-form solution. It's typically solved by linearizing the rotation (for small rotations) and using a single Gauss-Newton step per iteration.
+
+Gradient-based ICP for Non-Rigid Registration
+----------------------------------------------
+
+For non-rigid alignment, the transformation :math:`f` goes beyond rigid (rotation, translation, scale) to include more complex deformations. The ICP framework can be generalized to non-rigid deformations by:
+
+1. Using a more general parameterization of the transformation :math:`f`
+2. Applying gradient-based optimization instead of closed-form Procrustes
+
+Gradient-based ICP Algorithm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Initialize** transformation parameters
+2. **Iterate** until convergence:
+   
+   a. **Compute correspondences** for the current transformation
+   
+   b. **Compute the gradient** of the error with respect to transformation parameters:
+   
+      .. math::
+      
+         g^{j+1} = \nabla E(f^j) = \nabla \sum_{i} \|f^j(x_i^{j+1}) - y_i\|^2
+   
+   c. **Update the transformation** using gradient-based optimization:
+   
+      .. math::
+      
+         f^{j+1} = k_{step}(g^{0...j+1}, f^{0...j})
+     
+      For simple gradient descent, this would be:
+      
+      .. math::
+      
+         f^{j+1} = f^j - \alpha g^{j+1}
+     
+      Other optimization methods include Levenberg-Marquardt, BFGS, and dogleg.
+   
+   d. **Check for convergence**
+
+Advantages of Gradient-based ICP
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- More general framework that can incorporate different transformation models
+- Can include additional terms in the energy function (e.g., regularization)
+- Leverages existing optimization libraries for solving non-linear least squares problems
+
+Computing Gradients
+~~~~~~~~~~~~~~~~~~~~~
+
+For complex transformation models, deriving and implementing the gradient can be tedious. Modern implementations often use:
+
+- **Automatic differentiation**: Libraries that automatically compute derivatives through the chain rule
+- **Numerical differentiation**: Approximating derivatives using finite differences
+
+Typically, one can treat the code as a computational graph and let autodiff tools handle the gradient computation.
+
+Improving ICP's Robustness
+-----------------------------
+
+Several strategies improve ICP's robustness to outliers, noise, and partial overlaps:
+
+Data Association Direction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Always find correspondences from the target to the source, not vice versa. This helps ensure that the data term is proper (explaining the observed data given the model parameters).
+
+Robust Cost Functions
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Replace the squared error with robust estimators that are less sensitive to outliers:
+
+- Huber loss: Quadratic for small errors, linear for large ones
+- Tukey biweight: Saturates for large errors, effectively ignoring outliers
+- L1 norm: Uses absolute error rather than squared error
+
+Trimmed ICP
+~~~~~~~~~~~~
+
+The Trimmed ICP algorithm (TrICP) sorts correspondences by distance and only uses the closest X% (where X is the estimated overlap percentage) for computing the transformation.
+
+RANSAC-based Approaches
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Random Sample Consensus (RANSAC) can be integrated with ICP by:
+
+- Randomly selecting minimal sets of correspondences
+- Computing candidate transformations
+- Evaluating how many other points agree with each candidate
+- Selecting the transformation with the most inliers
+
+Additional Information
+~~~~~~~~~~~~~~~~~~~~~~
+
+Using additional information beyond positions can improve matching:
+
+- Surface normals: Points with similar normals are more likely to correspond
+- Color/texture: In RGB-D data, color can guide correspondence
+- Local shape descriptors: Geometric features that describe local shape properties
+
+Point-to-Surface Distance
+----------------------------
+
+A significant improvement on point-to-plane ICP is using a true point-to-surface distance. This:
+
+- Allows correspondences to slide along the entire surface, not just on planes
+- Provides smoother convergence
+- Often yields better results with fewer iterations
+
+The key difference is that in point-to-plane, we're locked to vertex correspondences that can jump discontinuously from iteration to iteration. With point-to-surface, we can find the true closest point on the surface (which might lie on a triangle face, not at a vertex).
+
+ICP Variants and Extensions
+------------------------------
+
+Generalized ICP (GICP)
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Segal et al. (2009) introduced Generalized ICP, which models each point with a local covariance matrix representing the uncertainty or "shape" of its neighborhood. The distance between points becomes a Mahalanobis distance:
+
+.. math::
+
+   d_{ij}^2 = (f(x_i) - y_j)^T (C_{x_i} + f(C_{y_j})f^T)^{-1} (f(x_i) - y_j)
+
+where :math:`C_{x_i}` and :math:`C_{y_j}` are the covariance matrices. This unifies point-to-point and point-to-plane ICP in a probabilistic framework.
+
+EM-ICP and Probabilistic Approaches
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Expectation-Maximization ICP (EM-ICP) treats correspondences as latent variables in a probabilistic model. Instead of hard assignments, it computes for each point a probability distribution over possible matches. This soft matching is more robust to noise and outliers.
+
+Coherent Point Drift (CPD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CPD by Myronenko & Song (2010) models one point set as Gaussian Mixture Model centroids and the other as data points. It enforces motion coherence (points move together in a smooth way) and handles both rigid and non-rigid registration.
+
+Multi-Scale Approaches
+~~~~~~~~~~~~~~~~~~~~~~~
+
+To avoid local minima and improve efficiency:
+
+1. Start with heavily downsampled versions of both shapes
+2. Perform ICP at the coarse level
+3. Progressively increase resolution, using the previous level's result as initialization
+
+This is similar to multi-resolution approaches in image processing and helps escape local minima.
+
+Applications of ICP
+----------------------
+
+ICP and its variants are widely used in:
+
+- **3D Scan Registration**: Aligning multiple scans to create complete 3D models
+- **SLAM (Simultaneous Localization and Mapping)**: Aligning consecutive scans for robot navigation
+- **Medical Imaging**: Registration of medical scans (CT, MRI) for analysis and surgery planning
+- **Statistical Shape Analysis**: Building statistical shape models by aligning populations of shapes
+- **Motion Capture**: Tracking articulated objects over time
+- **Virtual and Augmented Reality**: Aligning virtual content with the real world
+
+In particular, ICP is the workhorse algorithm for building statistical human body models like SMPL, which align a template mesh to many 3D scans of people to learn a parameterized model of human shape and pose.
+
+Implementing ICP
+-------------------
+
+Efficient Python Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a Python implementation, key considerations include:
+
+1. Use optimized libraries for nearest neighbor search:
+
+   .. code-block:: python
+   
+      from scipy.spatial import cKDTree
+      
+      # Build k-d tree on target points (once)
+      tree = cKDTree(target_points)
+      
+      # Query for each transformed source point
+      distances, indices = tree.query(transformed_source_points, k=1)
+
+2. Use vectorized operations for transformations:
+
+   .. code-block:: python
+   
+      # Apply transform to all source points
+      transformed_points = np.dot(source_points, R.T) + t
+
+3. Compute the covariance matrix efficiently:
+
+   .. code-block:: python
+   
+      # Center points
+      source_centered = source_points - source_centroid
+      target_centered = target_points - target_centroid
+      
+      # Compute cross-covariance
+      H = source_centered.T @ target_centered
+
+4. Use robust error functions:
+
+   .. code-block:: python
+   
+      # Huber loss for robust weighting
+      def huber_weights(residuals, delta=1.0):
+          weights = np.ones_like(residuals)
+          mask = np.abs(residuals) >= delta
+          weights[mask] = delta / np.abs(residuals[mask])
+          return weights
+
+Practical Tips
+~~~~~~~~~~~~~~~~~~
+
+- **Initialization**: Always initialize by aligning centroids
+- **Outlier Handling**: Use a distance threshold to ignore outliers
+- **Convergence Criteria**: Use a combination of:
+  - Maximum number of iterations
+  - Minimum change in transformation parameters
+  - Minimum change in error
+- **Multi-Resolution**: Start with downsampled point clouds, progressively refine
+- **Point-to-Plane**: When surface normals are available, prefer point-to-plane over point-to-point
+
+Conclusion
+-------------
+
+The Iterative Closest Point algorithm is a versatile framework for shape alignment that:
+
+- Provides a solution to the chicken-and-egg problem of unknown correspondences
+- Can be extended to various transformation models (rigid, similarity, affine, non-rigid)
+- Has many variants to improve robustness, efficiency, and accuracy
+
+Despite being proposed in the early 1990s, ICP remains a fundamental algorithm in 3D computer vision and graphics, with ongoing research and applications. Understanding its principles and limitations is essential for working with 3D data.
+
+In the next lecture, we will explore the SMPL body model, which leverages the registration techniques we've discussed to create a statistical model of human shape and pose.
