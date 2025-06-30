@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Power Analysis Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2a5298 0%, #1e3c72 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: flex;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            width: 400px;
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 1px solid #e0e0e0;
+        }
+
+        .main-panel {
+            flex: 1;
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2a5298;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 10px rgba(42, 82, 152, 0.5);
+        }
+
+        .slider-value {
+            min-width: 60px;
+            text-align: center;
+            font-weight: 600;
+            color: #2a5298;
+            font-size: 1.1em;
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 5px;
+            transition: background 0.3s ease;
+        }
+
+        .radio-label:hover {
+            background: #e8f0fe;
+        }
+
+        input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            height: 400px;
+            position: relative;
+        }
+
+        .summary-panel {
+            margin-top: 30px;
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .summary-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .summary-item {
+            text-align: center;
+            padding: 20px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .summary-item:hover {
+            border-color: #2a5298;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .summary-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .summary-value {
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .type1-value { color: #dc3545; }
+        .type2-value { color: #6f42c1; }
+        .power-value { color: #28a745; }
+
+        .legend {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+
+        .info-box h3 {
+            color: #1976D2;
+            margin-bottom: 8px;
+        }
+
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Power Analysis Visualization</h1>
+            <p>Explore the relationships between Type I error, Type II error, power, and sample size</p>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <div class="info-box">
+                    <h3>Understanding Power Analysis</h3>
+                    <p>• <strong>Type I Error (α)</strong>: Rejecting H₀ when it's true<br>
+                       • <strong>Type II Error (β)</strong>: Failing to reject H₀ when it's false<br>
+                       • <strong>Power (1-β)</strong>: Correctly rejecting H₀ when it's false<br><br>
+                       <strong>Note:</strong> For meaningful results, ensure μₐ is in the direction of your alternative hypothesis!</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="nullMean">Null Mean (μ₀)</label>
+                    <div class="slider-container">
+                        <input type="range" id="nullMean" min="50" max="80" value="64" step="1">
+                        <span class="slider-value" id="nullMeanValue">64</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="altMean">Alternative Mean (μₐ)</label>
+                    <div class="slider-container">
+                        <input type="range" id="altMean" min="50" max="80" value="66" step="1">
+                        <span class="slider-value" id="altMeanValue">66</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="alpha">Significance Level (α)</label>
+                    <div class="slider-container">
+                        <input type="range" id="alpha" min="0.001" max="0.2" value="0.05" step="0.001">
+                        <span class="slider-value" id="alphaValue">0.05</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="sampleSize">Sample Size (n)</label>
+                    <div class="slider-container">
+                        <input type="range" id="sampleSize" min="2" max="1000" value="35" step="1">
+                        <span class="slider-value" id="sampleSizeValue">35</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="stdDev">Population Standard Deviation (σ)</label>
+                    <div class="slider-container">
+                        <input type="range" id="stdDev" min="1" max="10" value="3" step="0.25">
+                        <span class="slider-value" id="stdDevValue">3</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Hypothesis Direction</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="hypothesis" value="less">
+                            Left-tailed (Hₐ: μ < μ₀)
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hypothesis" value="greater" checked>
+                            Right-tailed (Hₐ: μ > μ₀)
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="hypothesis" value="two.sided">
+                            Two-tailed (Hₐ: μ ≠ μ₀)
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="main-panel">
+                <div class="chart-container">
+                    <canvas id="powerChart"></canvas>
+                </div>
+                
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(220, 53, 69, 0.6);"></div>
+                        <span>Type I Error (α)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(111, 66, 193, 0.6);"></div>
+                        <span>Type II Error (β)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(40, 167, 69, 0.4);"></div>
+                        <span>Power (1-β)</span>
+                    </div>
+                </div>
+                
+                <div class="summary-panel">
+                    <div class="summary-title">Statistical Summary</div>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="summary-label">Type I Error (α)</div>
+                            <div class="summary-value type1-value" id="type1Error">0.05</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Type II Error (β)</div>
+                            <div class="summary-value type2-value" id="type2Error">0.478</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Power (1-β)</div>
+                            <div class="summary-value power-value" id="power">0.522</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global chart instance
+        let powerChart = null;
+        let updateTimer = null;
+        
+        // Debounced update function
+        function debouncedUpdate() {
+            if (updateTimer) {
+                clearTimeout(updateTimer);
+            }
+            updateTimer = setTimeout(() => {
+                updateVisualization();
+            }, 30);
+        }
+
+        // Normal distribution functions
+        function normalPDF(x, mean, sd) {
+            return (1 / (sd * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mean) / sd, 2));
+        }
+
+        function normalCDF(x, mean, sd) {
+            return 0.5 * (1 + erf((x - mean) / (sd * Math.sqrt(2))));
+        }
+
+        function erf(x) {
+            // Approximation of error function
+            const a1 =  0.254829592;
+            const a2 = -0.284496736;
+            const a3 =  1.421413741;
+            const a4 = -1.453152027;
+            const a5 =  1.061405429;
+            const p  =  0.3275911;
+
+            const sign = x >= 0 ? 1 : -1;
+            x = Math.abs(x);
+
+            const t = 1.0 / (1.0 + p * x);
+            const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+
+            return sign * y;
+        }
+
+        function quantileNormal(p, mean, sd) {
+            // Inverse normal CDF using a more accurate approximation
+            if (p <= 0) return -Infinity;
+            if (p >= 1) return Infinity;
+            
+            // Use a more accurate algorithm for the inverse normal CDF
+            function invNorm(p) {
+                // Coefficients in rational approximations
+                const a = [-3.969683028665376e+01, 2.209460984245205e+02,
+                          -2.759285104469687e+02, 1.383577518672690e+02,
+                          -3.066479806614716e+01, 2.506628277459239e+00];
+                
+                const b = [-5.447609879822406e+01, 1.615858368580409e+02,
+                          -1.556989798598866e+02, 6.680131188771972e+01,
+                          -1.328068155288572e+01];
+                
+                const c = [-7.784894002430293e-03, -3.223964580411365e-01,
+                          -2.400758277161838e+00, -2.549732539343734e+00,
+                          4.374664141464968e+00, 2.938163982698783e+00];
+                
+                const d = [7.784695709041462e-03, 3.224671290700398e-01,
+                          2.445134137142996e+00, 3.754408661907416e+00];
+                
+                // Define break-points
+                const plow = 0.02425;
+                const phigh = 1 - plow;
+                
+                let q, r;
+                
+                if (p < plow) {
+                    // Rational approximation for lower region
+                    q = Math.sqrt(-2 * Math.log(p));
+                    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                           ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+                } else if (p > phigh) {
+                    // Rational approximation for upper region
+                    q = Math.sqrt(-2 * Math.log(1 - p));
+                    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                            ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+                } else {
+                    // Rational approximation for central region
+                    q = p - 0.5;
+                    r = q * q;
+                    return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+                           (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+                }
+            }
+            
+            return mean + sd * invNorm(p);
+        }
+
+        // Initialize chart
+        function initChart() {
+            const ctx = document.getElementById('powerChart').getContext('2d');
+            
+            // Custom plugin to draw annotations
+            const annotationPlugin = {
+                id: 'customAnnotations',
+                afterDraw: (chart) => {
+                    const annotations = chart.options.customAnnotations;
+                    if (!annotations || !chart.scales || !chart.scales.x || !chart.scales.y) return;
+                    
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    
+                    // Clear any existing paths
+                    ctx.beginPath();
+                    
+                    // Draw critical value lines
+                    if (annotations.criticalValues && Array.isArray(annotations.criticalValues)) {
+                        annotations.criticalValues.forEach(cv => {
+                            if (!isNaN(cv) && isFinite(cv)) {
+                                const x = chart.scales.x.getPixelForValue(cv);
+                                ctx.beginPath();
+                                ctx.moveTo(x, chart.scales.y.top);
+                                ctx.lineTo(x, chart.scales.y.bottom);
+                                ctx.strokeStyle = 'black';
+                                ctx.lineWidth = 2;
+                                ctx.setLineDash([5, 5]);
+                                ctx.stroke();
+                            }
+                        });
+                    }
+                    
+                    // Draw mean lines and labels
+                    if (annotations.nullMean !== undefined && annotations.altMean !== undefined &&
+                        !isNaN(annotations.nullMean) && !isNaN(annotations.altMean) &&
+                        isFinite(annotations.nullMean) && isFinite(annotations.altMean)) {
+                        const nullX = chart.scales.x.getPixelForValue(annotations.nullMean);
+                        const altX = chart.scales.x.getPixelForValue(annotations.altMean);
+                        
+                        // Check if labels might overlap
+                        const labelDistance = Math.abs(nullX - altX);
+                        const minLabelDistance = 60;
+                        
+                        // Null mean
+                        ctx.setLineDash([8, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(nullX, chart.scales.y.bottom);
+                        ctx.lineTo(nullX, chart.scales.y.bottom - 30);
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                        
+                        ctx.setLineDash([]);
+                        ctx.fillStyle = 'black';
+                        ctx.font = 'bold 24px Arial';
+                        ctx.textAlign = 'center';
+                        
+                        if (labelDistance < minLabelDistance) {
+                            ctx.fillText('μ₀', nullX, chart.scales.y.bottom - 50);
+                        } else {
+                            ctx.fillText('μ₀', nullX, chart.scales.y.bottom - 40);
+                        }
+                        
+                        // Alternative mean
+                        ctx.setLineDash([8, 4]);
+                        ctx.beginPath();
+                        ctx.moveTo(altX, chart.scales.y.bottom);
+                        ctx.lineTo(altX, chart.scales.y.bottom - 30);
+                        ctx.strokeStyle = 'black';
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                        
+                        ctx.setLineDash([]);
+                        ctx.fillStyle = 'black';
+                        ctx.font = 'bold 24px Arial';
+                        
+                        if (labelDistance < minLabelDistance) {
+                            ctx.fillText('μₐ', altX, chart.scales.y.bottom - 30);
+                        } else {
+                            ctx.fillText('μₐ', altX, chart.scales.y.bottom - 40);
+                        }
+                    }
+                    
+                    ctx.restore();
+                }
+            };
+            
+            powerChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            bottom: 50
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Value',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Density',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 0
+                    }
+                },
+                plugins: [annotationPlugin]
+            });
+        }
+
+        // Update visualization
+        function updateVisualization() {
+            // Get current values
+            const nullMean = parseFloat(document.getElementById('nullMean').value);
+            const altMean = parseFloat(document.getElementById('altMean').value);
+            const alpha = parseFloat(document.getElementById('alpha').value);
+            const sampleSize = parseInt(document.getElementById('sampleSize').value);
+            const stdDev = parseFloat(document.getElementById('stdDev').value);
+            const hypothesis = document.querySelector('input[name="hypothesis"]:checked').value;
+            
+            // Calculate standard error
+            const stdError = stdDev / Math.sqrt(sampleSize);
+            
+            // Calculate critical values
+            let criticalValues = [];
+            if (hypothesis === 'less') {
+                criticalValues = [quantileNormal(alpha, nullMean, stdError)];
+            } else if (hypothesis === 'greater') {
+                criticalValues = [quantileNormal(1 - alpha, nullMean, stdError)];
+            } else { // two.sided
+                criticalValues = [
+                    quantileNormal(alpha / 2, nullMean, stdError),
+                    quantileNormal(1 - alpha / 2, nullMean, stdError)
+                ];
+            }
+            
+            // Calculate power
+            let power = 0;
+            if (hypothesis === 'less') {
+                power = normalCDF(criticalValues[0], altMean, stdError);
+            } else if (hypothesis === 'greater') {
+                power = 1 - normalCDF(criticalValues[0], altMean, stdError);
+            } else { // two.sided
+                power = normalCDF(criticalValues[0], altMean, stdError) + 
+                        (1 - normalCDF(criticalValues[1], altMean, stdError));
+            }
+            
+            const beta = 1 - power;
+            
+            // Generate data points
+            const xMin = Math.min(nullMean, altMean) - 4 * stdError;
+            const xMax = Math.max(nullMean, altMean) + 4 * stdError;
+            const numPoints = 500;
+            const xValues = [];
+            const nullDensity = [];
+            const altDensity = [];
+            
+            for (let i = 0; i <= numPoints; i++) {
+                const x = xMin + (xMax - xMin) * i / numPoints;
+                xValues.push(x);
+                nullDensity.push(normalPDF(x, nullMean, stdError));
+                altDensity.push(normalPDF(x, altMean, stdError));
+            }
+            
+            // Create datasets for the chart
+            const datasets = [];
+            
+            // Add null and alternative distribution curves
+            datasets.push({
+                label: 'Null Distribution',
+                data: xValues.map((x, i) => ({x: x, y: nullDensity[i]})),
+                borderColor: 'black',
+                backgroundColor: 'transparent',
+                borderWidth: 3,
+                fill: false,
+                pointRadius: 0,
+                tension: 0.4,
+                showLine: true
+            });
+            
+            datasets.push({
+                label: 'Alternative Distribution',
+                data: xValues.map((x, i) => ({x: x, y: altDensity[i]})),
+                borderColor: 'black',
+                backgroundColor: 'transparent',
+                borderWidth: 3,
+                fill: false,
+                pointRadius: 0,
+                tension: 0.4,
+                showLine: true
+            });
+            
+            // Create fill datasets for each region
+            // Type I Error (red) - under null distribution in rejection region
+            datasets.push({
+                label: 'Type I Error Fill',
+                data: xValues.map((x, i) => ({
+                    x: x, 
+                    y: (hypothesis === 'less' && x <= criticalValues[0]) ||
+                       (hypothesis === 'greater' && x >= criticalValues[0]) ||
+                       (hypothesis === 'two.sided' && (x <= criticalValues[0] || x >= criticalValues[1]))
+                       ? nullDensity[i] : 0
+                })),
+                borderColor: 'transparent',
+                backgroundColor: 'rgba(220, 53, 69, 0.6)',
+                fill: true,
+                pointRadius: 0,
+                showLine: true,
+                tension: 0
+            });
+            
+            // Power (green) - under alternative distribution in rejection region
+            datasets.push({
+                label: 'Power Fill',
+                data: xValues.map((x, i) => ({
+                    x: x, 
+                    y: (hypothesis === 'less' && x <= criticalValues[0]) ||
+                       (hypothesis === 'greater' && x >= criticalValues[0]) ||
+                       (hypothesis === 'two.sided' && (x <= criticalValues[0] || x >= criticalValues[1]))
+                       ? altDensity[i] : 0
+                })),
+                borderColor: 'transparent',
+                backgroundColor: 'rgba(40, 167, 69, 0.4)',
+                fill: true,
+                pointRadius: 0,
+                showLine: true,
+                tension: 0
+            });
+            
+            // Type II Error (purple) - under alternative distribution in non-rejection region
+            datasets.push({
+                label: 'Type II Error Fill',
+                data: xValues.map((x, i) => ({
+                    x: x, 
+                    y: (hypothesis === 'less' && x > criticalValues[0]) ||
+                       (hypothesis === 'greater' && x < criticalValues[0]) ||
+                       (hypothesis === 'two.sided' && x > criticalValues[0] && x < criticalValues[1])
+                       ? altDensity[i] : 0
+                })),
+                borderColor: 'transparent',
+                backgroundColor: 'rgba(111, 66, 193, 0.6)',
+                fill: true,
+                pointRadius: 0,
+                showLine: true,
+                tension: 0
+            });
+            
+            // Update chart
+            powerChart.data.datasets = datasets;
+            powerChart.options.customAnnotations = {
+                criticalValues: criticalValues,
+                nullMean: nullMean,
+                altMean: altMean
+            };
+            powerChart.update('none'); // No animation for immediate update
+            
+            // Update summary values
+            document.getElementById('type1Error').textContent = alpha.toFixed(3);
+            document.getElementById('type2Error').textContent = beta.toFixed(3);
+            document.getElementById('power').textContent = power.toFixed(3);
+        }
+
+        // Set up event listeners
+        function setupEventListeners() {
+            // Slider listeners
+            ['nullMean', 'altMean', 'alpha', 'sampleSize', 'stdDev'].forEach(id => {
+                const slider = document.getElementById(id);
+                const valueSpan = document.getElementById(id + 'Value');
+                
+                slider.addEventListener('input', function() {
+                    valueSpan.textContent = this.value;
+                    debouncedUpdate();
+                });
+            });
+            
+            // Radio button listeners
+            document.querySelectorAll('input[name="hypothesis"]').forEach(radio => {
+                radio.addEventListener('change', updateVisualization);
+            });
+        }
+
+        // Initialize on load
+        window.onload = function() {
+            initChart();
+            setupEventListeners();
+            
+            // Initialize slider values
+            ['nullMean', 'altMean', 'alpha', 'sampleSize', 'stdDev'].forEach(id => {
+                const slider = document.getElementById(id);
+                const valueSpan = document.getElementById(id + 'Value');
+                valueSpan.textContent = slider.value;
+            });
+            
+            updateVisualization();
+        };
+    </script>
+</body>
+</html>

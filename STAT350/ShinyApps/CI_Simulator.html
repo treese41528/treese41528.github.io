@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confidence Interval Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            display: flex;
+            min-height: 600px;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 1px solid #e0e0e0;
+            overflow-y: auto;
+        }
+
+        .main-panel {
+            flex: 1;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        select, input[type="number"] {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        select:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            transition: opacity 0.3s ease;
+        }
+
+        .chart-container canvas {
+            max-height: 350px;
+        }
+
+        .chart-title {
+            font-size: 1.2em;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .results-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .results-text {
+            font-size: 1.1em;
+            line-height: 1.8;
+            color: #333;
+        }
+
+        .results-text strong {
+            color: #667eea;
+        }
+
+        .histogram-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-box h3 {
+            color: #1976D2;
+            margin-bottom: 8px;
+        }
+
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+
+        .dynamic-inputs {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            .histogram-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Simulating Confidence Intervals</h1>
+            <p>Explore how confidence intervals capture the true population parameter</p>
+        </div>
+        
+        <div class="content">
+            <div class="sidebar">
+                <div class="info-box">
+                    <h3>How it works</h3>
+                    <p>Generate multiple confidence intervals and see what percentage contains the true population mean μ. In the long run, this should match your confidence level!</p>
+                    <p style="margin-top: 8px; font-size: 0.9em;"><strong>Key feature:</strong> After sampling, switch between methods to compare their coverage on the same data!</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="method">Method <span style="font-size: 0.85em; color: #666;">(change to compare)</span></label>
+                    <select id="method">
+                        <option value="z_known">z sigma known</option>
+                        <option value="z_unknown">z sigma unknown (using s)</option>
+                        <option value="t">t</option>
+                    </select>
+                    <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                        <em>z known: uses population σ | z unknown: uses sample s | t: accounts for small samples</em>
+                    </div>
+                    <div id="methodWarning" style="display: none; font-size: 0.85em; color: #d9534f; margin-top: 5px; padding: 5px; background: #f8d7da; border-radius: 4px;">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="distribution">Distribution</label>
+                    <select id="distribution">
+                        <option value="normal">Normal</option>
+                        <option value="uniform">Uniform</option>
+                        <option value="exponential">Exponential</option>
+                        <option value="poisson">Poisson</option>
+                    </select>
+                </div>
+                
+                <div id="dynamicInputs" class="dynamic-inputs"></div>
+                
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+                
+                <div class="form-group">
+                    <label for="sampleSize">Sample size (n)</label>
+                    <input type="number" id="sampleSize" value="10" min="2" step="5">
+                </div>
+                
+                <div class="form-group">
+                    <label for="numIntervals">Number of intervals</label>
+                    <input type="number" id="numIntervals" value="50" min="10" step="10">
+                </div>
+                
+                <div class="form-group">
+                    <label for="confLevel">Confidence Level (%)</label>
+                    <input type="number" id="confLevel" value="95" min="80" max="99.99" step="0.5">
+                </div>
+                
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
+                
+                <div class="button-group">
+                    <button class="btn-primary" onclick="generateSamples()">Sample</button>
+                    <button class="btn-secondary" onclick="reset()">Reset</button>
+                </div>
+            </div>
+            
+            <div class="main-panel">
+                <div class="chart-container" style="height: 450px;">
+                    <div class="chart-title">Confidence Intervals</div>
+                    <canvas id="intervalChart"></canvas>
+                    <div style="text-align: center; margin-top: 10px; font-size: 0.9em;">
+                        <span style="color: #4CAF50; font-weight: bold;">■</span> Contains μ &nbsp;&nbsp;
+                        <span style="color: #F44336; font-weight: bold;">■</span> Does not contain μ &nbsp;&nbsp;
+                        <span style="color: #9C27B0; font-weight: bold;">- - -</span> True mean (μ)
+                    </div>
+                </div>
+                
+                <div class="results-panel">
+                    <div class="results-text" id="resultsText">
+                        Press 'Sample' to generate confidence intervals. After sampling, you can switch between methods to compare their coverage on the same data.
+                    </div>
+                </div>
+                
+                <div class="results-panel" id="statsPanel" style="display: none;">
+                    <div style="font-size: 1.1em; font-weight: 700; color: #333; margin-bottom: 15px;">Sample Statistics</div>
+                    <div id="statsContent" style="font-size: 0.95em; line-height: 1.8;"></div>
+                </div>
+                
+                <div class="histogram-row">
+                    <div class="chart-container">
+                        <div class="chart-title">Most Recent Sample Means</div>
+                        <canvas id="recentMeansChart"></canvas>
+                        <div style="text-align: center; margin-top: 5px; font-size: 0.85em; color: #666;">
+                            <span style="color: #9C27B0; font-weight: bold;">- - -</span> True mean (μ)
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <div class="chart-title">Sampling Distribution of the Sample Mean</div>
+                        <canvas id="allMeansChart"></canvas>
+                        <div style="text-align: center; margin-top: 5px; font-size: 0.85em; color: #666;">
+                            <span style="color: #9C27B0; font-weight: bold;">- - -</span> True mean (μ)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let intervalChart = null;
+        let recentMeansChart = null;
+        let allMeansChart = null;
+        let allSampleMeans = [];
+        let runningTotals = {
+            z_known: { containing: 0, total: 0 },
+            z_unknown: { containing: 0, total: 0 },
+            t: { containing: 0, total: 0 }
+        };
+        
+        // Store all intervals for all methods
+        let currentIntervals = {
+            z_known: [],
+            z_unknown: [],
+            t: []
+        };
+        let currentTrueMean = null;
+        let currentSampleMeans = [];
+        let currentSampleSDs = [];
+
+        // Statistical functions
+        function normalPDF(x, mean, sd) {
+            return (1 / (sd * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mean) / sd, 2));
+        }
+
+        function quantileNormal(p) {
+            // Peter John Acklam's algorithm for inverse normal CDF
+            // This is highly accurate and well-tested
+            if (p <= 0) return -Infinity;
+            if (p >= 1) return Infinity;
+            if (p === 0.5) return 0;
+            
+            // Coefficients in rational approximations
+            const a = [-3.969683028665376e+01, 2.209460984245205e+02,
+                      -2.759285104469687e+02, 1.383577518672690e+02,
+                      -3.066479806614716e+01, 2.506628277459239e+00];
+                      
+            const b = [-5.447609879822406e+01, 1.615858368580409e+02,
+                      -1.556989798598866e+02, 6.680131188771972e+01,
+                      -1.328068155288572e+01];
+                      
+            const c = [-7.784894002430293e-03, -3.223964580411365e-01,
+                      -2.400758277161838e+00, -2.549732539343734e+00,
+                      4.374664141464968e+00, 2.938163982698783e+00];
+                      
+            const d = [7.784695709041462e-03, 3.224671290700398e-01,
+                      2.445134137142996e+00, 3.754408661907416e+00];
+            
+            // Define break-points
+            const plow = 0.02425;
+            const phigh = 1 - plow;
+            
+            let x;
+            
+            if (p < plow) {
+                // Rational approximation for lower region
+                const q = Math.sqrt(-2 * Math.log(p));
+                x = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                    ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+            } else if (p > phigh) {
+                // Rational approximation for upper region
+                const q = Math.sqrt(-2 * Math.log(1 - p));
+                x = -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                     ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+            } else {
+                // Rational approximation for central region
+                const q = p - 0.5;
+                const r = q * q;
+                x = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+                    (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+            }
+            
+            return x;
+        }
+
+        function quantileT(p, df) {
+            // More accurate t-distribution quantile using Hill's algorithm
+            if (df === Infinity) return quantileNormal(p);
+            
+            const u = quantileNormal(p);
+            
+            if (df > 2) {
+                // Hill's approximation for df > 2
+                const g1 = (Math.pow(u, 3) + u) / 4;
+                const g2 = (5 * Math.pow(u, 5) + 16 * Math.pow(u, 3) + 3 * u) / 96;
+                const g3 = (3 * Math.pow(u, 7) + 19 * Math.pow(u, 5) + 17 * Math.pow(u, 3) - 15 * u) / 384;
+                const g4 = (79 * Math.pow(u, 9) + 776 * Math.pow(u, 7) + 1482 * Math.pow(u, 5) - 1920 * Math.pow(u, 3) - 945 * u) / 92160;
+                
+                return u + g1/df + g2/Math.pow(df, 2) + g3/Math.pow(df, 3) + g4/Math.pow(df, 4);
+            } else {
+                // For small df, use a different approximation
+                const z = quantileNormal(p);
+                const g = (Math.pow(z, 2) - 1) / (4 * df);
+                return z * Math.sqrt(1 + 2 * g);
+            }
+        }
+
+        // Random number generators
+        function randomNormal(mean, sd) {
+            let u = 0, v = 0;
+            while (u === 0) u = Math.random();
+            while (v === 0) v = Math.random();
+            return mean + sd * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        function randomUniform(min, max) {
+            return min + Math.random() * (max - min);
+        }
+
+        function randomExponential(rate) {
+            return -Math.log(1 - Math.random()) / rate;
+        }
+
+        function randomPoisson(lambda) {
+            const L = Math.exp(-lambda);
+            let k = 0;
+            let p = 1;
+            
+            do {
+                k++;
+                p *= Math.random();
+            } while (p > L);
+            
+            return k - 1;
+        }
+
+        // Update dynamic inputs based on distribution
+        function updateDynamicInputs() {
+            const dist = document.getElementById('distribution').value;
+            const container = document.getElementById('dynamicInputs');
+            
+            let html = '';
+            
+            switch(dist) {
+                case 'normal':
+                    html = `
+                        <div class="form-group">
+                            <label for="mean">Population mean (μ)</label>
+                            <input type="number" id="mean" value="40" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="sd">Population SD (σ)</label>
+                            <input type="number" id="sd" value="30" step="1">
+                        </div>
+                    `;
+                    break;
+                case 'uniform':
+                    html = `
+                        <div class="form-group">
+                            <label for="min">Minimum (a)</label>
+                            <input type="number" id="min" value="0" step="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="max">Maximum (b)</label>
+                            <input type="number" id="max" value="100" step="1">
+                        </div>
+                    `;
+                    break;
+                case 'exponential':
+                    html = `
+                        <div class="form-group">
+                            <label for="rate">Rate (λ)</label>
+                            <input type="number" id="rate" value="1" step="0.1">
+                        </div>
+                    `;
+                    break;
+                case 'poisson':
+                    html = `
+                        <div class="form-group">
+                            <label for="lambda">Lambda (λ)</label>
+                            <input type="number" id="lambda" value="5" min="0.1" step="0.5">
+                        </div>
+                    `;
+                    break;
+            }
+            
+            container.innerHTML = html;
+            
+            // Add event listener for lambda input if Poisson distribution
+            if (dist === 'poisson') {
+                const lambdaInput = document.getElementById('lambda');
+                if (lambdaInput) {
+                    lambdaInput.addEventListener('change', updateMethodWarning);
+                }
+            }
+            
+            // Update warning after inputs are created
+            updateMethodWarning();
+        }
+
+        // Calculate confidence interval
+        function calculateConfidenceInterval(sample, method, sigma) {
+            const n = sample.length;
+            const xbar = sample.reduce((a, b) => a + b, 0) / n;
+            
+            // Calculate sample standard deviation with Bessel's correction
+            const s = Math.sqrt(sample.reduce((sum, x) => sum + Math.pow(x - xbar, 2), 0) / (n - 1));
+            
+            const confLevel = parseFloat(document.getElementById('confLevel').value) / 100;
+            const alpha = 1 - confLevel;
+            
+            let errorMargin;
+            let criticalValue;
+            
+            if (method === 'z_known') {
+                criticalValue = quantileNormal(1 - alpha / 2);
+                errorMargin = criticalValue * sigma / Math.sqrt(n);
+            } else if (method === 'z_unknown') {
+                criticalValue = quantileNormal(1 - alpha / 2);
+                errorMargin = criticalValue * s / Math.sqrt(n);
+            } else { // t
+                criticalValue = quantileT(1 - alpha / 2, n - 1);
+                errorMargin = criticalValue * s / Math.sqrt(n);
+            }
+            
+            return {
+                lower: xbar - errorMargin,
+                upper: xbar + errorMargin,
+                mean: xbar,
+                sd: s,
+                criticalValue: criticalValue,
+                errorMargin: errorMargin
+            };
+        }
+
+        // Generate sample based on distribution
+        function generateSample(dist, n, params) {
+            const sample = [];
+            
+            for (let i = 0; i < n; i++) {
+                switch(dist) {
+                    case 'normal':
+                        sample.push(randomNormal(params.mean, params.sd));
+                        break;
+                    case 'uniform':
+                        sample.push(randomUniform(params.min, params.max));
+                        break;
+                    case 'exponential':
+                        sample.push(randomExponential(params.rate));
+                        break;
+                    case 'poisson':
+                        sample.push(randomPoisson(params.lambda));
+                        break;
+                }
+            }
+            
+            return sample;
+        }
+
+        // Get distribution parameters
+        function getDistributionParams() {
+            const dist = document.getElementById('distribution').value;
+            let params = {};
+            let trueMean, trueSigma;
+            
+            switch(dist) {
+                case 'normal':
+                    params.mean = parseFloat(document.getElementById('mean').value);
+                    params.sd = parseFloat(document.getElementById('sd').value);
+                    trueMean = params.mean;
+                    trueSigma = params.sd;
+                    break;
+                case 'uniform':
+                    params.min = parseFloat(document.getElementById('min').value);
+                    params.max = parseFloat(document.getElementById('max').value);
+                    trueMean = (params.max + params.min) / 2;
+                    // Correct formula for uniform standard deviation
+                    trueSigma = (params.max - params.min) / Math.sqrt(12);
+                    break;
+                case 'exponential':
+                    params.rate = parseFloat(document.getElementById('rate').value);
+                    trueMean = 1 / params.rate;
+                    trueSigma = 1 / params.rate;
+                    break;
+                case 'poisson':
+                    params.lambda = parseFloat(document.getElementById('lambda').value);
+                    trueMean = params.lambda;
+                    trueSigma = Math.sqrt(params.lambda);
+                    break;
+            }
+            
+            return { params, trueMean, trueSigma };
+        }
+
+        // Initialize charts
+        function initCharts() {
+            const intervalCtx = document.getElementById('intervalChart').getContext('2d');
+            const recentCtx = document.getElementById('recentMeansChart').getContext('2d');
+            const allCtx = document.getElementById('allMeansChart').getContext('2d');
+            
+            // Plugin to draw error bars and true mean line
+            const errorBarPlugin = {
+                id: 'errorBar',
+                afterDatasetsDraw: function(chart) {
+                    if (!chart.config._intervals || chart.config._intervals.length === 0) return;
+                    
+                    const ctx = chart.ctx;
+                    const xScale = chart.scales.x;
+                    const yScale = chart.scales.y;
+                    
+                    ctx.save();
+                    
+                    // Draw true mean line
+                    if (chart.config._trueMean !== undefined) {
+                        const trueMeanY = yScale.getPixelForValue(chart.config._trueMean);
+                        ctx.beginPath();
+                        ctx.moveTo(xScale.left, trueMeanY);
+                        ctx.lineTo(xScale.right, trueMeanY);
+                        ctx.strokeStyle = '#9C27B0'; // Purple to match histograms
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        
+                        // Draw label
+                        ctx.fillStyle = '#9C27B0';
+                        ctx.font = 'bold 12px Arial';
+                        ctx.textAlign = 'left';
+                        ctx.fillText('μ = ' + chart.config._trueMean.toFixed(2), xScale.right + 5, trueMeanY);
+                    }
+                    
+                    // Draw error bars
+                    chart.config._intervals.forEach((interval, i) => {
+                        const x = xScale.getPixelForValue(i);
+                        const yMin = yScale.getPixelForValue(interval.lower);
+                        const yMax = yScale.getPixelForValue(interval.upper);
+                        
+                        ctx.strokeStyle = interval.containsMean ? '#4CAF50' : '#F44336';
+                        ctx.lineWidth = chart.config._intervals.length > 100 ? 0.8 : 
+                                       chart.config._intervals.length > 50 ? 1 : 1.5;
+                        
+                        // Vertical line
+                        ctx.beginPath();
+                        ctx.moveTo(x, yMin);
+                        ctx.lineTo(x, yMax);
+                        ctx.stroke();
+                        
+                        // Horizontal caps
+                        const capWidth = chart.config._intervals.length > 100 ? 2 : 
+                                        chart.config._intervals.length > 50 ? 4 : 6;
+                        
+                        // Top cap
+                        ctx.beginPath();
+                        ctx.moveTo(x - capWidth, yMax);
+                        ctx.lineTo(x + capWidth, yMax);
+                        ctx.stroke();
+                        
+                        // Bottom cap
+                        ctx.beginPath();
+                        ctx.moveTo(x - capWidth, yMin);
+                        ctx.lineTo(x + capWidth, yMin);
+                        ctx.stroke();
+                    });
+                    
+                    ctx.restore();
+                }
+            };
+            
+            intervalChart = new Chart(intervalCtx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Intervals',
+                        data: [],
+                        showLine: false,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {
+                        padding: {
+                            right: 60
+                        }
+                    },
+                    animation: {
+                        duration: 0
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Interval Number',
+                                font: { size: 14, weight: 'bold' }
+                            },
+                            ticks: {
+                                stepSize: 5
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Confidence Interval',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    }
+                },
+                plugins: [errorBarPlugin]
+            });
+            
+            // Histogram plugin to draw true mean line
+            const histogramPlugin = {
+                id: 'trueMeanLine',
+                afterDatasetsDraw: function(chart) {
+                    if (chart.config._trueMean === undefined || !chart.data.labels || chart.data.labels.length === 0) return;
+                    
+                    const ctx = chart.ctx;
+                    const xScale = chart.scales.x;
+                    const yScale = chart.scales.y;
+                    
+                    ctx.save();
+                    
+                    // Get the actual numeric value of the true mean
+                    const trueMeanValue = chart.config._trueMean;
+                    
+                    // Find the x pixel position for the true mean
+                    // For bar charts with numeric labels, we need to interpolate
+                    const labels = chart.data.labels.map(l => parseFloat(l));
+                    const minLabel = Math.min(...labels);
+                    const maxLabel = Math.max(...labels);
+                    
+                    // Calculate the pixel position based on linear interpolation
+                    const xPixelRange = xScale.right - xScale.left;
+                    const xValueRange = maxLabel - minLabel;
+                    const xPixel = xScale.left + ((trueMeanValue - minLabel) / xValueRange) * xPixelRange;
+                    
+                    // Draw true mean line
+                    ctx.beginPath();
+                    ctx.moveTo(xPixel, yScale.top);
+                    ctx.lineTo(xPixel, yScale.bottom);
+                    ctx.strokeStyle = '#9C27B0'; // Purple color, different from red KDE
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([8, 4]);
+                    ctx.stroke();
+                    
+                    // Add label
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = '#9C27B0';
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('μ', xPixel, yScale.top - 5);
+                    
+                    ctx.restore();
+                }
+            };
+            
+            // Histogram options
+            const histogramOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0
+                },
+                plugins: {
+                    legend: { 
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            filter: function(legendItem) {
+                                return legendItem.text !== 'Density';
+                            },
+                            usePointStyle: true,
+                            padding: 10
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: {
+                            display: true,
+                            text: 'Sample Means',
+                            font: { size: 12, weight: 'bold' }
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Density',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        beginAtZero: true
+                    }
+                }
+            };
+            
+            recentMeansChart = new Chart(recentCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: histogramOptions,
+                plugins: [histogramPlugin]
+            });
+            
+            allMeansChart = new Chart(allCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: histogramOptions,
+                plugins: [histogramPlugin]
+            });
+        }
+
+        // Update interval chart
+        function updateIntervalChart(intervals, trueMean) {
+            intervalChart.config._intervals = intervals;
+            intervalChart.config._trueMean = trueMean;
+            
+            // Set scale ranges
+            const allValues = intervals.flatMap(i => [i.lower, i.upper]).concat(trueMean);
+            const padding = (Math.max(...allValues) - Math.min(...allValues)) * 0.05;
+            
+            intervalChart.options.scales.y.min = Math.min(...allValues) - padding;
+            intervalChart.options.scales.y.max = Math.max(...allValues) + padding;
+            intervalChart.options.scales.x.min = -1;
+            intervalChart.options.scales.x.max = intervals.length;
+            intervalChart.options.scales.x.ticks.stepSize = Math.ceil(intervals.length / 10);
+            
+            intervalChart.update();
+        }
+
+        // Update histogram
+        function updateHistogram(chart, data, trueMean, color) {
+            if (data.length === 0) return;
+            
+            // Create bins
+            const min = Math.min(...data);
+            const max = Math.max(...data);
+            const range = max - min;
+            
+            if (range === 0) {
+                // All values are the same
+                chart.data.labels = [min.toFixed(2)];
+                chart.data.datasets = [{
+                    label: 'Density',
+                    data: [1],
+                    backgroundColor: color,
+                    borderColor: color.replace('0.6', '1'),
+                    borderWidth: 1
+                }];
+                chart.config._trueMean = trueMean;
+                chart.update();
+                return;
+            }
+            
+            const numBins = Math.min(20, Math.max(5, Math.ceil(Math.sqrt(data.length))));
+            const binWidth = range / numBins;
+            
+            const bins = Array(numBins).fill(0);
+            const binCenters = [];
+            
+            for (let i = 0; i < numBins; i++) {
+                const binStart = min + i * binWidth;
+                const binEnd = binStart + binWidth;
+                const binCenter = (binStart + binEnd) / 2;
+                binCenters.push(binCenter);
+                
+                for (let value of data) {
+                    if (value >= binStart && (value < binEnd || (i === numBins - 1 && value <= binEnd))) {
+                        bins[i]++;
+                    }
+                }
+            }
+            
+            // Normalize to density
+            const totalArea = data.length * binWidth;
+            const densityBins = bins.map(count => count / totalArea);
+            
+            // Calculate mean and SD
+            const mean = data.reduce((a, b) => a + b, 0) / data.length;
+            const variance = data.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (data.length - 1);
+            const sd = Math.sqrt(variance);
+            
+            // Create normal curve points
+            const normalPoints = binCenters.map(x => ({
+                x: x,
+                y: normalPDF(x, mean, sd)
+            }));
+            
+            // Create kernel density estimation
+            const bandwidth = 1.06 * sd * Math.pow(data.length, -0.2);
+            const kdePoints = binCenters.map(x => {
+                let density = 0;
+                for (let value of data) {
+                    const u = (x - value) / bandwidth;
+                    density += normalPDF(u, 0, 1);
+                }
+                return {
+                    x: x,
+                    y: density / (data.length * bandwidth)
+                };
+            });
+            
+            chart.data.labels = binCenters.map(x => x.toFixed(2));
+            chart.data.datasets = [
+                {
+                    label: 'Density',
+                    data: densityBins,
+                    type: 'bar',
+                    backgroundColor: color,
+                    borderColor: color.replace('0.6', '1'),
+                    borderWidth: 1,
+                    barPercentage: 1.0,
+                    categoryPercentage: 1.0
+                },
+                {
+                    label: 'Normal Curve',
+                    data: normalPoints,
+                    type: 'line',
+                    borderColor: 'blue',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: false
+                },
+                {
+                    label: 'KDE',
+                    data: kdePoints,
+                    type: 'line',
+                    borderColor: 'red',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: false
+                }
+            ];
+            
+            chart.config._trueMean = trueMean;
+            chart.update();
+        }
+
+        // Generate samples and update visualization
+        function generateSamples() {
+            const dist = document.getElementById('distribution').value;
+            const n = parseInt(document.getElementById('sampleSize').value);
+            const numIntervals = parseInt(document.getElementById('numIntervals').value);
+            const confLevel = parseFloat(document.getElementById('confLevel').value) / 100;
+            const alpha = 1 - confLevel;
+            
+            const { params, trueMean, trueSigma } = getDistributionParams();
+            currentTrueMean = trueMean;
+            
+            // Clear current intervals
+            currentIntervals = {
+                z_known: [],
+                z_unknown: [],
+                t: []
+            };
+            currentSampleMeans = [];
+            currentSampleSDs = [];
+            
+            // Generate all intervals for all methods
+            for (let i = 0; i < numIntervals; i++) {
+                const sample = generateSample(dist, n, params);
+                
+                // Calculate intervals for all three methods
+                const ci_z_known = calculateConfidenceInterval(sample, 'z_known', trueSigma);
+                const ci_z_unknown = calculateConfidenceInterval(sample, 'z_unknown', trueSigma);
+                const ci_t = calculateConfidenceInterval(sample, 't', trueSigma);
+                
+                currentIntervals.z_known.push({
+                    lower: ci_z_known.lower,
+                    upper: ci_z_known.upper,
+                    containsMean: ci_z_known.lower <= trueMean && ci_z_known.upper >= trueMean
+                });
+                
+                currentIntervals.z_unknown.push({
+                    lower: ci_z_unknown.lower,
+                    upper: ci_z_unknown.upper,
+                    containsMean: ci_z_unknown.lower <= trueMean && ci_z_unknown.upper >= trueMean
+                });
+                
+                currentIntervals.t.push({
+                    lower: ci_t.lower,
+                    upper: ci_t.upper,
+                    containsMean: ci_t.lower <= trueMean && ci_t.upper >= trueMean
+                });
+                
+                currentSampleMeans.push(ci_z_known.mean); // All methods have same mean
+                currentSampleSDs.push(ci_z_known.sd); // All methods have same sd
+            }
+            
+            // Update running totals for all methods
+            const containing_z_known = currentIntervals.z_known.filter(i => i.containsMean).length;
+            const containing_z_unknown = currentIntervals.z_unknown.filter(i => i.containsMean).length;
+            const containing_t = currentIntervals.t.filter(i => i.containsMean).length;
+            
+            runningTotals.z_known.containing += containing_z_known;
+            runningTotals.z_unknown.containing += containing_z_unknown;
+            runningTotals.t.containing += containing_t;
+            
+            runningTotals.z_known.total += numIntervals;
+            runningTotals.z_unknown.total += numIntervals;
+            runningTotals.t.total += numIntervals;
+            
+            // Add to all sample means
+            allSampleMeans = allSampleMeans.concat(currentSampleMeans);
+            
+            // Update histograms (these don't change with method)
+            updateHistogram(recentMeansChart, currentSampleMeans, trueMean, 'rgba(156, 39, 176, 0.6)');
+            updateHistogram(allMeansChart, allSampleMeans, trueMean, 'rgba(76, 175, 80, 0.6)');
+            
+            // Update display for current method
+            updateMethodDisplay();
+        }
+        
+        // Update display based on selected method
+        function updateMethodDisplay() {
+            const method = document.getElementById('method').value;
+            const n = parseInt(document.getElementById('sampleSize').value);
+            const alpha = 1 - parseFloat(document.getElementById('confLevel').value) / 100;
+            const trueSigma = getDistributionParams().trueSigma;
+            
+            if (!currentIntervals[method] || currentIntervals[method].length === 0) {
+                return; // No data yet
+            }
+            
+            // Add a subtle fade animation to indicate update
+            const chartContainer = document.querySelector('.chart-container');
+            if (chartContainer) {
+                chartContainer.style.opacity = '0.7';
+                setTimeout(() => {
+                    chartContainer.style.opacity = '1';
+                }, 100);
+            }
+            
+            // Update interval chart
+            updateIntervalChart(currentIntervals[method], currentTrueMean);
+            
+            // Update results text
+            const containing = currentIntervals[method].filter(i => i.containsMean).length;
+            updateResults(containing, currentIntervals[method].length, method);
+            
+            // Update statistics panel
+            updateStatsPanel(currentSampleMeans, currentSampleSDs, method, n, alpha, currentTrueMean, trueSigma, currentIntervals[method]);
+        }
+
+        // Update statistics panel
+        function updateStatsPanel(sampleMeans, sampleSDs, method, n, alpha, trueMean, trueSigma, intervals) {
+            const avgSampleMean = sampleMeans.reduce((a, b) => a + b, 0) / sampleMeans.length;
+            const avgSampleSD = sampleSDs.reduce((a, b) => a + b, 0) / sampleSDs.length;
+            
+            let criticalValue;
+            let methodLabel;
+            let dfText = '';
+            
+            if (method === 'z_known' || method === 'z_unknown') {
+                criticalValue = quantileNormal(1 - alpha / 2).toFixed(3);
+                methodLabel = 'z';
+            } else { // t method
+                criticalValue = quantileT(1 - alpha / 2, n - 1).toFixed(3);
+                methodLabel = 't';
+                dfText = ` (df = ${n - 1})`;
+            }
+            
+            const sigmaSymbol = method === 'z_known' ? 'σ' : 's';
+            
+            document.getElementById('statsPanel').style.display = 'block';
+            document.getElementById('statsContent').innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <strong>Population Parameters:</strong><br>
+                        μ = ${trueMean.toFixed(3)}<br>
+                        σ = ${trueSigma.toFixed(3)}
+                    </div>
+                    <div>
+                        <strong>Sample Statistics (avg):</strong><br>
+                        x̄ = ${avgSampleMean.toFixed(3)}<br>
+                        s = ${avgSampleSD.toFixed(3)}
+                    </div>
+                    <div>
+                        <strong>Critical Value:</strong><br>
+                        ${methodLabel}<sub>${(1 - alpha/2).toFixed(3)}</sub>${dfText} = ${criticalValue}
+                    </div>
+                    <div>
+                        <strong>Avg Margin of Error:</strong><br>
+                        ${methodLabel} × ${sigmaSymbol}/√n ≈ ${(intervals.reduce((sum, i) => sum + (i.upper - i.lower) / 2, 0) / intervals.length).toFixed(3)}
+                    </div>
+                </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 0.9em; color: #666;">
+                    <strong>Current Method:</strong> ${method === 'z_known' ? 'z (σ known)' : method === 'z_unknown' ? 'z (σ unknown, using s)' : 't-distribution'}
+                </div>
+            `;
+        }
+
+        // Update results text
+        function updateResults(containing, total, method) {
+            const percent = (100 * containing / total).toFixed(1);
+            const runningPercent = (100 * runningTotals[method].containing / runningTotals[method].total).toFixed(1);
+            const confLevel = parseFloat(document.getElementById('confLevel').value);
+            
+            const methodNames = {
+                z_known: 'z sigma known',
+                z_unknown: 'z sigma unknown (using s)',
+                t: 't'
+            };
+            
+            // Color code the percentages
+            const getPercentColor = (pct) => {
+                const diff = Math.abs(pct - confLevel);
+                if (diff <= 2) return '#28a745';
+                if (diff <= 5) return '#ffc107';
+                return '#dc3545';
+            };
+            
+            // Check if this is displaying current intervals or from sampling
+            const isCurrentData = total === currentIntervals[method].length;
+            
+            document.getElementById('resultsText').innerHTML = `
+                <strong>${containing}</strong> out of <strong>${total}</strong> intervals contain μ for method <strong>${methodNames[method]}</strong> 
+                (<strong style="color: ${getPercentColor(percent)}">${percent}%</strong>)<br>
+                <br>
+                <strong>Running Total:</strong> ${runningTotals[method].containing} out of ${runningTotals[method].total} intervals contain μ 
+                (<strong style="color: ${getPercentColor(runningPercent)}">${runningPercent}%</strong>)<br>
+                <br>
+                <div style="background: #f0f0f0; border-radius: 8px; height: 20px; position: relative; overflow: hidden; margin: 10px 0;">
+                    <div style="background: ${getPercentColor(runningPercent)}; height: 100%; width: ${runningPercent}%; transition: width 0.3s;"></div>
+                    <div style="position: absolute; left: ${confLevel}%; top: 0; bottom: 0; width: 2px; background: #333; opacity: 0.5;"></div>
+                    <div style="position: absolute; left: ${confLevel}%; top: -20px; transform: translateX(-50%); font-size: 0.8em; color: #666;">Target: ${confLevel}%</div>
+                </div>
+                <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                    <strong>Expected:</strong> ${Math.round(total * confLevel / 100)} out of ${total} intervals
+                    ${isCurrentData ? '<br><em>Switch methods to compare coverage on the same samples</em>' : ''}
+                </div>
+            `;
+        }
+
+        // Reset function
+        function reset() {
+            allSampleMeans = [];
+            runningTotals = {
+                z_known: { containing: 0, total: 0 },
+                z_unknown: { containing: 0, total: 0 },
+                t: { containing: 0, total: 0 }
+            };
+            
+            // Clear stored intervals
+            currentIntervals = {
+                z_known: [],
+                z_unknown: [],
+                t: []
+            };
+            currentTrueMean = null;
+            currentSampleMeans = [];
+            currentSampleSDs = [];
+            
+            // Clear charts
+            if (intervalChart) {
+                intervalChart.config._intervals = [];
+                intervalChart.config._trueMean = undefined;
+                intervalChart.update();
+            }
+            if (recentMeansChart) {
+                recentMeansChart.data.labels = [];
+                recentMeansChart.data.datasets = [];
+                recentMeansChart.config._trueMean = undefined;
+                recentMeansChart.update();
+            }
+            if (allMeansChart) {
+                allMeansChart.data.labels = [];
+                allMeansChart.data.datasets = [];
+                allMeansChart.config._trueMean = undefined;
+                allMeansChart.update();
+            }
+            
+            document.getElementById('resultsText').innerHTML = "Press 'Sample' to generate confidence intervals. After sampling, you can switch between methods to compare their coverage on the same data.";
+            document.getElementById('statsPanel').style.display = 'none';
+        }
+
+        // Update method warning
+        function updateMethodWarning() {
+            const dist = document.getElementById('distribution').value;
+            const warningDiv = document.getElementById('methodWarning');
+            
+            let warning = '';
+            
+            if (dist === 'poisson') {
+                const lambdaInput = document.getElementById('lambda');
+                if (lambdaInput && parseFloat(lambdaInput.value) < 5) {
+                    warning = '⚠️ For Poisson with λ < 5, normal approximation may be poor.';
+                }
+            }
+            
+            if (warning) {
+                warningDiv.textContent = warning;
+                warningDiv.style.display = 'block';
+            } else {
+                warningDiv.style.display = 'none';
+            }
+        }
+        
+        // Initialize on load
+        window.onload = function() {
+            initCharts();
+            updateDynamicInputs();
+            
+            // Add event listeners
+            document.getElementById('distribution').addEventListener('change', function() {
+                updateDynamicInputs();
+                updateMethodWarning();
+                reset();
+            });
+            
+            document.getElementById('method').addEventListener('change', function() {
+                updateMethodWarning();
+                // If we have data, update the display for the new method
+                if (currentIntervals.z_known.length > 0) {
+                    updateMethodDisplay();
+                }
+            });
+        };
+    </script>
+</body>
+</html>

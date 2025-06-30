@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------
 # Central Limit Theorem Demonstration Shiny App (Smooth Curve for Population)
-# Author: [Your Name]
-# Date: [Current Date]
+# Author: Timothy Reese
+# Date: 02/04/2024
 # Description: This Shiny app simulates the Central Limit Theorem.
 # -----------------------------------------------------------------
 
