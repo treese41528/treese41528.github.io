@@ -196,7 +196,7 @@ server <- function(input, output, session) {
         true_mean <- input$mean
       } else if (input$distribution == "Uniform") {
         sample <- distribution_func(input$size, min = input$min, max = input$max)
-        sigma <- (input$max - input$min)^2 / sqrt(12)
+        sigma <- (input$max - input$min) / sqrt(12)
         true_mean <- (input$max + input$min)/2
       } else if (input$distribution == "Exponential") {
         sample <- distribution_func(input$size, rate = input$rate)
