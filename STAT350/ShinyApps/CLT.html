@@ -137,7 +137,18 @@
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             position: relative;
-            height: 350px;
+        }
+
+        .chart-container.small {
+            height: 300px;
+        }
+
+        .chart-container.medium {
+            height: 420px;
+        }
+
+        .chart-container.large {
+            height: 450px;
         }
 
         .chart-title {
@@ -146,6 +157,17 @@
             color: #333;
             margin-bottom: 15px;
             text-align: center;
+        }
+
+        .charts-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .charts-row .chart-container {
+            flex: 1;
+            min-width: 350px;
         }
 
         .dynamic-inputs {
@@ -174,6 +196,68 @@
             line-height: 1.6;
         }
 
+        .stats-display {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .stats-display h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .stats-display p {
+            margin: 5px 0;
+            color: #666;
+        }
+
+        .sampling-distribution-section {
+            background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+            border: 2px solid #e1e5eb;
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .sampling-distribution-section h3 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 25px;
+            font-size: 1.4em;
+            font-weight: 600;
+        }
+
+        .sampling-distribution-section .charts-row {
+            margin: 0 -10px;
+        }
+
+        .sampling-distribution-section .chart-container {
+            margin: 0 10px;
+        }
+
+        .info-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            line-height: 16px;
+            text-align: center;
+            background: #e0e0e0;
+            color: #666;
+            border-radius: 50%;
+            font-size: 12px;
+            cursor: help;
+            margin-left: 5px;
+        }
+
+        .info-icon:hover {
+            background: #667eea;
+            color: white;
+        }
+
         @media (max-width: 768px) {
             .content {
                 flex-direction: column;
@@ -182,6 +266,19 @@
                 width: 100%;
                 border-right: none;
                 border-bottom: 1px solid #e0e0e0;
+            }
+            .charts-row {
+                flex-direction: column;
+            }
+            .charts-row .chart-container {
+                min-width: auto;
+                margin: 10px 0 !important;
+            }
+            .sampling-distribution-section {
+                padding: 15px;
+            }
+            .sampling-distribution-section .charts-row {
+                margin: 0;
             }
         }
     </style>
@@ -199,6 +296,9 @@
                 <div class="info-box">
                     <h3>How it works</h3>
                     <p>Select a population distribution, set parameters, choose sample size, and watch the magic of CLT!</p>
+                    <p style="font-size: 0.9em; margin-top: 10px; color: #666;">
+                        <strong>Histogram bins:</strong> Too few bins hide details, too many create noise. The app automatically selects optimal bins using statistical rules (Sturges', Freedman-Diaconis) based on your sample size.
+                    </p>
                 </div>
                 
                 <div class="form-group">
@@ -207,7 +307,7 @@
                         <option value="normal">Normal</option>
                         <option value="uniform">Uniform</option>
                         <option value="exponential">Exponential</option>
-                        <option value="beta">Left-Skewed Beta</option>
+                        <option value="beta">Beta</option>
                         <option value="bimodal">Bimodal</option>
                         <option value="binomial">Binomial</option>
                         <option value="poisson">Poisson</option>
@@ -223,25 +323,66 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="numSamples">Number of Samples</label>
-                    <input type="number" id="numSamples" value="1000" min="100" step="100">
+                    <label for="numSamples">Number of Samples (SRS)</label>
+                    <input type="number" id="numSamples" value="1500" min="100" step="100">
+                </div>
+                
+                <div class="form-group">
+                    <label for="binSelection">
+                        Histogram Bins 
+                        <span class="info-icon" title="Auto mode uses Sturges' rule for small samples (n < 50), Freedman-Diaconis for large samples (n ≥ 500), or a blend for medium samples. Manual selection allows you to override the automatic choice.">?</span>
+                    </label>
+                    <select id="binSelection">
+                        <option value="auto" selected>Auto (Optimal)</option>
+                        <option value="10">10 bins</option>
+                        <option value="15">15 bins</option>
+                        <option value="20">20 bins</option>
+                        <option value="25">25 bins</option>
+                        <option value="30">30 bins</option>
+                        <option value="40">40 bins</option>
+                        <option value="50">50 bins</option>
+                    </select>
                 </div>
                 
                 <div class="button-group">
                     <button class="btn-primary" onclick="simulate()">Simulate</button>
                     <button class="btn-secondary" onclick="reset()">Reset</button>
                 </div>
+
+                <div class="stats-display" id="statsDisplay" style="display: none;">
+                    <h4>Statistics</h4>
+                    <p><strong>Experimental Mean:</strong> <span id="expMean">-</span></p>
+                    <p><strong>Experimental SD:</strong> <span id="expSD">-</span></p>
+                    <p><strong>Theoretical Mean:</strong> <span id="theoMean">-</span></p>
+                    <p><strong>Theoretical SD:</strong> <span id="theoSD">-</span></p>
+                </div>
             </div>
             
             <div class="main-panel">
-                <div class="chart-container">
+                <div class="chart-container medium" style="margin-bottom: 30px;">
                     <div class="chart-title">Population Distribution</div>
                     <canvas id="populationChart"></canvas>
                 </div>
                 
-                <div class="chart-container">
-                    <div class="chart-title">Distribution of Sample Means</div>
-                    <canvas id="sampleMeansChart"></canvas>
+                <div class="sampling-distribution-section">
+                    <h3>Sampling Distribution of X̄ (n = <span id="currentN" style="color: #667eea; font-weight: 700;">30</span>)</h3>
+                    <div class="charts-row">
+                        <div class="chart-container medium">
+                            <div class="chart-title">
+                                Histogram & Density 
+                                <span style="font-weight: normal; font-size: 0.9em;">
+                                    (Bins: <span id="numBinsDisplay" style="font-weight: bold;">-</span>
+                                    <span id="binMethodDisplay" style="color: #666;"></span>)
+                                </span>
+                            </div>
+                            <canvas id="sampleMeansChart"></canvas>
+                        </div>
+                        
+                        <div class="chart-container medium">
+                            <div class="chart-title">QQ Plot (Test for Normality)</div>
+                            <canvas id="qqChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -251,11 +392,13 @@
         // Global chart instances
         let populationChart = null;
         let sampleMeansChart = null;
+        let qqChart = null;
 
         // Initialize charts
         function initCharts() {
             const popCtx = document.getElementById('populationChart').getContext('2d');
             const sampleCtx = document.getElementById('sampleMeansChart').getContext('2d');
+            const qqCtx = document.getElementById('qqChart').getContext('2d');
             
             // Plugin to draw vertical mean line
             const verticalLinePlugin = {
@@ -319,6 +462,10 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
                     plugins: {
                         legend: { display: false },
                         verticalLine: {}
@@ -416,6 +563,59 @@
                 },
                 plugins: [verticalLinePlugin]
             });
+
+            // QQ Plot
+            qqChart = new Chart(qqCtx, {
+                type: 'scatter',
+                data: {
+                    datasets: [{
+                        label: 'Sample Quantiles',
+                        data: [],
+                        backgroundColor: '#667eea',
+                        borderColor: '#667eea',
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }, {
+                        label: 'Reference Line',
+                        data: [],
+                        type: 'line',
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [5, 5],
+                        pointRadius: 0,
+                        showLine: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Theoretical Normal Quantiles',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Sample Mean Quantiles',
+                                font: { size: 14, weight: 'bold' }
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         // Update dynamic inputs based on distribution
@@ -462,11 +662,14 @@
                     html = `
                         <div class="form-group">
                             <label for="alpha">Alpha Parameter (α)</label>
-                            <input type="number" id="alpha" value="15" step="1">
+                            <input type="number" id="alpha" value="5" step="1">
                         </div>
                         <div class="form-group">
                             <label for="beta">Beta Parameter (β)</label>
                             <input type="number" id="beta" value="2" step="1">
+                        </div>
+                        <div class="info-box" style="background: #f0f8ff; border-left-color: #4169e1;">
+                            <p style="color: #333; font-size: 0.9em;">Shape guide: α > β → left-skewed, α < β → right-skewed, α = β → symmetric</p>
                         </div>
                     `;
                     break;
@@ -498,11 +701,16 @@
                     html = `
                         <div class="form-group">
                             <label for="n">Number of Trials (n)</label>
-                            <input type="number" id="n" value="15" min="1" step="1">
+                            <input type="number" id="n" value="15" min="1" max="500" step="1">
                         </div>
                         <div class="form-group">
                             <label for="p">Probability of Success (p)</label>
                             <input type="number" id="p" value="0.5" min="0" max="1" step="0.1">
+                        </div>
+                        <div class="info-box" style="background: #e8f5e9; border-left-color: #4caf50;">
+                            <p style="color: #2e7d32; font-size: 0.9em;"><strong>Note:</strong> For large n, if both np > 5 and n(1-p) > 5, the binomial approximates Normal(np, √(np(1-p))).</p>
+                            <p style="color: #2e7d32; font-size: 0.9em;">• n ≤ 100: Displayed as discrete bars</p>
+                            <p style="color: #2e7d32; font-size: 0.9em;">• n > 100: Displayed as continuous curve for clarity</p>
                         </div>
                     `;
                     break;
@@ -510,7 +718,12 @@
                     html = `
                         <div class="form-group">
                             <label for="lambda">Lambda (λ)</label>
-                            <input type="number" id="lambda" value="3" min="0.1" step="0.5">
+                            <input type="number" id="lambda" value="3" min="0.1" max="500" step="0.5">
+                        </div>
+                        <div class="info-box" style="background: #e8f5e9; border-left-color: #4caf50;">
+                            <p style="color: #2e7d32; font-size: 0.9em;"><strong>Note:</strong> For large λ (>30), the Poisson distribution itself approximates Normal(λ, √λ).</p>
+                            <p style="color: #2e7d32; font-size: 0.9em;">• λ ≤ 50: Displayed as discrete bars</p>
+                            <p style="color: #2e7d32; font-size: 0.9em;">• λ > 50: Displayed as continuous curve for clarity</p>
                         </div>
                     `;
                     break;
@@ -569,12 +782,36 @@
 
         function binomialPMF(k, n, p) {
             if (k < 0 || k > n) return 0;
-            return combination(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+            
+            // For large n, use log-scale calculation
+            if (n > 100) {
+                // log(C(n,k)) = log(n!) - log(k!) - log((n-k)!)
+                const logComb = logFactorial(n) - logFactorial(k) - logFactorial(n - k);
+                const logP = logComb + k * Math.log(p) + (n - k) * Math.log(1 - p);
+                return Math.exp(logP);
+            } else {
+                // Original calculation for small n
+                return combination(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+            }
         }
 
         function poissonPMF(k, lambda) {
             if (k < 0) return 0;
-            return Math.pow(lambda, k) * Math.exp(-lambda) / factorial(k);
+            
+            // Always use log-scale calculation for better numerical stability
+            // log(P(X=k)) = k*log(lambda) - lambda - log(k!)
+            if (k === 0) {
+                // For very large lambda, exp(-lambda) might underflow
+                if (lambda > 700) return 0;
+                return Math.exp(-lambda);
+            }
+            
+            let logP = k * Math.log(lambda) - lambda - logFactorial(k);
+            
+            // If probability is too small, return 0 to avoid underflow
+            if (logP < -700) return 0;
+            
+            return Math.exp(logP);
         }
 
         function cauchyPDF(x, location, scale) {
@@ -589,9 +826,78 @@
 
         function factorial(n) {
             if (n <= 1) return 1;
+            if (n > 170) return Infinity; // JavaScript number overflow
             let result = 1;
             for (let i = 2; i <= n; i++) result *= i;
             return result;
+        }
+        
+        // Log factorial for numerical stability
+        function logFactorial(n) {
+            if (n <= 1) return 0;
+            
+            // For very large n, use Stirling's approximation
+            if (n > 100) {
+                return n * Math.log(n) - n + 0.5 * Math.log(2 * Math.PI * n);
+            }
+            
+            // For moderate n, calculate exactly
+            let result = 0;
+            for (let i = 2; i <= n; i++) {
+                result += Math.log(i);
+            }
+            return result;
+        }
+
+        // Normal quantile function (inverse CDF)
+        function normalQuantile(p, mean = 0, sd = 1) {
+            // Approximation using Abramowitz and Stegun formula
+            const a1 = -3.969683028665376e+01;
+            const a2 = 2.209460984245205e+02;
+            const a3 = -2.759285104469687e+02;
+            const a4 = 1.383577518672690e+02;
+            const a5 = -3.066479806614716e+01;
+            const a6 = 2.506628277459239e+00;
+
+            const b1 = -5.447609879822406e+01;
+            const b2 = 1.615858368580409e+02;
+            const b3 = -1.556989798598866e+02;
+            const b4 = 6.680131188771972e+01;
+            const b5 = -1.328068155288572e+01;
+
+            const c1 = -7.784894002430293e-03;
+            const c2 = -3.223964580411365e-01;
+            const c3 = -2.400758277161838e+00;
+            const c4 = -2.549732539343734e+00;
+            const c5 = 4.374664141464968e+00;
+            const c6 = 2.938163982698783e+00;
+
+            const d1 = 7.784695709041462e-03;
+            const d2 = 3.224671290700398e-01;
+            const d3 = 2.445134137142996e+00;
+            const d4 = 3.754408661907416e+00;
+
+            const p_low = 0.02425;
+            const p_high = 1 - p_low;
+
+            let q, r, z;
+
+            if (p < p_low) {
+                q = Math.sqrt(-2 * Math.log(p));
+                z = (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                    ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+            } else if (p <= p_high) {
+                q = p - 0.5;
+                r = q * q;
+                z = (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
+                    (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
+            } else {
+                q = Math.sqrt(-2 * Math.log(1 - p));
+                z = -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                    ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+            }
+
+            return mean + sd * z;
         }
 
         // Calculate population mean
@@ -702,6 +1008,18 @@
         }
 
         function randomBinomial(n, p) {
+            // For large n, use normal approximation
+            if (n > 100 && n * p > 5 && n * (1 - p) > 5) {
+                const mean = n * p;
+                const sd = Math.sqrt(n * p * (1 - p));
+                let value;
+                do {
+                    value = Math.round(randomNormal(mean, sd));
+                } while (value < 0 || value > n); // Ensure within bounds
+                return value;
+            }
+            
+            // Original algorithm for small n
             let successes = 0;
             for (let i = 0; i < n; i++) {
                 if (Math.random() < p) successes++;
@@ -710,6 +1028,17 @@
         }
 
         function randomPoisson(lambda) {
+            // For large lambda, use normal approximation
+            if (lambda > 30) {
+                // Normal approximation: Poisson(λ) ≈ Normal(λ, √λ)
+                let value;
+                do {
+                    value = Math.round(randomNormal(lambda, Math.sqrt(lambda)));
+                } while (value < 0); // Ensure non-negative
+                return value;
+            }
+            
+            // Original algorithm for small lambda
             const L = Math.exp(-lambda);
             let k = 0;
             let p = 1;
@@ -740,11 +1069,44 @@
                     const sd = Math.sqrt(n * p * (1 - p));
                     const lower = Math.max(0, Math.floor(mean - 4 * sd));
                     const upper = Math.min(n, Math.ceil(mean + 4 * sd));
-                    range = Array.from({ length: upper - lower + 1 }, (_, i) => lower + i);
+                    
+                    // For very large n, sample points instead of every integer
+                    if (n > 100) {
+                        const numPoints = 200;
+                        range = [];
+                        for (let i = 0; i <= numPoints; i++) {
+                            const x = Math.round(lower + (upper - lower) * i / numPoints);
+                            if (!range.includes(x) && x >= 0 && x <= n) {
+                                range.push(x);
+                            }
+                        }
+                    } else {
+                        range = Array.from({ length: upper - lower + 1 }, (_, i) => lower + i);
+                    }
                 } else if (dist === 'poisson') {
                     const { lambda } = params;
-                    const upper = Math.max(20, Math.ceil(lambda + 4 * Math.sqrt(lambda)));
-                    range = Array.from({ length: upper + 1 }, (_, i) => i);
+                    // For large lambda, use normal approximation to determine range
+                    const sd = Math.sqrt(lambda);
+                    // Use wider range for better visualization
+                    const lower = Math.max(0, Math.floor(lambda - 5 * sd));
+                    const upper = Math.ceil(lambda + 5 * sd);
+                    
+                    // For very large lambda, sample points instead of every integer
+                    if (lambda > 50) {
+                        const numPoints = Math.min(200, upper - lower + 1);
+                        range = [];
+                        const step = Math.max(1, Math.floor((upper - lower) / numPoints));
+                        for (let x = lower; x <= upper; x += step) {
+                            range.push(x);
+                        }
+                        // Ensure we include the mean
+                        if (!range.includes(Math.round(lambda))) {
+                            range.push(Math.round(lambda));
+                            range.sort((a, b) => a - b);
+                        }
+                    } else {
+                        range = Array.from({ length: upper - lower + 1 }, (_, i) => lower + i);
+                    }
                 }
                 
                 for (let x of range) {
@@ -851,6 +1213,9 @@
             const sampleSize = parseInt(document.getElementById('sampleSize').value);
             const numSamples = parseInt(document.getElementById('numSamples').value);
             
+            // Update sample size display
+            document.getElementById('currentN').textContent = sampleSize;
+            
             // Get parameters
             const params = {};
             switch(dist) {
@@ -898,10 +1263,71 @@
             const popData = generatePopulationData(dist, params);
             const isDiscrete = ['binomial', 'poisson'].includes(dist);
             
-            populationChart.config.type = isDiscrete ? 'bar' : 'line';
-            populationChart.data.labels = popData.x.map(x => x.toFixed(2));
+            // Filter out extremely small probabilities for cleaner display
+            if (isDiscrete) {
+                const threshold = 1e-6;
+                const filteredIndices = popData.y.map((y, i) => y > threshold ? i : -1).filter(i => i >= 0);
+                if (filteredIndices.length > 0) {
+                    const minIdx = Math.min(...filteredIndices);
+                    const maxIdx = Math.max(...filteredIndices);
+                    popData.x = popData.x.slice(minIdx, maxIdx + 1);
+                    popData.y = popData.y.slice(minIdx, maxIdx + 1);
+                }
+            }
+            
+            // For discrete distributions, make sure x-axis shows integers
+            if (isDiscrete) {
+                // For very large parameters, use line chart instead of bars
+                if ((dist === 'poisson' && params.lambda > 50) || 
+                    (dist === 'binomial' && params.n > 100)) {
+                    populationChart.config.type = 'line';
+                    populationChart.data.datasets[0].backgroundColor = 'rgba(118, 75, 162, 0.2)';
+                    populationChart.data.datasets[0].borderColor = '#764ba2';
+                    populationChart.data.datasets[0].borderWidth = 3;
+                    populationChart.data.datasets[0].fill = true;
+                    populationChart.data.datasets[0].tension = 0.4;
+                    populationChart.data.datasets[0].pointRadius = 0;
+                } else {
+                    populationChart.config.type = 'bar';
+                    populationChart.data.datasets[0].backgroundColor = 'rgba(118, 75, 162, 0.8)';
+                    populationChart.data.datasets[0].borderWidth = 1;
+                    populationChart.data.datasets[0].barPercentage = 0.8;
+                }
+                
+                populationChart.data.labels = popData.x.map(x => x.toString());
+                
+                // Update x-axis to show integer values properly
+                populationChart.options.scales.x.ticks = {
+                    autoSkip: false,
+                    maxRotation: 0,
+                    callback: function(value, index) {
+                        // For large parameters, show fewer labels
+                        if ((dist === 'poisson' && params.lambda > 50) ||
+                            (dist === 'binomial' && params.n > 100)) {
+                            const step = Math.max(5, Math.ceil(popData.x.length / 15));
+                            return index % step === 0 ? Math.round(parseFloat(this.getLabelForValue(value))) : '';
+                        }
+                        // For other discrete distributions
+                        const maxLabels = 20;
+                        const step = Math.ceil(popData.x.length / maxLabels);
+                        return index % step === 0 ? this.getLabelForValue(value) : '';
+                    }
+                };
+            } else {
+                populationChart.config.type = 'line';
+                populationChart.data.labels = popData.x.map(x => x.toFixed(2));
+                populationChart.data.datasets[0].backgroundColor = 'rgba(118, 75, 162, 0.2)';
+                populationChart.data.datasets[0].fill = true;
+                populationChart.options.scales.x.ticks = {
+                    autoSkip: true,
+                    maxTicksLimit: 10,
+                    callback: function(value, index) {
+                        return this.getLabelForValue(value);
+                    }
+                };
+            }
+            
             populationChart.data.datasets[0].data = popData.y;
-            populationChart.data.datasets[0].backgroundColor = isDiscrete ? 'rgba(118, 75, 162, 0.8)' : 'rgba(118, 75, 162, 0.2)';
             populationChart.options.plugins.verticalLine = {
                 mean: popMean,
                 color: '#e74c3c',
@@ -919,12 +1345,175 @@
                 sampleMeans.push(sum / sampleSize);
             }
             
-            // Create histogram
-            const numBins = 30;
+            // Calculate experimental statistics
+            const expMean = sampleMeans.reduce((a, b) => a + b, 0) / sampleMeans.length;
+            const expSD = Math.sqrt(sampleMeans.reduce((sum, x) => sum + Math.pow(x - expMean, 2), 0) / (sampleMeans.length - 1));
+            
+            // Update statistics display
+            document.getElementById('statsDisplay').style.display = 'block';
+            document.getElementById('expMean').textContent = expMean.toFixed(4);
+            document.getElementById('expSD').textContent = expSD.toFixed(4);
+            document.getElementById('theoMean').textContent = dist === 'cauchy' ? 'Undefined' : popMean.toFixed(4);
+            document.getElementById('theoSD').textContent = dist === 'cauchy' || popSD === Infinity ? 'Undefined' : sampleMeanSD.toFixed(4);
+            
+            // Create histogram with adaptive bin selection
+            // Calculate optimal number of bins using multiple methods
+            const n = sampleMeans.length;
             const minMean = Math.min(...sampleMeans);
             const maxMean = Math.max(...sampleMeans);
             const range = maxMean - minMean;
+            
+            // Handle edge case of no variation
+            if (range === 0 || range < 1e-10) {
+                // All values are effectively the same
+                const numBins = 1;
+                document.getElementById('numBinsDisplay').textContent = numBins;
+                document.getElementById('binMethodDisplay').textContent = '- single value';
+                
+                // Create single bin centered on the value
+                const binWidth = 0.1; // Arbitrary small width for display
+                const normalizedBins = [n / (numSamples * binWidth)];
+                
+                // Create labels for x-axis
+                const singleValue = minMean;
+                const kdeX = [
+                    (singleValue - binWidth).toFixed(2),
+                    singleValue.toFixed(2),
+                    (singleValue + binWidth).toFixed(2)
+                ];
+                const kdeY = [0, normalizedBins[0], 0];
+                
+                // Theoretical is a spike at the mean
+                let theoreticalY;
+                if (dist === 'cauchy') {
+                    theoreticalY = kdeX.map(x => Math.abs(parseFloat(x) - singleValue) < 0.01 ? normalizedBins[0] : 0);
+                } else {
+                    theoreticalY = kdeX.map(x => Math.abs(parseFloat(x) - popMean) < 0.01 ? normalizedBins[0] : 0);
+                }
+                
+                sampleMeansChart.data.labels = kdeX;
+                sampleMeansChart.data.datasets[0].data = kdeY;
+                sampleMeansChart.data.datasets[1].data = kdeY; // KDE same as histogram for single value
+                sampleMeansChart.data.datasets[2].data = theoreticalY;
+                
+                // Update the legend label for theoretical curve based on distribution
+                if (dist === 'cauchy') {
+                    sampleMeansChart.data.datasets[2].label = 'Theoretical Cauchy (No CLT!)';
+                } else {
+                    sampleMeansChart.data.datasets[2].label = 'Theoretical Normal';
+                }
+                
+                // Set vertical line for mean
+                sampleMeansChart.options.plugins.verticalLine = {
+                    mean: popMean,
+                    color: '#e74c3c',
+                    isCauchy: dist === 'cauchy'
+                };
+                
+                sampleMeansChart.update();
+                
+                // For QQ plot with single value, create a simple point
+                const qqData = [{x: singleValue, y: singleValue}];
+                const refLineData = [{x: singleValue - 1, y: singleValue - 1}, {x: singleValue + 1, y: singleValue + 1}];
+                
+                qqChart.data.datasets[0].data = qqData;
+                qqChart.data.datasets[1].data = refLineData;
+                
+                // Update x-axis label based on distribution
+                if (dist === 'cauchy') {
+                    qqChart.options.scales.x.title.text = 'Theoretical Cauchy Quantiles';
+                } else {
+                    qqChart.options.scales.x.title.text = 'Theoretical Normal Quantiles';
+                }
+                
+                qqChart.update();
+                
+                return; // Exit early
+            }
+            
+            // Calculate IQR for Freedman-Diaconis rule
+            const sortedMeans = [...sampleMeans].sort((a, b) => a - b);
+            const q1Index = Math.floor(n * 0.25);
+            const q3Index = Math.floor(n * 0.75);
+            const Q1 = sortedMeans[q1Index];
+            const Q3 = sortedMeans[q3Index];
+            const IQR = Q3 - Q1;
+            
+            // Different bin selection methods
+            // Sturges' rule: k = ceil(log2(n) + 1) - works well for normal-like data
+            let sturgesK = Math.max(1, Math.ceil(Math.log2(n) + 1));
+            
+            // Square root rule: k = sqrt(n) - simple and robust
+            let sqrtK = Math.max(1, Math.ceil(Math.sqrt(n)));
+            
+            // Scott's rule: bin width = 3.5 * σ / n^(1/3) - assumes normal distribution
+            const sampleStdDev = Math.sqrt(sampleMeans.reduce((sum, x) => sum + Math.pow(x - expMean, 2), 0) / (n - 1));
+            const scottWidth = 3.5 * sampleStdDev / Math.pow(n, 1/3);
+            let scottK = Math.max(1, Math.ceil(range / scottWidth));
+            
+            // Freedman-Diaconis rule: bin width = 2 * IQR / n^(1/3) - robust to outliers
+            let fdK = 10; // Default value
+            if (IQR > 0) {
+                const fdWidth = 2 * IQR / Math.pow(n, 1/3);
+                fdK = Math.max(1, Math.ceil(range / fdWidth));
+            }
+            
+            // Validate calculated bin counts
+            if (!isFinite(sturgesK) || sturgesK < 1) sturgesK = 10;
+            if (!isFinite(sqrtK) || sqrtK < 1) sqrtK = 10;
+            if (!isFinite(scottK) || scottK < 1) scottK = 10;
+            if (!isFinite(fdK) || fdK < 1) fdK = 10;
+            
+            // Check if user selected manual bin count
+            const binSelection = document.getElementById('binSelection').value;
+            let binMethod = '';
+            let numBins;
+            
+            if (binSelection !== 'auto') {
+                numBins = parseInt(binSelection);
+                binMethod = 'manual';
+            } else {
+                // Automatic bin selection strategy:
+                // - Small samples (n < 50): Use minimum of Sturges and sqrt rules
+                // - Medium samples (50 ≤ n < 500): Blend Sturges and Freedman-Diaconis
+                // - Large samples (n ≥ 500): Use Freedman-Diaconis (robust to outliers)
+                
+                if (n < 50) {
+                    numBins = Math.min(sturgesK, sqrtK);
+                    binMethod = 'Sturges/√n';
+                } else if (n < 500) {
+                    numBins = Math.round((sturgesK + fdK) / 2);
+                    binMethod = 'Sturges/FD blend';
+                } else {
+                    numBins = fdK;
+                    binMethod = 'Freedman-Diaconis';
+                }
+                
+                // Apply reasonable limits based on display constraints
+                numBins = Math.max(10, Math.min(50, numBins));
+                
+                // For discrete distributions with small sample size, adjust bins
+                if ((dist === 'binomial' || dist === 'poisson') && sampleSize < 10) {
+                    // Count unique values (rounded to avoid floating point issues)
+                    const uniqueValues = new Set(sampleMeans.map(x => Math.round(x * 1000) / 1000)).size;
+                    numBins = Math.min(numBins, Math.max(5, uniqueValues));
+                    binMethod += ', adjusted for discrete';
+                }
+                
+                // Special handling for integer-valued distributions
+                if ((dist === 'binomial' || dist === 'poisson') && sampleSize === 1) {
+                    // For n=1, we're just showing the original distribution
+                    const uniqueIntegers = new Set(sampleMeans.map(Math.round)).size;
+                    numBins = Math.min(numBins, uniqueIntegers);
+                    binMethod = 'discrete values';
+                }
+            }
+            
             const binWidth = range / numBins;
+            
+            // Update bin count display
+            document.getElementById('numBinsDisplay').textContent = numBins;
+            document.getElementById('binMethodDisplay').textContent = binMethod ? `- ${binMethod}` : '';
             
             const bins = Array(numBins).fill(0);
             const binCenters = [];
@@ -1012,6 +1601,52 @@
             };
             
             sampleMeansChart.update();
+            
+            // Create QQ Plot
+            const qqData = [];
+            const refLineData = [];
+            
+            // Calculate theoretical quantiles
+            let theoreticalQuantiles = [];
+            for (let i = 0; i < n; i++) {
+                const p = (i + 0.5) / n;
+                if (dist === 'cauchy') {
+                    // For Cauchy, use Cauchy quantiles
+                    const q = params.location + params.scale * Math.tan(Math.PI * (p - 0.5));
+                    theoreticalQuantiles.push(q);
+                } else {
+                    // For CLT, use normal quantiles
+                    const q = normalQuantile(p, popMean, sampleMeanSD);
+                    theoreticalQuantiles.push(q);
+                }
+            }
+            
+            // Create QQ plot data
+            for (let i = 0; i < n; i++) {
+                qqData.push({
+                    x: theoreticalQuantiles[i],
+                    y: sortedMeans[i]
+                });
+            }
+            
+            // Create reference line (y = x for perfect fit)
+            const minQ = Math.min(...theoreticalQuantiles);
+            const maxQ = Math.max(...theoreticalQuantiles);
+            refLineData.push({ x: minQ, y: minQ });
+            refLineData.push({ x: maxQ, y: maxQ });
+            
+            // Update QQ chart
+            qqChart.data.datasets[0].data = qqData;
+            qqChart.data.datasets[1].data = refLineData;
+            
+            // Update x-axis label based on distribution
+            if (dist === 'cauchy') {
+                qqChart.options.scales.x.title.text = 'Theoretical Cauchy Quantiles';
+            } else {
+                qqChart.options.scales.x.title.text = 'Theoretical Normal Quantiles';
+            }
+            
+            qqChart.update();
         }
 
         // Reset function
@@ -1028,6 +1663,18 @@
             sampleMeansChart.data.datasets[2].label = 'Theoretical Normal';
             sampleMeansChart.options.plugins.verticalLine = {};
             sampleMeansChart.update();
+            
+            qqChart.data.datasets[0].data = [];
+            qqChart.data.datasets[1].data = [];
+            qqChart.options.scales.x.title.text = 'Theoretical Normal Quantiles';
+            qqChart.update();
+            
+            document.getElementById('statsDisplay').style.display = 'none';
+            document.getElementById('numBinsDisplay').textContent = '-';
+            document.getElementById('binMethodDisplay').textContent = '';
+            
+            // Reset bin selection to auto
+            document.getElementById('binSelection').value = 'auto';
         }
 
         // Initialize on load
