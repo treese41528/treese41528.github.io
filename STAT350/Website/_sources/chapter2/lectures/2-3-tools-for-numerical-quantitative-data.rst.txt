@@ -1,0 +1,229 @@
+.. _2-3-tools-for-numerical-quantitative-data:
+
+.. raw:: html
+
+   <div class="video-placeholder">
+     <iframe
+       src="https://www.youtube.com/embed/EiVdnnZtcRI?list=PLHKEwTHXfbagA3ybKLAcEJriGT-6k89c6"
+       allowfullscreen>
+     </iframe>
+   </div>
+
+Tools for Numerical (Quantitative) Data
+=================================================================
+
+Numerical data offers richer visualization possibilities than categorical data
+because it now contains information about *distance* between values.
+We are now interested in the *overall shape* of the distribution,
+*where the numbers are clustered*, and *how far they spread*. 
+A **histogram** answers all three at a glance. 
+In this chapter, we'll focus on building good histograms.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   * Visualize numerical variables with **histograms**.
+   * Understand the impact of choosing different numbers of **classes/bins**
+     for a histogram.
+
+Building your first histogram
+--------------------------------
+
+A **histogram** divides the number line into adjacent **bins** of equal 
+width and draws a bar whose height equals the count (or relative frequency) 
+falling in each bin.
+
+Example 1 – insect counts (discrete numeric)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/insect-count-hist.png
+   :alt: Histogram of insect counts from Beall (1942)
+   :align: center
+
+This histogram displays insect counts from an agricultural study testing different insecticide sprays. Each bar represents the number of observations falling within a range of insect counts. The twin peaks reflect two different spray formulations—detail we will dig into in Chapter 3 when we learn how to *separate* a quantitative variable by group.
+
+.. code-block:: r
+
+   library(ggplot2)
+   data(InsectSprays)
+
+   # rule of thumb: round(sqrt(n)) + 2 bins
+   n_obs  <- nrow(InsectSprays)
+   n_bins <- round(sqrt(n_obs)) + 2
+
+   ggplot(InsectSprays, aes(x = count)) +
+     geom_histogram(bins = n_bins, colour = "black", fill = "skyblue", linewidth = 1.2) +
+     labs(title = "Distribution of insect counts (Beall, 1942)",
+          x = "Number of insects", y = "Frequency")
+
+Choosing the number of bins
+------------------------------
+
+Bin width is a Goldilocks choice: too wide hides detail, too narrow shows only noise. For sample sizes up to a few hundred, the square-root rule works well:
+
+.. math::
+   \text{bins} \;=\; \bigl\lceil \sqrt{n} \bigr\rceil + 2.
+
+For larger datasets (n > 400), experiment with 20-30 bins until the main pattern is clear without a saw-tooth fringe. The goal is to reveal the data's fundamental structure while filtering out noise.
+
+Example 2 – furnace energy use (continuous numeric)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We illustrate bin width choice by plotting the same furnace energy consumption data four times with different bin counts.
+
+.. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/bin-width-comparison.png
+   :alt: Furnace BTU histograms: 6, 10, 15 and 30 bins
+   :align: center
+
+These four histograms display the same furnace energy consumption data with different bin counts:
+
+1. **6 bins (top left)**: Oversmooths the data, hiding important features
+2. **10 bins (top right)**: Balances detail and clarity, revealing the general right-skewed shape
+3. **15 bins (bottom left)**: Shows more granular structure but begins to display some potentially random fluctuation
+4. **30 bins (bottom right)**: Too detailed, resulting in a jagged appearance dominated by sampling variability
+
+Ten to fifteen bins reveal the slight right-skew without drowning the eye in high-frequency jitter.
+
+.. code-block:: r
+
+   library(ggplot2)
+   furnace <- read.csv("furnace.txt")   # replace with your path
+
+   for (bins in c(6, 10, 15, 30)) {
+     p <- ggplot(furnace, aes(Consumption)) +
+       geom_histogram(bins = bins, colour = "black", fill = "grey70") +
+       labs(title = paste(bins, "bins"), x = "BTU", y = "Frequency")
+     print(p)
+   }
+
+Discrete vs. continuous data visualization
+--------------------------------------------
+
+For discrete numerical data with few unique values (like counts from 0-7), a bar graph may be more appropriate than a histogram. Bar graphs place one bar at each distinct value, with space between them to indicate their categorical nature, even if the categories are numbers.
+
+The difference between histograms and bar graphs for quantitative data lies in how they handle the underlying value space:
+* Bar graphs treat each value as a distinct category
+* Histograms group ranges of values into bins with no gaps between bars
+
+For discrete data with many possible values, histograms become the preferred choice to avoid cluttered displays.
+
+Example – Number of children per family
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/children-bar.png
+   :alt: Bar graph of number of children per family
+   :align: center
+
+This bar graph displays the number of children per family from a survey of 100 couples aged 30-40. Unlike a histogram, which would group values into bins, this graph shows the exact count for each possible value (0 through 7 children). Since there are only a few possible values, this bar graph displays the discrete data more effectively than a histogram would.
+
+Enhancing histograms – density & normal overlay
+-------------------------------------------------
+
+A quick visual test for *normality* is to overlay a theoretical bell curve and compare. We can also add a density curve that smooths the histogram data to get a better sense of the underlying distribution.
+
+Example 1 – Residential furnace energy use
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/furnace-density.png
+   :alt: Histogram with kernel density (red) and normal curve (blue)
+   :align: center
+
+This enhanced histogram of furnace energy consumption includes:
+* Blue bars showing the distribution of BTU measurements
+* A red density curve that smooths the data 
+* A blue normal distribution curve for comparison
+
+The gap between these curves reveals that the data is slightly right-skewed compared to a normal distribution.
+
+.. code-block:: r
+
+   library(ggplot2)
+   furnace <- read.csv("furnace.txt")   # replace with your path
+   xbar <- mean(furnace$Consumption)
+   s    <- sd(furnace$Consumption)
+   bins <- round(sqrt(nrow(furnace))) + 2
+
+   ggplot(furnace, aes(Consumption)) +
+     geom_histogram(aes(y = after_stat(density)), bins = bins,
+                   fill = "lightblue", colour = "black") +
+     geom_density(colour = "red",  linewidth = 1.2) +
+     stat_function(fun = dnorm, args = list(mean = xbar, sd = s),
+                   colour = "blue", linewidth = 1.2) +
+     labs(title = "Residential furnace energy consumption",
+          y = "Density", x = "BTU")
+
+..
+   Example 2 – Old Faithful eruption lengths
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/faithful-hist.png
+      :alt: Histogram of Old Faithful eruption times with overlays
+      :align: center
+
+   This histogram of eruption times from Old Faithful geyser clearly shows a bimodal distribution—two distinct peaks indicating two different types of eruptions. Note how dramatically the actual distribution (red density curve) differs from the normal curve (blue), which assumes a single central peak.
+
+
+   Additional examples – Black Cherry tree data
+   -----------------------------------------------
+
+   The `trees` dataset contains measurements of Black Cherry trees, including their diameter (Girth), Height, and Volume. Below are histograms for two of these variables.
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/tree-girth-hist.png
+      :alt: Histogram of Black Cherry tree diameters with overlays
+      :align: center
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/tree-height-hist.png
+      :alt: Histogram of Black Cherry tree heights with overlays
+      :align: center
+
+   These histograms reveal different distribution patterns:
+   * Tree diameter (girth) follows a roughly normal distribution with a slight right skew
+   * Tree height shows more pronounced deviation from normality with multiple smaller peaks
+
+
+   Histograms by group – insect spray effectiveness
+   ---------------------------------------------------
+
+   When we have both categorical and quantitative variables, we can create separate histograms for each category to compare distributions.
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter2/insect-spray-facets.png
+      :alt: Panel of histograms for six insect sprays
+      :align: center
+
+   These faceted histograms compare the effectiveness of six different insect spray formulations (labeled A through F). Each panel shows the distribution of insect counts after applying that specific spray type.
+
+   The visualization reveals several patterns:
+   * Sprays C, D, and E compress the distribution near zero (highly effective)
+   * Sprays A and B leave many insects alive (less effective)
+   * Spray F shows intermediate effectiveness
+
+   This qualitative insight sets the stage for formal statistical tests later in the course.
+
+.. code-block:: r
+
+   library(ggplot2)
+
+   ggplot(InsectSprays, aes(x = count, fill = spray)) +
+     geom_histogram(bins = 5, colour = "black", linewidth = 0.8) +
+     facet_wrap(~ spray, scales = "free_y") +
+     theme_minimal() + theme(legend.position = "none") +
+     labs(title = "Insect count distribution by spray type",
+          x = "Number of insects", y = "Frequency")
+
+
+
+Bringing It All Together
+----------------------------
+
+Visualizing numerical data effectively requires choosing the right technique for your 
+specific data type and research question. Histograms serve as the foundation for 
+understanding numerical distributions, revealing patterns that guide further analysis. 
+As we progress, we'll build on these visual insights with formal numerical summaries 
+and statistical tests.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. Histograms turn walls of numbers into shape, center, spread, and possible outliers.
+   2. Use :math:`\lceil \sqrt{n} \rceil + 2` bins as a starting point, then adjust by eye.
+   3. Overlay normal curves to assess skewness and normality.
