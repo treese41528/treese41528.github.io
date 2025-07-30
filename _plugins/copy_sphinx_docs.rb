@@ -7,7 +7,7 @@ Jekyll::Hooks.register :site, :post_write do |site|
     FileUtils.cp_r('GenerativeAI_ComputationalPsychology', site.config['destination'])
   end
 
-  if Dir.exist?('STAT350')
-    FileUtils.cp_r('STAT350', site.config['destination'])
+  if Dir.exist?('STAT350/Website')
+    FileUtils.cp_r('STAT350/Website', site.config['destination'])
   end
 end
