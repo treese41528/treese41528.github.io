@@ -1,5 +1,6 @@
 source 'https://rubygems.org'
 ruby "3.1.2"
+gem 'bundler', '~> 2.3'
 gem 'activesupport', '~> 7.0'
 
 group :jekyll_plugins do
