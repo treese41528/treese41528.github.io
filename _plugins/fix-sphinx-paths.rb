@@ -1,6 +1,6 @@
 Jekyll::Hooks.register :site, :post_write do |site|
   # List of Sphinx output folders to fix
-  %w(VirtualHumans GenerativeAI_ComputationalPsychology STAT350).each do |folder|
+  %w(VirtualHumans GenerativeAI_ComputationalPsychology STAT350/Website).each do |folder|
     dir = File.join(site.config['destination'], folder)
     if Dir.exist?(dir)
       # Fix CSS and JS paths in all HTML files within the folder
