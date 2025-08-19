@@ -1,11 +1,10 @@
 source 'https://rubygems.org'
 ruby "3.1.2"
-gem 'bundler', '~> 2.3'
-gem 'activesupport', '~> 7.0'
 
 group :jekyll_plugins do
+    gem "jekyll", "~> 4.2.2"
+    gem "jekyll-sass-converter", "~> 2.2"
     gem 'classifier-reborn'
-    gem 'jekyll'
     gem 'jekyll-archives'
     gem 'jekyll-email-protect'
     gem 'jekyll-feed'
@@ -22,7 +21,6 @@ group :jekyll_plugins do
     gem 'jekyll-toc'
     gem 'jekyll-twitter-plugin'
     gem 'jemoji'
-#    gem 'mini_racer'
     gem 'unicode_utils'
     gem 'webrick'
 end
@@ -31,3 +29,5 @@ group :other_plugins do
     gem 'feedjira'
     gem 'httparty'
 end
+
+gem "json", ">= 2.10"
