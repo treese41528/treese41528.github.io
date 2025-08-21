@@ -109,6 +109,43 @@ document.addEventListener('DOMContentLoaded', function() {
         'XiQd9bhOSl4': 'STAT 350 - Chapter 13.11 Linear Regression Prediction Example - Cetane Number'
     };
     
+    // Fix scrollable sidebar
+    // 1) Make the left sidebar’s scrollable wrapper focusable
+    document.querySelectorAll('.wy-side-scroll, .bd-sidebar__content, .sidebar-scroll').forEach(el => {
+        const cs = getComputedStyle(el);
+        const isScrollable = (cs.overflowY !== 'visible' || cs.overflowX !== 'visible')
+                            && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth);
+        if (isScrollable && !el.hasAttribute('tabindex')) {
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('role', el.getAttribute('role') || 'navigation');
+        if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Section navigation');
+        }
+    });
+
+    // 2) Make horizontally scrollable code focusable
+    // Sphinx RTD wraps code like: <div class="highlight"><pre>...</pre></div>
+    document.querySelectorAll('div.highlight pre, pre').forEach(pre => {
+        const isOverflow = pre.scrollWidth > pre.clientWidth || pre.scrollHeight > pre.clientHeight;
+        if (isOverflow && !pre.hasAttribute('tabindex')) {
+        pre.setAttribute('tabindex', '0');
+        if (!pre.hasAttribute('role')) pre.setAttribute('role', 'region');
+        if (!pre.hasAttribute('aria-label')) pre.setAttribute('aria-label', 'Code example');
+        }
+    });
+
+    // 3) (Optional) Any inline-styled overflow panels
+    document.querySelectorAll('[style*="overflow"]').forEach(el => {
+        const cs = getComputedStyle(el);
+        const isOverflow = (cs.overflowX !== 'visible' || cs.overflowY !== 'visible')
+                        && (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth);
+        if (isOverflow && !el.hasAttribute('tabindex')) {
+        el.setAttribute('tabindex', '0');
+        if (!el.hasAttribute('role')) el.setAttribute('role', 'region');
+        if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Scrollable content');
+        }
+    });
+
+
     // Add titles to all iframes that don't have them
     const iframes = document.querySelectorAll('iframe:not([title])');
     
