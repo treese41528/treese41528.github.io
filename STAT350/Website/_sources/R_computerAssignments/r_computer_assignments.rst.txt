@@ -184,6 +184,15 @@ Video Resources
 Assignment Tutorials (Links)
 -------------------------------------------------
 
+.. note::
+   **Winter Session**: Computer Assignments 1 and 2 are combined into a single assignment. Subsequent assignments are renumbered:
+   
+   - CA1 & CA2 → Combined Assignment 1
+   - CA3 → Assignment 2
+   - CA4 → Assignment 3  
+   - CA5 → Assignment 4
+   - CA6 → Assignment 5
+
 - **Computer Assignment 1 Tutorial** — Intro & basics:
   `CA1 Tutorial <https://treese41528.github.io/STAT350/Computer_Assignment_Tutorials/Computer_Assignment_1_Tutorial.html>`_
 - **Computer Assignment 2 Tutorial** — Graphical & numerical summaries:
@@ -986,7 +995,12 @@ Probability & Distributions
 
       set.seed(123)
       x <- rnorm(100, mean = 50, sd = 10)
-      hist(x)
+      
+      # Visualize with ggplot2
+      library(ggplot2)
+      ggplot(data.frame(x = x), aes(x = x)) +
+        geom_histogram(bins = 20) +
+        ggtitle("Sample from Normal(50, 10)")
 
 **t Distribution Functions**
 
@@ -1056,7 +1070,13 @@ Probability & Distributions
 
       x <- 0:10
       p <- dbinom(x, size = 10, prob = 0.5)
-      barplot(p, names.arg = x)
+      
+      # Visualize with ggplot2
+      library(ggplot2)
+      ggplot(data.frame(x = x, p = p), aes(x = x, y = p)) +
+        geom_col() +
+        scale_x_continuous(breaks = 0:10) +
+        ggtitle("Binomial(10, 0.5) Distribution")
 
    **qtukey(p, nmeans, df)**
    
@@ -1115,7 +1135,12 @@ Simulation Functions
 
       n_sims <- 1000
       means <- replicate(n_sims, mean(rnorm(30)))
-      hist(means, main = "Sampling Distribution of Mean")
+      
+      # Visualize sampling distribution with ggplot2
+      library(ggplot2)
+      ggplot(data.frame(means = means), aes(x = means)) +
+        geom_histogram(bins = 30) +
+        ggtitle("Sampling Distribution of Mean")
 
 Inference Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1230,14 +1255,27 @@ Inference Functions
    
    .. code-block:: r
 
+      # Shapiro-Wilk test
       shapiro.test(x)
-      qqnorm(x); qqline(x)
+      
+      # Visual check with ggplot2
+      library(ggplot2)
+      ggplot(data.frame(x = x), aes(sample = x)) +
+        stat_qq() +
+        stat_qq_line()
    
    Equal variances check:
    
    .. code-block:: r
 
+      # F-test
       var.test(x, y)
+      
+      # Visual check
+      ggplot(data.frame(value = c(x, y), 
+                       group = rep(c("X", "Y"), c(length(x), length(y)))),
+             aes(x = group, y = value)) +
+        geom_boxplot()
    
    *See also*: ``wilcox.test()`` (non-parametric alternative)
 
@@ -1443,8 +1481,16 @@ Inference Functions
    
    .. code-block:: r
 
+      library(ggplot2)
       x <- residuals(lm(score ~ group, data = df))
-      qqnorm(x); qqline(x)
+      
+      # Q-Q plot
+      ggplot(data.frame(sample = x), aes(sample = sample)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q Plot of Residuals")
+      
+      # Formal test
       shapiro.test(x)
    
    For ANOVA:
@@ -1452,24 +1498,63 @@ Inference Functions
    .. code-block:: r
 
       fit <- aov(score ~ group, data = df)
-      plot(fit, which = 1)  # Constant variance
-      plot(fit, which = 2)  # Normality
+      
+      # Residuals vs Fitted
+      ggplot(data.frame(fitted = fitted(fit),
+                       residuals = residuals(fit)),
+             aes(x = fitted, y = residuals)) +
+        geom_point() +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        ggtitle("Residuals vs Fitted")
+      
+      # Q-Q plot of residuals  
+      ggplot(data.frame(sample = residuals(fit)), 
+             aes(sample = sample)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q")
    
-   For regression:
+   For regression (full diagnostic panel):
    
    .. code-block:: r
 
       mod <- lm(rating ~ price, data = df)
-      par(mfrow = c(2,2))
-      plot(mod)
-      par(mfrow = c(1,1))
-   
-   Manual residual plots:
-   
-   .. code-block:: r
-
-      plot(fitted(mod), residuals(mod))
-      abline(h = 0, lty = 2)
+      
+      # Prepare data for all plots
+      diag_data <- data.frame(
+        fitted = fitted(mod),
+        residuals = residuals(mod),
+        std_resid = rstandard(mod),
+        sqrt_std_resid = sqrt(abs(rstandard(mod))),
+        cooks = cooks.distance(mod),
+        leverage = hatvalues(mod)
+      )
+      
+      # Create four diagnostic plots
+      library(gridExtra)
+      
+      p1 <- ggplot(diag_data, aes(x = fitted, y = residuals)) +
+        geom_point() +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        geom_smooth(se = FALSE) +
+        ggtitle("Residuals vs Fitted")
+      
+      p2 <- ggplot(diag_data, aes(sample = std_resid)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q")
+      
+      p3 <- ggplot(diag_data, aes(x = fitted, y = sqrt_std_resid)) +
+        geom_point() +
+        geom_smooth(se = FALSE) +
+        ggtitle("Scale-Location")
+      
+      p4 <- ggplot(diag_data, aes(x = leverage, y = std_resid)) +
+        geom_point() +
+        geom_smooth(se = FALSE) +
+        ggtitle("Residuals vs Leverage")
+      
+      grid.arrange(p1, p2, p3, p4, ncol = 2)
    
    Pattern interpretation:
    
@@ -1480,6 +1565,9 @@ Inference Functions
 
 Graphics (ggplot2)
 ~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. important::
+   **This course uses ggplot2 exclusively for all plotting and visualization.** While base R has plotting functions like plot(), hist(), and boxplot(), we will only use ggplot2's grammar of graphics approach. All assignments and exams will expect ggplot2 syntax for graphs.
 
 Core Components
 ~~~~~~~~~~~~~~~~
@@ -1556,31 +1644,65 @@ Geoms (Geometric Objects)
    - ``binwidth``: Width of bins
    - ``aes(y = after_stat(density))``: Scale to density
    
-   Basic histogram:
+   .. important::
+      **In this course, all histograms must include:**
+      
+      1. Density scaling using ``aes(y = after_stat(density))``
+      2. A kernel density curve (red) using ``geom_density()``
+      3. A normal curve (blue) using ``stat_function()``
+      
+      This allows visual comparison of the data distribution with theoretical distributions.
+   
+   Standard histogram format for this course:
    
    .. code-block:: r
 
-      ggplot(iris, aes(x = Sepal.Length)) +
-        geom_histogram(bins = 20, fill = "lightblue", color = "black")
-   
-   Density scaled for normal overlay:
-   
-   .. code-block:: r
-
-      ggplot(iris, aes(x = Sepal.Length)) +
+      # Calculate mean and sd first
+      xbar <- mean(data$variable)
+      s <- sd(data$variable)
+      
+      # Create histogram with required overlays
+      ggplot(data, aes(x = variable)) +
         geom_histogram(aes(y = after_stat(density)), 
-                      bins = 20, fill = "lightblue", alpha = 0.7) +
+                      bins = 24, fill = "grey", col = "black") +
+        geom_density(col = "red", linewidth = 1) +
         stat_function(fun = dnorm, 
-                     args = list(mean = mean(iris$Sepal.Length), 
-                                sd = sd(iris$Sepal.Length)),
-                     color = "red", size = 1)
+                     args = list(mean = xbar, sd = s), 
+                     col = "blue", linewidth = 1) +
+        ggtitle("Histogram with Density Curves")
    
-   By group:
+   Adding mean and median lines (often required):
+   
+   .. code-block:: r
+
+      # Calculate statistics
+      xbar <- mean(data$variable)
+      xtilde <- median(data$variable)
+      s <- sd(data$variable)
+      
+      # Full histogram with all required elements
+      ggplot(data, aes(x = variable)) +
+        geom_histogram(aes(y = after_stat(density)), 
+                      bins = 24, fill = "grey", col = "black") +
+        geom_vline(xintercept = xbar, color = "purple", 
+                   linetype = "dotted", linewidth = 1) +
+        geom_vline(xintercept = xtilde, color = "orange", 
+                   linetype = "dashed", linewidth = 1) +
+        geom_density(col = "red", linewidth = 1) +
+        stat_function(fun = dnorm, 
+                     args = list(mean = xbar, sd = s), 
+                     col = "blue", linewidth = 1) +
+        ggtitle("Complete Histogram for Course")
+   
+   By group (less common):
    
    .. code-block:: r
 
       ggplot(iris, aes(x = Sepal.Length, fill = Species)) +
-        geom_histogram(position = "dodge", bins = 15)
+        geom_histogram(aes(y = after_stat(density)), 
+                      position = "dodge", bins = 15) +
+        facet_wrap(~ Species) +
+        ggtitle("Histograms by Group")
 
 **geom_boxplot(outlier.shape, varwidth)**
 
@@ -1754,6 +1876,63 @@ Geoms (Geometric Objects)
         geom_line(aes(y = ci_fit), color = "blue", size = 1) +
         geom_point(data = mtcars, aes(y = mpg)) +
         labs(title = "Regression with CI and PI bands")
+
+Categorical Data Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**geom_bar(), geom_col()**
+
+   *Purpose*: Bar charts for categorical data  
+   *Help*: Type ``?geom_bar`` or ``?geom_col`` in R console  
+   
+   - ``geom_bar()``: Counts categories (like table())
+   - ``geom_col()``: Uses pre-computed values
+   
+   Count frequencies with geom_bar():
+   
+   .. code-block:: r
+
+      # Frequency bar chart
+      ggplot(mtcars, aes(x = factor(cyl))) +
+        geom_bar() +
+        xlab("Number of Cylinders") +
+        ylab("Count") +
+        ggtitle("Distribution of Cylinder Counts")
+   
+   Pre-computed values with geom_col():
+   
+   .. code-block:: r
+
+      # Create summary data
+      cyl_means <- aggregate(mpg ~ cyl, data = mtcars, mean)
+      
+      ggplot(cyl_means, aes(x = factor(cyl), y = mpg)) +
+        geom_col(fill = "steelblue") +
+        xlab("Number of Cylinders") +
+        ylab("Mean MPG") +
+        ggtitle("Average MPG by Cylinder Count")
+   
+   Grouped bar chart:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = factor(cyl), fill = factor(am))) +
+        geom_bar(position = "dodge") +
+        xlab("Cylinders") +
+        labs(fill = "Transmission") +
+        scale_fill_discrete(labels = c("Automatic", "Manual"))
+   
+   Stacked bar chart (proportions):
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = factor(cyl), fill = factor(am))) +
+        geom_bar(position = "fill") +
+        ylab("Proportion") +
+        labs(fill = "Transmission")
+   
+   .. note::
+      For pie charts, while possible in ggplot2 using ``coord_polar()``, they are generally discouraged in statistical visualization. Bar charts are preferred for comparing categorical proportions.
 
 Plot Customization
 ~~~~~~~~~~~~~~~~~~~
