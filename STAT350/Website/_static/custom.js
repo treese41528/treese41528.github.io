@@ -1,5 +1,34 @@
 document.addEventListener('DOMContentLoaded', function() {
         
+
+
+    // Check if we're in winter session period (Dec 15 - Jan 15, any year)
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth(); // 0-indexed (0 = Jan, 11 = Dec)
+    const currentDay = currentDate.getDate();
+    
+    // Winter session runs mid-December through mid-January
+    const isWinterSession = (
+        (currentMonth === 11 && currentDay >= 15) || // December 15-31
+        (currentMonth === 0 && currentDay <= 8)     // January 1-8
+    );
+    
+    if (isWinterSession) {
+        // Redirect home button to winter session page
+        const homeLink = document.querySelector('.icon-home');
+        if (homeLink) {
+            homeLink.href = 'https://treese41528.github.io/STAT350/Website/winter.html';
+            homeLink.setAttribute('aria-label', 'Go to Winter Session home page');
+        }
+        
+        // Update any other index.html links to winter.html
+        const navLinks = document.querySelectorAll('a[href*="index.html"]');
+        navLinks.forEach(link => {
+            if (link.href.includes('STAT350/Website/index.html')) {
+                link.href = link.href.replace('index.html', 'winter.html');
+            }
+        });
+    }
     // 1. Fix ARIA issues in RTD search
     const searchInput = document.querySelector('.wy-side-nav-search input[type="text"]');
     if (searchInput) {
