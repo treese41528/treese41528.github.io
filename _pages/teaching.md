@@ -20,8 +20,6 @@ Inference for contingency tables, regression, and correlation. Introduction to r
 Essential use is made of statistical software throughout. 
 Intended primarily for students majoring in the mathematical sciences. 
 Prerequisite: two semesters of college calculus. </p>
-</div>
-
 <p><b>Course Resources:</b></p>
 <ul>
   <li><a href="https://treese41528.github.io/STAT350/Website/index.html" target="_blank">Course Website (Regular Session)</a></li>
