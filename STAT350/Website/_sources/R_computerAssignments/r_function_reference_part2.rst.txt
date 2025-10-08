@@ -1,0 +1,423 @@
+.. _r_function_reference_part2:
+
+Function Reference Part 2: Inference Functions
+-------------------------------------------------
+
+**t.test(x, y = NULL, alternative = "two.sided", mu = 0, paired = FALSE, var.equal = FALSE, conf.level = 0.95)**
+
+   *Purpose*: One and two sample t-tests  
+   *Help*: Type ``?t.test`` in R console  
+   *When to use*: Compare means between 1-2 groups  
+   *Key arguments*:
+   
+   - ``alternative``: "two.sided", "less", "greater"
+   - ``mu``: Null hypothesis value (one-sample) 
+   - ``paired``: TRUE for matched pairs
+   - ``var.equal``: TRUE assumes equal variances
+   
+   *Common pitfalls*:
+   
+   - Using paired = TRUE with independent samples
+   - Not checking normality assumptions
+   - Forgetting var.equal = FALSE for unequal variances
+   
+   One-sample test:
+   
+   .. code-block:: rconsole
+
+      > x <- c(98, 102, 101, 97, 103, 100, 99, 98, 104, 101)
+      > t.test(x, mu = 100)
+      
+      	One Sample t-test
+      
+      data:  x
+      t = 0.63246, df = 9, p-value = 0.5425
+      alternative hypothesis: true mean is not equal to 100
+      95 percent confidence interval:
+       98.41533 102.18467
+      sample estimates:
+      mean of x 
+          100.3
+   
+   Two-sample independent test using built-in data:
+   
+   .. code-block:: rconsole
+
+      > data(sleep)
+      > t.test(extra ~ group, data = sleep, var.equal = FALSE)
+      
+      	Welch Two Sample t-test
+      
+      data:  extra by group
+      t = -1.8608, df = 17.776, p-value = 0.07939
+      alternative hypothesis: true difference in means between group 1 and group 2 is not equal to 0
+      95 percent confidence interval:
+       -3.3654832  0.2054832
+      sample estimates:
+      mean in group 1 mean in group 2 
+                 0.75            2.33
+   
+   **Paired t-test - Three equivalent approaches:**
+   
+   Method 1 - Using paired = TRUE with two vectors:
+   
+   .. code-block:: r
+
+      before <- c(85, 88, 90, 92, 87)
+      after  <- c(88, 90, 91, 94, 89)
+      t.test(before, after, paired = TRUE)
+   
+   Method 2 - Convert to one-sample test of differences:
+   
+   .. code-block:: r
+
+      differences <- after - before
+      t.test(differences, mu = 0)
+   
+   Method 3 - Formula interface with paired data:
+   
+   .. code-block:: rconsole
+
+      > # Using sleep dataset (paired by ID)
+      > t.test(Pair(extra[group==1], extra[group==2]) ~ 1, data = sleep)
+      
+      	Paired t-test
+      
+      data:  Pair(extra[group == 1], extra[group == 2])
+      t = -4.0621, df = 9, p-value = 0.002833
+      alternative hypothesis: true mean difference is not equal to 0
+      95 percent confidence interval:
+       -2.4598858 -0.7001142
+      sample estimates:
+      mean difference 
+                -1.58
+   
+   Extract components from results:
+   
+   .. code-block:: rconsole
+
+      > result <- t.test(x, mu = 100)
+      > result$p.value
+      [1] 0.5424805
+      > result$conf.int
+      [1]  98.41533 102.18467
+      attr(,"conf.level")
+      [1] 0.95
+      > result$estimate
+      mean of x 
+          100.3
+   
+   **Checking assumptions**:
+   
+   Normality check:
+   
+   .. code-block:: r
+
+      # Shapiro-Wilk test
+      shapiro.test(x)
+      
+      # Visual check with ggplot2
+      library(ggplot2)
+      ggplot(data.frame(x = x), aes(sample = x)) +
+        stat_qq() +
+        stat_qq_line()
+   
+   Equal variances check:
+   
+   .. code-block:: r
+
+      # F-test
+      var.test(x, y)
+      
+      # Visual check
+      ggplot(data.frame(value = c(x, y), 
+                       group = rep(c("X", "Y"), c(length(x), length(y)))),
+             aes(x = group, y = value)) +
+        geom_boxplot()
+   
+   *See also*: ``wilcox.test()`` (non-parametric alternative)
+
+**aov(formula, data)**
+
+   *Purpose*: Analysis of variance (ANOVA)  
+   *Help*: Type ``?aov`` in R console  
+   *When to use*: Compare means across 3+ groups  
+   
+   One-way ANOVA:
+   
+   .. code-block:: rconsole
+
+      > fit <- aov(score ~ group, data = df)
+      > summary(fit)
+                  Df Sum Sq Mean Sq F value Pr(>F)   
+      group        2  520.3  260.15   8.214 0.0019 **
+      Residuals   27  855.2   31.67                  
+      ---
+      Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+   
+   Check assumptions with diagnostic plots:
+   
+   .. code-block:: r
+
+      plot(fit, which = 1)  # Residuals vs Fitted
+      plot(fit, which = 2)  # Normal Q-Q
+   
+   Test for equal variances:
+   
+   .. code-block:: r
+
+      bartlett.test(score ~ group, data = df)
+   
+   Post-hoc comparisons:
+   
+   .. code-block:: r
+
+      TukeyHSD(fit)
+      plot(TukeyHSD(fit))
+   
+   *See also*: ``anova()``, ``TukeyHSD()``, ``kruskal.test()``
+
+**TukeyHSD(x, conf.level = 0.95)**
+
+   *Purpose*: Tukey's honest significant differences  
+   *Help*: Type ``?TukeyHSD`` in R console  
+   *When to use*: After significant ANOVA for pairwise comparisons  
+   
+   Following ANOVA:
+   
+   .. code-block:: rconsole
+
+      > fit <- aov(score ~ group, data = df)
+      > tukey_result <- TukeyHSD(fit)
+      > tukey_result
+        Tukey multiple comparisons of means
+          95% family-wise confidence level
+      
+      Fit: aov(formula = score ~ group, data = df)
+      
+      $group
+              diff       lwr      upr     p adj
+      B-A  -5.333 -12.20271 1.536038 0.1518711
+      C-A   3.167  -3.70271 10.036038 0.5019442
+      C-B   8.500   1.63062 15.369376 0.0125506
+   
+   Visual display:
+   
+   .. code-block:: r
+
+      plot(tukey_result)
+   
+   Confidence intervals not containing 0 indicate significant differences.
+
+**lm(formula, data)**
+
+   *Purpose*: Fit linear models  
+   *Help*: Type ``?lm`` in R console  
+   *When to use*: Regression analysis, ANOVA via regression  
+   
+   Simple linear regression:
+   
+   .. code-block:: rconsole
+
+      > mod <- lm(rating ~ price, data = df)
+      > summary(mod)
+      
+      Call:
+      lm(formula = rating ~ price, data = df)
+      
+      Residuals:
+           Min       1Q   Median       3Q      Max 
+      -2.83450 -0.83450 -0.03077  0.78231  2.70308 
+      
+      Coefficients:
+                  Estimate Std. Error t value Pr(>|t|)    
+      (Intercept)  2.1234     0.2145   9.897 2.13e-10 ***
+      price        0.5432     0.0532  10.211 9.77e-11 ***
+      ---
+      Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+      
+      Residual standard error: 1.234 on 28 degrees of freedom
+      Multiple R-squared:  0.7882,	Adjusted R-squared:  0.7806 
+      F-statistic: 104.3 on 1 and 28 DF,  p-value: 9.77e-11
+   
+   Extract components:
+   
+   .. code-block:: r
+
+      coef(mod)           # Coefficients
+      confint(mod)        # CI for coefficients
+      residuals(mod)      # Residuals
+      fitted(mod)         # Fitted values
+   
+   Diagnostic plots:
+   
+   .. code-block:: r
+
+      plot(mod)  # Produces 4 diagnostic plots
+   
+   ANOVA table:
+   
+   .. code-block:: r
+
+      anova(mod)
+   
+   *See also*: ``summary.lm()``, ``predict.lm()``, ``plot.lm()``
+
+**predict(object, newdata, interval = "none", level = 0.95)**
+
+   *Purpose*: Predictions from model fits  
+   *Help*: Type ``?predict.lm`` in R console  
+   *Key arguments*:
+   
+   - ``interval``: "confidence" (mean response) or "prediction" (new obs)
+   - ``level``: Confidence level
+   
+   *Critical distinction*:
+   
+   - **Confidence interval**: Uncertainty about mean response
+   - **Prediction interval**: Uncertainty about individual response (wider)
+   
+   Fit model first:
+   
+   .. code-block:: r
+
+      mod <- lm(rating ~ price, data = df)
+   
+   Point prediction:
+   
+   .. code-block:: rconsole
+
+      > new_price <- data.frame(price = 50)
+      > predict(mod, new_price)
+             1 
+      29.28571
+   
+   Confidence interval (mean rating at price = 50):
+   
+   .. code-block:: rconsole
+
+      > predict(mod, new_price, interval = "confidence")
+             fit      lwr      upr
+      1 29.28571 28.47933 30.09209
+   
+   Prediction interval (individual rating at price = 50):
+   
+   .. code-block:: rconsole
+
+      > predict(mod, new_price, interval = "prediction")
+             fit      lwr      upr
+      1 29.28571 26.89414 31.67728
+   
+   Note that prediction intervals are always wider than confidence intervals.
+   
+   Multiple predictions for plotting:
+   
+   .. code-block:: r
+
+      new_prices <- data.frame(
+        price = seq(min(df$price), max(df$price), length = 100)
+      )
+      ci <- predict(mod, new_prices, interval = "confidence")
+      pi <- predict(mod, new_prices, interval = "prediction")
+   
+   Plot with bands:
+   
+   .. code-block:: r
+
+      plot(rating ~ price, data = df)
+      abline(mod)
+      lines(new_prices$price, ci[,"lwr"], lty = 2, col = "blue")
+      lines(new_prices$price, ci[,"upr"], lty = 2, col = "blue")
+      lines(new_prices$price, pi[,"lwr"], lty = 2, col = "red")
+      lines(new_prices$price, pi[,"upr"], lty = 2, col = "red")
+   
+   *See also*: ``fitted()``, ``residuals()``
+
+Diagnostic Plots for Assumptions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   For t-test (normality of residuals):
+   
+   .. code-block:: r
+
+      library(ggplot2)
+      x <- residuals(lm(score ~ group, data = df))
+      
+      # Q-Q plot
+      ggplot(data.frame(sample = x), aes(sample = sample)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q Plot of Residuals")
+      
+      # Formal test
+      shapiro.test(x)
+   
+   For ANOVA:
+   
+   .. code-block:: r
+
+      fit <- aov(score ~ group, data = df)
+      
+      # Residuals vs Fitted
+      ggplot(data.frame(fitted = fitted(fit),
+                       residuals = residuals(fit)),
+             aes(x = fitted, y = residuals)) +
+        geom_point() +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        ggtitle("Residuals vs Fitted")
+      
+      # Q-Q plot of residuals  
+      ggplot(data.frame(sample = residuals(fit)), 
+             aes(sample = sample)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q")
+   
+   For regression (full diagnostic panel):
+   
+   .. code-block:: r
+
+      mod <- lm(rating ~ price, data = df)
+      
+      # Prepare data for all plots
+      diag_data <- data.frame(
+        fitted = fitted(mod),
+        residuals = residuals(mod),
+        std_resid = rstandard(mod),
+        sqrt_std_resid = sqrt(abs(rstandard(mod))),
+        cooks = cooks.distance(mod),
+        leverage = hatvalues(mod)
+      )
+      
+      # Create four diagnostic plots
+      library(gridExtra)
+      
+      p1 <- ggplot(diag_data, aes(x = fitted, y = residuals)) +
+        geom_point() +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        geom_smooth(se = FALSE) +
+        ggtitle("Residuals vs Fitted")
+      
+      p2 <- ggplot(diag_data, aes(sample = std_resid)) +
+        stat_qq() +
+        stat_qq_line() +
+        ggtitle("Normal Q-Q")
+      
+      p3 <- ggplot(diag_data, aes(x = fitted, y = sqrt_std_resid)) +
+        geom_point() +
+        geom_smooth(se = FALSE) +
+        ggtitle("Scale-Location")
+      
+      p4 <- ggplot(diag_data, aes(x = leverage, y = std_resid)) +
+        geom_point() +
+        geom_smooth(se = FALSE) +
+        ggtitle("Residuals vs Leverage")
+      
+      grid.arrange(p1, p2, p3, p4, ncol = 2)
+   
+   Pattern interpretation:
+   
+   - Random scatter: Good
+   - Funnel shape: Heteroscedasticity
+   - Curve: Non-linearity
+   - Outliers: Influential points

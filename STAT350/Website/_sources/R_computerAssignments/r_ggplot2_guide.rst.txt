@@ -1,0 +1,546 @@
+.. _r_ggplot2_guide:
+
+Graphics (ggplot2)
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. important::
+   **This course uses ggplot2 exclusively for all plotting and visualization.** While base R has plotting functions like plot(), hist(), and boxplot(), we will only use ggplot2's grammar of graphics approach. All assignments and exams will expect ggplot2 syntax for graphs.
+
+Core Components
+~~~~~~~~~~~~~~~~
+
+**ggplot(data, aes(...))**
+
+   *Purpose*: Initialize a ggplot object  
+   *Help*: Type ``?ggplot`` in R console  
+   *Structure*: Data + aesthetic mappings + layers  
+   
+   Basic setup creates blank plot with axes:
+   
+   .. code-block:: r
+
+      library(ggplot2)
+      ggplot(iris, aes(x = Sepal.Length, y = Sepal.Width))
+   
+   Add layers with +:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Sepal.Length, y = Sepal.Width)) +
+        geom_point()
+   
+   Save for reuse:
+   
+   .. code-block:: r
+
+      p <- ggplot(mtcars, aes(x = factor(cyl), y = mpg))
+      p + geom_boxplot()
+      p + geom_violin()
+
+**aes(...)**
+
+   *Purpose*: Map variables to visual properties  
+   *Help*: Type ``?aes`` in R console  
+   *Common aesthetics*: x, y, color, fill, shape, size, alpha  
+   
+   Position aesthetics:
+   
+   .. code-block:: r
+
+      aes(x = Sepal.Length, y = Sepal.Width)
+   
+   Color by group:
+   
+   .. code-block:: r
+
+      aes(x = Sepal.Length, y = Sepal.Width, color = Species)
+   
+   Multiple aesthetics:
+   
+   .. code-block:: r
+
+      aes(x = wt, y = mpg, color = factor(cyl), size = hp)
+   
+   Can set in ggplot() or individual geoms:
+   
+   .. code-block:: r
+
+      ggplot(iris) +
+        geom_point(aes(x = Sepal.Length, y = Sepal.Width))
+
+Geoms (Geometric Objects)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**geom_histogram(binwidth, bins, aes(y = after_stat(...)))**
+
+   *Purpose*: Create histograms  
+   *Help*: Type ``?geom_histogram`` in R console  
+   *Key arguments*:
+   
+   - ``bins``: Number of bins (default 30)
+   - ``binwidth``: Width of bins
+   - ``aes(y = after_stat(density))``: Scale to density
+   
+   .. important::
+      **In this course, all histograms must include:**
+      
+      1. Density scaling using ``aes(y = after_stat(density))``
+      2. A kernel density curve (red) using ``geom_density()``
+      3. A normal curve (blue) using ``stat_function()``
+      
+      This allows visual comparison of the data distribution with theoretical distributions.
+   
+   Standard histogram format for this course:
+   
+   .. code-block:: r
+
+      # Calculate mean and sd first
+      xbar <- mean(data$variable)
+      s <- sd(data$variable)
+      
+      # Create histogram with required overlays
+      ggplot(data, aes(x = variable)) +
+        geom_histogram(aes(y = after_stat(density)), 
+                      bins = 24, fill = "grey", col = "black") +
+        geom_density(col = "red", linewidth = 1) +
+        stat_function(fun = dnorm, 
+                     args = list(mean = xbar, sd = s), 
+                     col = "blue", linewidth = 1) +
+        ggtitle("Histogram with Density Curves")
+   
+   Adding mean and median lines (often required):
+   
+   .. code-block:: r
+
+      # Calculate statistics
+      xbar <- mean(data$variable)
+      xtilde <- median(data$variable)
+      s <- sd(data$variable)
+      
+      # Full histogram with all required elements
+      ggplot(data, aes(x = variable)) +
+        geom_histogram(aes(y = after_stat(density)), 
+                      bins = 24, fill = "grey", col = "black") +
+        geom_vline(xintercept = xbar, color = "purple", 
+                   linetype = "dotted", linewidth = 1) +
+        geom_vline(xintercept = xtilde, color = "orange", 
+                   linetype = "dashed", linewidth = 1) +
+        geom_density(col = "red", linewidth = 1) +
+        stat_function(fun = dnorm, 
+                     args = list(mean = xbar, sd = s), 
+                     col = "blue", linewidth = 1) +
+        ggtitle("Complete Histogram for Course")
+   
+   By group:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Sepal.Length, fill = Species)) +
+        geom_histogram(aes(y = after_stat(density)), 
+                      position = "dodge", bins = 15) +
+        facet_wrap(~ Species) +
+        ggtitle("Histograms by Group")
+
+   Faceted histograms with required density overlays:
+   
+   .. code-block:: r
+
+      # Calculate group-specific statistics
+      xbar <- tapply(iris$Sepal.Length, iris$Species, mean)
+      s <- tapply(iris$Sepal.Length, iris$Species, sd)
+      
+      # Add normal density values to the dataset
+      iris$normal.density <- ifelse(iris$Species == "setosa",
+                                    dnorm(iris$Sepal.Length, xbar["setosa"], s["setosa"]),
+                                    ifelse(iris$Species == "versicolor",
+                                          dnorm(iris$Sepal.Length, xbar["versicolor"], s["versicolor"]),
+                                          dnorm(iris$Sepal.Length, xbar["virginica"], s["virginica"])))
+      
+      # Create faceted histogram with overlays
+      ggplot(iris, aes(x = Sepal.Length)) + 
+        geom_histogram(aes(y = after_stat(density)), 
+                      bins = 15, fill = "grey", col = "black") + 
+        geom_density(col = "red", linewidth = 1) + 
+        geom_line(aes(y = normal.density), col = "blue", linewidth = 1) + 
+        facet_wrap(~ Species) +
+        ggtitle("Distribution of Sepal Length by Species")
+      
+      # For datasets with only two groups (like CO2), the approach is simpler:
+      
+      # Two-group example using CO2 dataset
+      xbar <- tapply(CO2$uptake, CO2$Type, mean)
+      s <- tapply(CO2$uptake, CO2$Type, sd)
+      
+      CO2$normal.density <- ifelse(CO2$Type == "Quebec", 
+                                  dnorm(CO2$uptake, xbar["Quebec"], s["Quebec"]), 
+                                  dnorm(CO2$uptake, xbar["Mississippi"], s["Mississippi"]))
+      
+      ggplot(CO2, aes(x = uptake)) + 
+        geom_histogram(aes(y = after_stat(density)), 
+                      bins = 20, fill = "grey", col = "black") + 
+        geom_density(col = "red", linewidth = 1) + 
+        geom_line(aes(y = normal.density), col = "blue", linewidth = 1) + 
+        facet_grid(. ~ Type) +
+        ggtitle("Distribution of Uptake by Location Type")
+
+**geom_boxplot(outlier.shape, varwidth)**
+
+   *Purpose*: Box and whisker plots  
+   *Help*: Type ``?geom_boxplot`` in R console  
+   
+   Basic boxplot:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Species, y = Sepal.Length)) +
+        geom_boxplot()
+   
+   Horizontal orientation:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Species, y = Sepal.Length)) +
+        geom_boxplot() +
+        coord_flip()
+   
+   With individual points:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Species, y = Sepal.Length)) +
+        geom_boxplot(outlier.shape = NA) +
+        geom_jitter(width = 0.2, alpha = 0.5)
+   
+   Variable width by sample size:
+   
+   .. code-block:: r
+
+      ggplot(iris, aes(x = Species, y = Sepal.Length)) +
+        geom_boxplot(varwidth = TRUE)
+
+**geom_point(), geom_line()**
+
+   *Purpose*: Scatterplots and line plots  
+   *Help*: Type ``?geom_point`` or ``?geom_line``  
+   
+   Basic scatterplot:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg)) +
+        geom_point()
+   
+   Customize points:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg, color = factor(cyl))) +
+        geom_point(size = 3, alpha = 0.7)
+   
+   Add regression line:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg)) +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE, color = "red")
+   
+   Time series (using built-in dataset):
+   
+   .. code-block:: r
+
+      # Convert to time series format
+      data(AirPassengers)
+      ts_data <- data.frame(
+        date = as.Date(time(AirPassengers)),
+        value = as.numeric(AirPassengers)
+      )
+      
+      ggplot(ts_data, aes(x = date, y = value)) +
+        geom_line() +
+        geom_point()
+
+**geom_smooth(method, formula, se)**
+
+   *Purpose*: Add smoothed conditional means  
+   *Help*: Type ``?geom_smooth`` in R console  
+   *Key arguments*:
+   
+   - ``method``: "lm", "loess", "gam"
+   - ``se``: Show confidence band (TRUE/FALSE)
+   
+   Linear regression with confidence band:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg)) +
+        geom_point() +
+        geom_smooth(method = "lm")
+   
+   Without confidence band:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg)) +
+        geom_point() +
+        geom_smooth(method = "lm", se = FALSE)
+   
+   By group:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = wt, y = mpg, color = factor(cyl))) +
+        geom_point() +
+        geom_smooth(method = "lm")
+
+**stat_qq(), stat_qq_line()**
+
+   *Purpose*: Q-Q plots for normality assessment  
+   *Help*: Type ``?stat_qq`` in R console  
+   
+   Basic Q-Q plot:
+   
+   .. code-block:: r
+
+      ggplot(data.frame(sample = rnorm(100)), aes(sample = sample)) +
+        stat_qq() +
+        stat_qq_line()
+   
+   For residuals:
+   
+   .. code-block:: r
+
+      mod <- lm(mpg ~ wt, data = mtcars)
+      res_df <- data.frame(residuals = residuals(mod))
+      
+      ggplot(res_df, aes(sample = residuals)) +
+        stat_qq() +
+        stat_qq_line(color = "red") +
+        labs(title = "Normal Q-Q Plot of Residuals")
+
+**geom_ribbon(aes(ymin, ymax))**
+
+   *Purpose*: Area plots with upper/lower bounds  
+   *Help*: Type ``?geom_ribbon`` in R console  
+   *Use case*: Custom confidence/prediction bands  
+   
+   Setup for regression bands:
+   
+   .. code-block:: r
+
+      mod <- lm(mpg ~ wt, data = mtcars)
+      new_data <- data.frame(wt = seq(min(mtcars$wt), 
+                                      max(mtcars$wt), 
+                                      length = 100))
+      
+      pred_ci <- predict(mod, new_data, interval = "confidence")
+      pred_pi <- predict(mod, new_data, interval = "prediction")
+      
+      plot_data <- cbind(new_data, 
+                        ci_fit = pred_ci[,"fit"],
+                        ci_lwr = pred_ci[,"lwr"],
+                        ci_upr = pred_ci[,"upr"],
+                        pi_lwr = pred_pi[,"lwr"],
+                        pi_upr = pred_pi[,"upr"])
+   
+   Plot with bands:
+   
+   .. code-block:: r
+
+      ggplot(plot_data, aes(x = wt)) +
+        geom_ribbon(aes(ymin = pi_lwr, ymax = pi_upr), 
+                   fill = "grey90") +
+        geom_ribbon(aes(ymin = ci_lwr, ymax = ci_upr), 
+                   fill = "grey70") +
+        geom_line(aes(y = ci_fit), color = "blue", size = 1) +
+        geom_point(data = mtcars, aes(y = mpg)) +
+        labs(title = "Regression with CI and PI bands")
+
+Categorical Data Visualization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**geom_bar(), geom_col()**
+
+   *Purpose*: Bar charts for categorical data  
+   *Help*: Type ``?geom_bar`` or ``?geom_col`` in R console  
+   
+   - ``geom_bar()``: Counts categories (like table())
+   - ``geom_col()``: Uses pre-computed values
+   
+   Count frequencies with geom_bar():
+   
+   .. code-block:: r
+
+      # Frequency bar chart
+      ggplot(mtcars, aes(x = factor(cyl))) +
+        geom_bar() +
+        xlab("Number of Cylinders") +
+        ylab("Count") +
+        ggtitle("Distribution of Cylinder Counts")
+   
+   Pre-computed values with geom_col():
+   
+   .. code-block:: r
+
+      # Create summary data
+      cyl_means <- aggregate(mpg ~ cyl, data = mtcars, mean)
+      
+      ggplot(cyl_means, aes(x = factor(cyl), y = mpg)) +
+        geom_col(fill = "steelblue") +
+        xlab("Number of Cylinders") +
+        ylab("Mean MPG") +
+        ggtitle("Average MPG by Cylinder Count")
+   
+   Grouped bar chart:
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = factor(cyl), fill = factor(am))) +
+        geom_bar(position = "dodge") +
+        xlab("Cylinders") +
+        labs(fill = "Transmission") +
+        scale_fill_discrete(labels = c("Automatic", "Manual"))
+   
+   Stacked bar chart (proportions):
+   
+   .. code-block:: r
+
+      ggplot(mtcars, aes(x = factor(cyl), fill = factor(am))) +
+        geom_bar(position = "fill") +
+        ylab("Proportion") +
+        labs(fill = "Transmission")
+   
+   .. note::
+      For pie charts, while possible in ggplot2 using ``coord_polar()``, they are generally discouraged in statistical visualization. Bar charts are preferred for comparing categorical proportions.
+
+Plot Customization
+~~~~~~~~~~~~~~~~~~~
+
+**Labels and Titles**
+
+   All labels at once:
+   
+   .. code-block:: r
+
+      p + labs(title = "Main Title",
+              subtitle = "Subtitle",
+              x = "X-axis label",
+              y = "Y-axis label",
+              caption = "Data source: ...")
+   
+   Individual functions:
+   
+   .. code-block:: r
+
+      p + ggtitle("Main Title") +
+          xlab("X-axis") +
+          ylab("Y-axis")
+   
+   Math expressions:
+   
+   .. code-block:: r
+
+      library(latex2exp)
+      p + xlab(TeX("$\\beta_1$")) +
+          ylab(TeX("$\\hat{y}$"))
+
+**Themes**
+
+   Built-in themes:
+   
+   .. code-block:: r
+
+      p + theme_minimal()
+      p + theme_classic()
+      p + theme_bw()
+   
+   Customize elements:
+   
+   .. code-block:: r
+
+      p + theme(
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, hjust = 0.5),
+        legend.position = "bottom"
+      )
+
+**Faceting**
+
+   Separate panels by variable:
+   
+   .. code-block:: r
+
+      ggplot(df, aes(x = score)) +
+        geom_histogram() +
+        facet_wrap(~ group)
+   
+   Grid layout:
+   
+   .. code-block:: r
+
+      ggplot(df, aes(x = score)) +
+        geom_histogram() +
+        facet_grid(platform ~ group)
+
+Tables & Reporting
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**knitr::kable(x, caption, digits, format)**
+
+   *Purpose*: Create formatted tables  
+   *Help*: Type ``?knitr::kable`` in R console  
+   
+   Basic table using built-in data:
+   
+   .. code-block:: r
+
+      library(knitr)
+      library(kableExtra)
+      
+      # Summary statistics by species
+      summary_table <- aggregate(Sepal.Length ~ Species, data = iris, 
+                                FUN = function(x) c(mean = mean(x), 
+                                                   sd = sd(x),
+                                                   n = length(x)))
+      kable(summary_table, 
+            caption = "Summary Statistics by Species",
+            digits = 2)
+   
+   Enhanced styling:
+   
+   .. code-block:: r
+
+      kable(summary_table, caption = "Iris Summary by Species") %>%
+        kable_styling(bootstrap_options = c("striped", "hover"),
+                     full_width = FALSE) %>%
+        column_spec(1, bold = TRUE)
+
+**gridExtra::grid.arrange(...)**
+
+   *Purpose*: Arrange multiple plots  
+   *Help*: Type ``?gridExtra::grid.arrange``  
+   
+   Create and arrange plots:
+   
+   .. code-block:: r
+
+      library(gridExtra)
+      
+      p1 <- ggplot(iris, aes(x = Sepal.Length)) + 
+            geom_histogram(bins = 20) + 
+            ggtitle("Distribution of Sepal Length")
+      
+      p2 <- ggplot(iris, aes(x = Species, y = Sepal.Length)) + 
+            geom_boxplot() + 
+            ggtitle("Sepal Length by Species")
+      
+      grid.arrange(p1, p2, ncol = 2)
+   
+   Different layouts:
+   
+   .. code-block:: r
+
+      grid.arrange(p1, p2, p1, p2, 
+                  ncol = 2, nrow = 2,
+                  top = "Four Panel Display")
