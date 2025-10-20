@@ -1,0 +1,943 @@
+// Visual debug: draw a faint vertical line showing the y-range of crossing needles
+            if (crosses && false) { // Set to true to enable debug visualization
+                const minY = Math.min(y1, y2);
+                const maxY = Math.max(y1, y2);
+                needleCtx.strokeStyle = '#00ff00';
+                needleCtx.lineWidth = 1;
+                needleCtx.globalAlpha = 0.2;
+                needleCtx.setLineDash([2, 2]);
+                needleCtx.beginPath();
+                needleCtx.moveTo(x - 20, minY);
+                needleCtx.lineTo(x - 20, maxY);
+                needleCtx.stroke();
+                needleCtx.setLineDash([]);
+            }            // Draw endpoints for crossing needles to make it clearer
+            if (crosses) {
+                needleCtx.fillStyle = '#00ff00';
+                needleCtx.globalAlpha = 1;
+                needleCtx.beginPath();
+                needleCtx.arc(x1, y1, 2, 0, 2 * Math.PI);
+                needleCtx.fill();
+                needleCtx.beginPath();
+                needleCtx.arc(x2, y2, 2, 0, 2 * Math.PI);
+                needleCtx.fill();
+            }<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buffon's Needle - Monte Carlo π Estimation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 25px;
+            padding: 40px;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 3em;
+            background: linear-gradient(45deg, #e94560, #f47068, #ff8a5b);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s ease infinite;
+        }
+
+        @keyframes shine {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        .info-panel {
+            background: rgba(233, 69, 96, 0.1);
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .info-panel p {
+            font-size: 1.1em;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .formula-box {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+        }
+
+        .formula {
+            font-size: 1.4em;
+            color: #ff8a5b;
+            margin: 10px 0;
+        }
+
+        .visualization-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .needle-canvas-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            position: relative;
+        }
+
+        #needleCanvas {
+            width: 100%;
+            height: 500px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            cursor: crosshair;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+        }
+
+        .chart-title {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #ff8a5b;
+        }
+
+        #convergenceChart {
+            width: 100%;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .slider-container {
+            position: relative;
+            width: 200px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #e94560;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+            transition: all 0.3s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.8);
+        }
+
+        .slider-value {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #e94560;
+            color: #fff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+            pointer-events: none;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.3s, height 0.3s;
+        }
+
+        button:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        #dropBtn {
+            background: linear-gradient(45deg, #00aa00, #00dd00);
+            color: #000;
+            box-shadow: 0 4px 15px rgba(0, 255, 0, 0.4);
+            font-weight: 900;
+        }
+
+        #dropBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 255, 0, 0.6);
+        }
+
+        #clearBtn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        #clearBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+        }
+
+        #animateBtn {
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        #animateBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.6);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 255, 0, 0.2);
+            border-color: rgba(0, 255, 0, 0.5);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #e94560, #ff8a5b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 5px;
+        }
+
+        .pi-estimate {
+            font-size: 3em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00dd00, #00aa00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .error-display {
+            text-align: center;
+            font-size: 1.2em;
+            color: #FFC107;
+            margin: 10px 0;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #e94560;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes dropNeedle {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .needle-drop {
+            animation: dropNeedle 0.5s ease-out;
+        }
+
+        @media (max-width: 1024px) {
+            .visualization-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            #needleCanvas {
+                height: 400px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2em;
+            }
+            
+            .control-row {
+                flex-direction: column;
+            }
+            
+            .slider-container {
+                width: 100%;
+                max-width: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Buffon's Needle π Estimation</h1>
+        
+        <div class="info-panel">
+            <p>Drop needles onto a floor with parallel lines to estimate π! This classic Monte Carlo method demonstrates how random sampling can solve mathematical problems.</p>
+        </div>
+
+        <div class="formula-box">
+            <div class="formula">P(crossing) = 2L / (πD)</div>
+            <div style="color: #ccc; font-size: 0.9em; margin-top: 10px;">
+                Therefore: π ≈ 2L × (total drops) / (D × crossings)
+            </div>
+        </div>
+
+        <div class="visualization-grid">
+            <div class="needle-canvas-container">
+                <canvas id="needleCanvas"></canvas>
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #00ff00;"></div>
+                        <span>Crossing</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ff4444;"></div>
+                        <span>Not Crossing</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <div class="chart-container">
+                    <h3 class="chart-title">π Estimation Convergence</h3>
+                    <canvas id="convergenceChart"></canvas>
+                </div>
+                
+                <div class="pi-estimate" id="piEstimate">π ≈ ---</div>
+                <div class="error-display" id="errorDisplay">Error: ---</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label>Needle Length (L)</label>
+                    <div class="slider-container">
+                        <input type="range" id="needleLength" min="0.1" max="0.9" step="0.1" value="0.5">
+                        <div class="slider-value" id="lengthValue">0.5</div>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label>Line Spacing (D)</label>
+                    <div class="slider-container">
+                        <input type="range" id="lineSpacing" min="0.5" max="2" step="0.1" value="1">
+                        <div class="slider-value" id="spacingValue">1.0</div>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label>Needles per Drop</label>
+                    <div class="slider-container">
+                        <input type="range" id="dropCount" min="1" max="1000" step="1" value="100">
+                        <div class="slider-value" id="dropValue">100</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="control-row">
+                <button id="dropBtn">Drop Needles</button>
+                <button id="animateBtn">Auto Drop</button>
+                <button id="clearBtn">Clear All</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalDrops">0</div>
+                <div class="stat-label">Total Needles</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="crossingCount">0</div>
+                <div class="stat-label">Crossings</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="crossingRate">0.0%</div>
+                <div class="stat-label">Crossing Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="theoreticalRate">---</div>
+                <div class="stat-label">Theoretical Rate</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let totalNeedles = 0;
+        let crossingNeedles = 0;
+        let piHistory = [];
+        let needles = [];
+        let isAnimating = false;
+        let animationId = null;
+        let animationSpeed = 100;
+
+        // Canvas setup
+        const needleCanvas = document.getElementById('needleCanvas');
+        const needleCtx = needleCanvas.getContext('2d');
+        const convergenceCanvas = document.getElementById('convergenceChart');
+        const convergenceCtx = convergenceCanvas.getContext('2d');
+
+        // Controls
+        const needleLengthSlider = document.getElementById('needleLength');
+        const lineSpacingSlider = document.getElementById('lineSpacing');
+        const dropCountSlider = document.getElementById('dropCount');
+        const lengthValue = document.getElementById('lengthValue');
+        const spacingValue = document.getElementById('spacingValue');
+        const dropValue = document.getElementById('dropValue');
+
+        // Setup canvas sizes
+        function setupCanvases() {
+            const needleRect = needleCanvas.getBoundingClientRect();
+            needleCanvas.width = needleRect.width;
+            needleCanvas.height = needleRect.height;
+            
+            const convergenceRect = convergenceCanvas.getBoundingClientRect();
+            convergenceCanvas.width = convergenceRect.width;
+            convergenceCanvas.height = convergenceRect.height;
+        }
+
+        // Draw floor with parallel lines
+        function drawFloor() {
+            const width = needleCanvas.width;
+            const height = needleCanvas.height;
+            const spacing = parseFloat(lineSpacingSlider.value) * 100; // Scale for pixels
+            
+            // Reset canvas state
+            needleCtx.globalAlpha = 1;
+            needleCtx.setLineDash([]);
+            
+            // Properly clear canvas first
+            needleCtx.clearRect(0, 0, width, height);
+            
+            // Then fill with background color
+            needleCtx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            needleCtx.fillRect(0, 0, width, height);
+            
+            // Draw parallel lines
+            needleCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            needleCtx.lineWidth = 2;
+            
+            for (let y = spacing / 2; y < height; y += spacing) {
+                needleCtx.beginPath();
+                needleCtx.moveTo(0, y);
+                needleCtx.lineTo(width, y);
+                needleCtx.stroke();
+            }
+            
+            // Draw all needles on top of lines
+            needles.forEach(needle => {
+                drawNeedle(needle);
+            });
+        }
+
+        // Draw a single needle
+        function drawNeedle(needle) {
+            const { x, y, angle, length, crosses } = needle;
+            
+            const x1 = x - (length / 2) * Math.cos(angle);
+            const y1 = y - (length / 2) * Math.sin(angle);
+            const x2 = x + (length / 2) * Math.cos(angle);
+            const y2 = y + (length / 2) * Math.sin(angle);
+            
+            // Draw glow for crossing needles
+            if (crosses) {
+                needleCtx.strokeStyle = '#00ff00';
+                needleCtx.lineWidth = 8;
+                needleCtx.globalAlpha = 0.3;
+                needleCtx.beginPath();
+                needleCtx.moveTo(x1, y1);
+                needleCtx.lineTo(x2, y2);
+                needleCtx.stroke();
+            }
+            
+            // Draw center point
+            needleCtx.fillStyle = crosses ? '#00ff00' : '#ff4444';
+            needleCtx.globalAlpha = 0.9;
+            needleCtx.beginPath();
+            needleCtx.arc(x, y, 3, 0, 2 * Math.PI);
+            needleCtx.fill();
+            
+            // Draw the needle line
+            needleCtx.strokeStyle = crosses ? '#00ff00' : '#ff4444';
+            needleCtx.lineWidth = crosses ? 3 : 2;
+            needleCtx.globalAlpha = crosses ? 1 : 0.7;
+            
+            needleCtx.beginPath();
+            needleCtx.moveTo(x1, y1);
+            needleCtx.lineTo(x2, y2);
+            needleCtx.stroke();
+            
+            needleCtx.globalAlpha = 1;
+        }
+
+        // Check if needle crosses a line
+        function checkCrossing(centerX, centerY, angle, needleLength, lineSpacing) {
+            const spacing = lineSpacing * 100; // Scale for pixels
+            const length = needleLength * 100; // Scale for pixels
+            
+            // Calculate the y-coordinates of both needle endpoints
+            const halfLength = length / 2;
+            const y1 = centerY - halfLength * Math.sin(angle);
+            const y2 = centerY + halfLength * Math.sin(angle);
+            
+            // Get the min and max y values of the needle
+            const minY = Math.min(y1, y2);
+            const maxY = Math.max(y1, y2);
+            
+            // Check each horizontal line
+            for (let lineY = spacing / 2; lineY < needleCanvas.height; lineY += spacing) {
+                // A needle crosses a line if the line's y-coordinate is between the needle's endpoints
+                // Adding a tiny epsilon for floating point precision
+                if (lineY >= minY - 0.1 && lineY <= maxY + 0.1) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        // Drop needles
+        function dropNeedles(count) {
+            const width = needleCanvas.width;
+            const height = needleCanvas.height;
+            const needleLength = parseFloat(needleLengthSlider.value);
+            const lineSpacing = parseFloat(lineSpacingSlider.value);
+            
+            let newCrossings = 0;
+            
+            for (let i = 0; i < count; i++) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                const angle = Math.random() * Math.PI;
+                const length = needleLength * 100; // Scale for pixels
+                
+                const crosses = checkCrossing(x, y, angle, needleLength, lineSpacing);
+                
+                needles.push({ x, y, angle, length, crosses });
+                
+                if (crosses) {
+                    newCrossings++;
+                }
+                
+                // Limit number of visible needles for performance
+                // But keep counting total statistics
+                if (needles.length > 5000) {
+                    needles.shift();
+                }
+            }
+            
+            totalNeedles += count;
+            crossingNeedles += newCrossings;
+            
+            updateStatistics();
+            drawFloor();
+            updateConvergenceChart();
+        }
+
+        // Update statistics
+        function updateStatistics() {
+            document.getElementById('totalDrops').textContent = totalNeedles;
+            document.getElementById('crossingCount').textContent = crossingNeedles;
+            
+            const crossingRate = totalNeedles > 0 ? (crossingNeedles / totalNeedles) * 100 : 0;
+            document.getElementById('crossingRate').textContent = crossingRate.toFixed(1) + '%';
+            
+            // Calculate theoretical crossing rate
+            const L = parseFloat(needleLengthSlider.value);
+            const D = parseFloat(lineSpacingSlider.value);
+            const theoreticalRate = (2 * L) / (Math.PI * D) * 100;
+            document.getElementById('theoreticalRate').textContent = theoreticalRate.toFixed(1) + '%';
+            
+            // Estimate π
+            if (crossingNeedles > 0) {
+                const piEstimate = (2 * L * totalNeedles) / (D * crossingNeedles);
+                document.getElementById('piEstimate').textContent = `π ≈ ${piEstimate.toFixed(6)}`;
+                
+                const error = Math.abs(piEstimate - Math.PI) / Math.PI * 100;
+                document.getElementById('errorDisplay').textContent = `Error: ${error.toFixed(2)}%`;
+                
+                piHistory.push({
+                    needles: totalNeedles,
+                    estimate: piEstimate
+                });
+                
+                // Limit history for performance
+                if (piHistory.length > 1000) {
+                    piHistory = piHistory.filter((_, i) => i % 2 === 0 || i === piHistory.length - 1);
+                }
+            }
+        }
+
+        // Update convergence chart
+        function updateConvergenceChart() {
+            const width = convergenceCanvas.width;
+            const height = convergenceCanvas.height;
+            const padding = 40;
+            
+            // Properly clear canvas first
+            convergenceCtx.clearRect(0, 0, width, height);
+            
+            // Then fill with background
+            convergenceCtx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            convergenceCtx.fillRect(0, 0, width, height);
+            
+            if (piHistory.length < 2) return;
+            
+            // Draw axes
+            convergenceCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            convergenceCtx.lineWidth = 2;
+            convergenceCtx.beginPath();
+            convergenceCtx.moveTo(padding, height - padding);
+            convergenceCtx.lineTo(width - padding, height - padding);
+            convergenceCtx.moveTo(padding, height - padding);
+            convergenceCtx.lineTo(padding, padding);
+            convergenceCtx.stroke();
+            
+            // Draw π reference line
+            const piY = height - padding - ((Math.PI - 2.5) / 1.5) * (height - 2 * padding);
+            convergenceCtx.strokeStyle = '#FFD700';
+            convergenceCtx.lineWidth = 2;
+            convergenceCtx.setLineDash([5, 5]);
+            convergenceCtx.beginPath();
+            convergenceCtx.moveTo(padding, piY);
+            convergenceCtx.lineTo(width - padding, piY);
+            convergenceCtx.stroke();
+            convergenceCtx.setLineDash([]);
+            
+            // Label for π line
+            convergenceCtx.fillStyle = '#FFD700';
+            convergenceCtx.font = '12px Arial';
+            convergenceCtx.textAlign = 'right';
+            convergenceCtx.fillText('π = 3.14159...', width - padding - 5, piY - 5);
+            
+            // Draw estimate curve
+            convergenceCtx.strokeStyle = '#00ff00';
+            convergenceCtx.lineWidth = 3;
+            convergenceCtx.beginPath();
+            
+            const maxNeedles = piHistory[piHistory.length - 1].needles;
+            
+            piHistory.forEach((point, i) => {
+                const x = padding + (point.needles / maxNeedles) * (width - 2 * padding);
+                const y = height - padding - ((Math.min(Math.max(point.estimate, 2.5), 4) - 2.5) / 1.5) * (height - 2 * padding);
+                
+                if (i === 0) {
+                    convergenceCtx.moveTo(x, y);
+                } else {
+                    convergenceCtx.lineTo(x, y);
+                }
+            });
+            
+            convergenceCtx.stroke();
+            
+            // Draw current point
+            const lastPoint = piHistory[piHistory.length - 1];
+            const lastX = padding + (lastPoint.needles / maxNeedles) * (width - 2 * padding);
+            const lastY = height - padding - ((Math.min(Math.max(lastPoint.estimate, 2.5), 4) - 2.5) / 1.5) * (height - 2 * padding);
+            
+            convergenceCtx.fillStyle = '#00ff00';
+            convergenceCtx.beginPath();
+            convergenceCtx.arc(lastX, lastY, 5, 0, 2 * Math.PI);
+            convergenceCtx.fill();
+            
+            // Axis labels
+            convergenceCtx.fillStyle = '#fff';
+            convergenceCtx.font = '12px Arial';
+            convergenceCtx.textAlign = 'center';
+            convergenceCtx.fillText('0', padding, height - padding + 20);
+            convergenceCtx.fillText(maxNeedles.toString(), width - padding, height - padding + 20);
+            convergenceCtx.fillText('Needles', width / 2, height - 10);
+            
+            convergenceCtx.save();
+            convergenceCtx.translate(15, height / 2);
+            convergenceCtx.rotate(-Math.PI / 2);
+            convergenceCtx.fillText('π Estimate', 0, 0);
+            convergenceCtx.restore();
+        }
+
+        // Slider event listeners
+        needleLengthSlider.addEventListener('input', function() {
+            lengthValue.textContent = this.value;
+            updateStatistics();
+        });
+
+        lineSpacingSlider.addEventListener('input', function() {
+            spacingValue.textContent = this.value;
+            drawFloor();
+            updateStatistics();
+        });
+
+        dropCountSlider.addEventListener('input', function() {
+            dropValue.textContent = this.value;
+        });
+
+        // Button event listeners
+        document.getElementById('dropBtn').addEventListener('click', function() {
+            const count = parseInt(dropCountSlider.value);
+            dropNeedles(count);
+            
+            // Animate button
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 200);
+        });
+
+        document.getElementById('animateBtn').addEventListener('click', function() {
+            if (isAnimating) {
+                isAnimating = false;
+                this.textContent = 'Auto Drop';
+                if (animationId) {
+                    clearInterval(animationId);
+                }
+            } else {
+                isAnimating = true;
+                this.textContent = 'Stop Auto';
+                
+                animationId = setInterval(() => {
+                    dropNeedles(10);
+                }, animationSpeed);
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', function() {
+            totalNeedles = 0;
+            crossingNeedles = 0;
+            piHistory = [];
+            needles = [];
+            
+            if (isAnimating) {
+                isAnimating = false;
+                document.getElementById('animateBtn').textContent = 'Auto Drop';
+                if (animationId) {
+                    clearInterval(animationId);
+                }
+            }
+            
+            updateStatistics();
+            drawFloor();
+            updateConvergenceChart();
+            
+            document.getElementById('piEstimate').textContent = 'π ≈ ---';
+            document.getElementById('errorDisplay').textContent = 'Error: ---';
+            
+            // Animate button
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 200);
+        });
+
+        // Click to drop single needle at position
+        needleCanvas.addEventListener('click', function(e) {
+            const rect = needleCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const angle = Math.random() * Math.PI;
+            const needleLength = parseFloat(needleLengthSlider.value);
+            const lineSpacing = parseFloat(lineSpacingSlider.value);
+            const length = needleLength * 100;
+            
+            const crosses = checkCrossing(x, y, angle, needleLength, lineSpacing);
+            
+            needles.push({ x, y, angle, length, crosses });
+            
+            totalNeedles++;
+            if (crosses) {
+                crossingNeedles++;
+            }
+            
+            updateStatistics();
+            drawFloor();
+            updateConvergenceChart();
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            setupCanvases();
+            drawFloor();
+            updateConvergenceChart();
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setupCanvases();
+            drawFloor();
+            updateStatistics();
+            
+            // Position slider values
+            [needleLengthSlider, lineSpacingSlider, dropCountSlider].forEach(slider => {
+                slider.dispatchEvent(new Event('input'));
+            });
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                document.getElementById('dropBtn').click();
+            } else if (e.key === 'a' || e.key === 'A') {
+                e.preventDefault();
+                document.getElementById('animateBtn').click();
+            } else if (e.key === 'c' || e.key === 'C') {
+                e.preventDefault();
+                document.getElementById('clearBtn').click();
+            }
+        });
+
+        // Add some initial needles for visual appeal
+        setTimeout(() => {
+            dropNeedles(50);
+        }, 500);
+    </script>
+</body>
+</html>

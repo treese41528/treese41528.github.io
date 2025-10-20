@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inverse CDF Transform Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        select, button, input[type="range"] {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            cursor: pointer;
+        }
+
+        button {
+            background: #4CAF50;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .computation-display {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .formula {
+            font-size: 1.3em;
+            color: #4CAF50;
+            margin-bottom: 15px;
+            font-family: monospace;
+        }
+
+        .calculation {
+            font-size: 1.1em;
+            color: #FFC107;
+            font-family: monospace;
+            line-height: 1.8;
+        }
+
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .chart-title {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        canvas {
+            width: 100%;
+            height: 350px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 5px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 768px) {
+            .charts {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Inverse CDF Transform Visualization</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Distribution</label>
+                <select id="distribution">
+                    <option value="exponential">Exponential</option>
+                    <option value="normal">Normal (Gaussian)</option>
+                    <option value="logistic">Logistic</option>
+                    <option value="pareto">Pareto (α=3)</option>
+                    <option value="cauchy">Cauchy</option>
+                    <option value="gamma">Gamma (k=2)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Speed</label>
+                <input type="range" id="speed" min="0.1" max="5" value="0.5" step="0.1">
+            </div>
+            <div class="control-group">
+                <label>Samples</label>
+                <select id="samples">
+                    <option value="500">500</option>
+                    <option value="1000" selected>1000</option>
+                    <option value="2000">2000</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>&nbsp;</label>
+                <button id="startBtn">Start/Reset</button>
+            </div>
+            <div class="control-group">
+                <label>&nbsp;</label>
+                <button id="pauseBtn">Pause/Resume</button>
+            </div>
+        </div>
+
+        <div class="computation-display">
+            <div class="formula" id="formula">Select distribution and click Start</div>
+            <div class="calculation" id="calculation">Computation will appear here...</div>
+        </div>
+
+        <div class="charts">
+            <div class="chart-container">
+                <h3 class="chart-title">Uniform(0,1) Input</h3>
+                <canvas id="uniformChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title" id="outputTitle">Transformed Output</h3>
+                <canvas id="outputChart"></canvas>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Samples Generated</div>
+                <div class="stat-value" id="sampleCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Current U</div>
+                <div class="stat-value" id="currentU">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Current X</div>
+                <div class="stat-value" id="currentX">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Mean</div>
+                <div class="stat-value" id="mean">-</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let uniformData = [];
+        let transformedData = [];
+        let currentIndex = 0;
+        let isRunning = false;
+        let isPaused = false;
+        let animationFrame = null;
+
+        // Get canvas contexts
+        const uniformCanvas = document.getElementById('uniformChart');
+        const outputCanvas = document.getElementById('outputChart');
+        const uniformCtx = uniformCanvas.getContext('2d');
+        const outputCtx = outputCanvas.getContext('2d');
+
+        // Distribution settings
+        const distributions = {
+            exponential: {
+                name: 'Exponential',
+                formula: 'X = -ln(1 - U)',
+                transform: u => -Math.log(1 - u),
+                range: { min: 0, max: 8 },
+                pdf: x => x >= 0 ? Math.exp(-x) : 0
+            },
+            normal: {
+                name: 'Normal (Gaussian)',
+                formula: 'X = Φ⁻¹(U)',
+                transform: u => {
+                    // Accurate inverse normal CDF approximation
+                    const a1 = -39.69683028665376;
+                    const a2 = 220.9460984245205;
+                    const a3 = -275.9285104469687;
+                    const a4 = 138.3577518672690;
+                    const a5 = -30.66479806614716;
+                    const a6 = 2.506628277459239;
+                    
+                    const b1 = -54.47609879822406;
+                    const b2 = 161.5858368580409;
+                    const b3 = -155.6989798598866;
+                    const b4 = 66.80131188771972;
+                    const b5 = -13.28068155288572;
+                    
+                    const c1 = -0.007784894002430293;
+                    const c2 = -0.3223964580411365;
+                    const c3 = -2.400758277161838;
+                    const c4 = -2.549732539343734;
+                    const c5 = 4.374664141464968;
+                    const c6 = 2.938163982698783;
+                    
+                    const d1 = 0.007784695709041462;
+                    const d2 = 0.3224671290700398;
+                    const d3 = 2.445134137142996;
+                    const d4 = 3.754408661907416;
+                    
+                    const p_low = 0.02425;
+                    const p_high = 1 - p_low;
+                    
+                    let q, r;
+                    
+                    if (u < p_low) {
+                        q = Math.sqrt(-2 * Math.log(u));
+                        return (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                               ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+                    } else if (u < p_high) {
+                        q = u - 0.5;
+                        r = q * q;
+                        return (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
+                               (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
+                    } else {
+                        q = Math.sqrt(-2 * Math.log(1 - u));
+                        return -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
+                                ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+                    }
+                },
+                range: { min: -4, max: 4 },
+                pdf: x => (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x)
+            },
+            logistic: {
+                name: 'Logistic',
+                formula: 'X = ln(U / (1 - U))',
+                transform: u => Math.log(u / (1 - u)),
+                range: { min: -10, max: 10 },
+                pdf: x => {
+                    const ex = Math.exp(-x);
+                    return ex / Math.pow(1 + ex, 2);
+                }
+            },
+            pareto: {
+                name: 'Pareto (α=3)',
+                formula: 'X = (1 - U)^(-1/3) - 1',
+                transform: u => Math.pow(1 - u, -1/3) - 1,
+                range: { min: 0, max: 5 },
+                pdf: x => x >= 0 ? 3 / Math.pow(1 + x, 4) : 0
+            },
+            cauchy: {
+                name: 'Cauchy',
+                formula: 'X = tan(π(U - 0.5))',
+                transform: u => Math.tan(Math.PI * (u - 0.5)),
+                range: { min: -10, max: 10 },
+                pdf: x => 1 / (Math.PI * (1 + x * x))
+            },
+            gamma: {
+                name: 'Gamma (k=2)',
+                formula: 'X = -ln(1-U₁) - ln(1-U₂)',
+                transform: u => {
+                    // For visualization, we'll use a single U to approximate Gamma(2,1)
+                    // In reality, Gamma(2,1) requires two uniform variables
+                    const u2 = (u * 0.618 + 0.382) % 1; // Pseudo-second uniform
+                    return -Math.log(1 - u) - Math.log(1 - u2);
+                },
+                range: { min: 0, max: 10 },
+                pdf: x => x >= 0 ? x * Math.exp(-x) : 0
+            }
+        };
+
+        // Initialize canvas sizes
+        function setupCanvases() {
+            const rect = uniformCanvas.getBoundingClientRect();
+            uniformCanvas.width = rect.width;
+            uniformCanvas.height = rect.height;
+            outputCanvas.width = rect.width;
+            outputCanvas.height = rect.height;
+        }
+
+        // Generate samples
+        function generateSamples() {
+            const n = parseInt(document.getElementById('samples').value);
+            uniformData = [];
+            transformedData = [];
+            
+            const dist = distributions[document.getElementById('distribution').value];
+            
+            for (let i = 0; i < n; i++) {
+                const u = Math.random();
+                const x = dist.transform(u);
+                uniformData.push(u);
+                transformedData.push(x);
+            }
+            
+            currentIndex = 0;
+        }
+
+        // Draw histogram with PDF overlay
+        function drawHistogram(ctx, data, range, color, showPdf = false, pdfFunc = null) {
+            const width = ctx.canvas.width;
+            const height = ctx.canvas.height;
+            const padding = 40;
+            const bins = 25;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw axes
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(padding, height - padding);
+            ctx.lineTo(width - padding, height - padding);
+            ctx.moveTo(padding, height - padding);
+            ctx.lineTo(padding, padding);
+            ctx.stroke();
+            
+            if (data.length === 0) return;
+            
+            // Create histogram
+            const binWidth = (range.max - range.min) / bins;
+            const histogram = new Array(bins).fill(0);
+            
+            data.forEach(value => {
+                const binIndex = Math.floor((value - range.min) / binWidth);
+                if (binIndex >= 0 && binIndex < bins) {
+                    histogram[binIndex]++;
+                }
+            });
+            
+            // Normalize histogram
+            const total = data.length;
+            const normalizedHist = histogram.map(count => count / (total * binWidth));
+            
+            // Find max value for scaling
+            let maxValue = Math.max(...normalizedHist);
+            
+            // Draw PDF curve if requested
+            if (showPdf && pdfFunc && data.length > 50) {
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                
+                for (let i = 0; i <= 100; i++) {
+                    const x = range.min + (i / 100) * (range.max - range.min);
+                    const y = pdfFunc(x);
+                    maxValue = Math.max(maxValue, y);
+                    
+                    const pixelX = padding + (i / 100) * (width - 2 * padding);
+                    const pixelY = height - padding - (y / maxValue) * (height - 2 * padding) * 0.9;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(pixelX, pixelY);
+                    } else {
+                        ctx.lineTo(pixelX, pixelY);
+                    }
+                }
+                ctx.stroke();
+            }
+            
+            // Draw histogram bars
+            const barWidth = (width - 2 * padding) / bins;
+            ctx.fillStyle = color;
+            
+            normalizedHist.forEach((value, i) => {
+                const barHeight = (value / maxValue) * (height - 2 * padding) * 0.9;
+                const x = padding + i * barWidth;
+                const y = height - padding - barHeight;
+                
+                ctx.fillRect(x, y, barWidth - 2, barHeight);
+            });
+            
+            // Draw labels
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(range.min.toFixed(1), padding, height - padding + 20);
+            ctx.fillText(range.max.toFixed(1), width - padding, height - padding + 20);
+            
+            // Draw current value indicator
+            if (currentIndex > 0 && currentIndex <= data.length) {
+                const currentValue = data[currentIndex - 1];
+                const x = padding + ((currentValue - range.min) / (range.max - range.min)) * (width - 2 * padding);
+                
+                ctx.strokeStyle = '#00FF00';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, height - padding);
+                ctx.lineTo(x, padding);
+                ctx.stroke();
+            }
+        }
+
+        // Show computation steps
+        function showComputation(u, x, distName) {
+            const calc = document.getElementById('calculation');
+            
+            switch(distName) {
+                case 'exponential':
+                    calc.innerHTML = `
+                        U = ${u.toFixed(6)}<br>
+                        X = -ln(1 - ${u.toFixed(6)})<br>
+                        X = -ln(${(1-u).toFixed(6)})<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+                case 'normal':
+                    calc.innerHTML = `
+                        U = ${u.toFixed(6)}<br>
+                        X = Φ⁻¹(${u.toFixed(6)})<br>
+                        Using rational approximation...<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+                case 'logistic':
+                    calc.innerHTML = `
+                        U = ${u.toFixed(6)}<br>
+                        X = ln(${u.toFixed(6)} / (1 - ${u.toFixed(6)}))<br>
+                        X = ln(${u.toFixed(6)} / ${(1-u).toFixed(6)})<br>
+                        X = ln(${(u/(1-u)).toFixed(6)})<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+                case 'pareto':
+                    calc.innerHTML = `
+                        U = ${u.toFixed(6)}<br>
+                        X = (1 - ${u.toFixed(6)})^(-1/3) - 1<br>
+                        X = ${(1-u).toFixed(6)}^(-0.333...) - 1<br>
+                        X = ${Math.pow(1-u, -1/3).toFixed(6)} - 1<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+                case 'cauchy':
+                    calc.innerHTML = `
+                        U = ${u.toFixed(6)}<br>
+                        X = tan(π(${u.toFixed(6)} - 0.5))<br>
+                        X = tan(π × ${(u-0.5).toFixed(6)})<br>
+                        X = tan(${(Math.PI*(u-0.5)).toFixed(6)})<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+                case 'gamma':
+                    const u2 = (u * 0.618 + 0.382) % 1;
+                    calc.innerHTML = `
+                        U₁ = ${u.toFixed(6)}, U₂ = ${u2.toFixed(6)}<br>
+                        X = -ln(1 - U₁) - ln(1 - U₂)<br>
+                        X = -ln(${(1-u).toFixed(6)}) - ln(${(1-u2).toFixed(6)})<br>
+                        X = ${(-Math.log(1-u)).toFixed(6)} + ${(-Math.log(1-u2)).toFixed(6)}<br>
+                        X = ${x.toFixed(6)}
+                    `;
+                    break;
+            }
+        }
+
+        // Animation variables
+        let frameCounter = 0;
+        let animationSpeed = 0.5;
+
+        // Animation loop
+        function animate() {
+            if (!isRunning || isPaused) return;
+            
+            animationSpeed = parseFloat(document.getElementById('speed').value);
+            frameCounter += animationSpeed;
+            
+            // Only update when frameCounter passes 1
+            if (frameCounter >= 1) {
+                frameCounter = 0;
+                
+                // Update current index by 1 (one sample at a time)
+                currentIndex = Math.min(currentIndex + 1, uniformData.length);
+                
+                if (currentIndex >= uniformData.length) {
+                    isRunning = false;
+                    return;
+                }
+                
+                // Get current distribution
+                const distName = document.getElementById('distribution').value;
+                const dist = distributions[distName];
+                
+                // Get visible data
+                const visibleUniform = uniformData.slice(0, currentIndex);
+                const visibleTransformed = transformedData.slice(0, currentIndex);
+                
+                // Draw histograms
+                drawHistogram(uniformCtx, visibleUniform, {min: 0, max: 1}, 'rgba(52, 152, 219, 0.7)', true, x => 1);
+                drawHistogram(outputCtx, visibleTransformed, dist.range, 'rgba(231, 76, 60, 0.7)', true, dist.pdf);
+                
+                // Update stats
+                document.getElementById('sampleCount').textContent = currentIndex;
+                if (currentIndex > 0) {
+                    const u = uniformData[currentIndex - 1];
+                    const x = transformedData[currentIndex - 1];
+                    document.getElementById('currentU').textContent = u.toFixed(4);
+                    document.getElementById('currentX').textContent = x.toFixed(4);
+                    
+                    const mean = visibleTransformed.reduce((a, b) => a + b, 0) / visibleTransformed.length;
+                    document.getElementById('mean').textContent = mean.toFixed(4);
+                    
+                    showComputation(u, x, distName);
+                }
+            }
+            
+            animationFrame = requestAnimationFrame(animate);
+        }
+
+        // Start/Reset button
+        document.getElementById('startBtn').addEventListener('click', () => {
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+            }
+            
+            const distName = document.getElementById('distribution').value;
+            const dist = distributions[distName];
+            
+            document.getElementById('formula').textContent = dist.formula;
+            document.getElementById('outputTitle').textContent = dist.name + ' Distribution';
+            
+            generateSamples();
+            isRunning = true;
+            isPaused = false;
+            frameCounter = 0;
+            animate();
+        });
+
+        // Pause/Resume button
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            isPaused = !isPaused;
+            if (!isPaused && isRunning) {
+                animate();
+            }
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setupCanvases();
+        });
+
+        window.addEventListener('resize', () => {
+            setupCanvases();
+        });
+    </script>
+</body>
+</html>
