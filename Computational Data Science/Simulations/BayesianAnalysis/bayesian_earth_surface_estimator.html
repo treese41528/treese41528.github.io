@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bayesian Earth Surface Estimator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 25px;
+            padding: 40px;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 3em;
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5, #00d2ff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s ease infinite;
+        }
+
+        @keyframes shine {
+            to {
+                background-position: 200% center;
+            }
+        }
+
+        .info-panel {
+            background: rgba(0, 210, 255, 0.1);
+            border: 1px solid rgba(0, 210, 255, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .info-panel p {
+            font-size: 1.1em;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .chart-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #00d2ff, transparent, #3a7bd5);
+            border-radius: 15px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: -1;
+        }
+
+        .chart-container:hover::before {
+            opacity: 0.3;
+        }
+
+        .chart-title {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #00d2ff;
+        }
+
+        canvas {
+            width: 100%;
+            height: 350px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        #globeContainer {
+            width: 100%;
+            height: 350px;
+            position: relative;
+            cursor: grab;
+        }
+
+        #globeContainer:active {
+            cursor: grabbing;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .slider-container {
+            position: relative;
+            width: 300px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #00d2ff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+            transition: all 0.3s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.8);
+        }
+
+        .slider-value {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #00d2ff;
+            color: #000;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        input[type="range"]:hover + .slider-value,
+        input[type="range"]:focus + .slider-value {
+            opacity: 1;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.3s, height 0.3s;
+        }
+
+        button:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        #updateBtn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        #updateBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
+        }
+
+        #resetBtn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
+            color: white;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        #resetBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 210, 255, 0.2);
+            border-color: rgba(0, 210, 255, 0.5);
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 5px;
+        }
+
+        .formula-display {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 10px;
+            padding: 25px;
+            margin: 30px 0;
+            font-family: 'Courier New', monospace;
+            border: 1px solid rgba(0, 210, 255, 0.3);
+        }
+
+        .formula-title {
+            color: #00d2ff;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .formula-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            text-align: center;
+        }
+
+        .formula-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .formula-label {
+            color: #ffd700;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .formula-value {
+            color: #4CAF50;
+            font-size: 1.3em;
+            font-weight: bold;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #00d2ff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .control-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bayesian Earth Surface Estimator</h1>
+        
+        <div class="info-panel">
+            <p>Explore how Bayesian inference can estimate the proportion of Earth's surface covered by land vs water. Each random point updates our belief using the Beta distribution as a conjugate prior.</p>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3 class="chart-title">Prior Distribution</h3>
+                <canvas id="priorChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Interactive Globe</h3>
+                <div id="globeContainer"></div>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Posterior Distribution</h3>
+                <canvas id="posteriorChart"></canvas>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="control-group">
+                    <label>Number of Points</label>
+                    <div class="slider-container">
+                        <input type="range" id="pointsSlider" min="1" max="5000" value="100">
+                        <div class="slider-value" id="sliderValue">100</div>
+                    </div>
+                </div>
+                <button id="updateBtn">Sample & Update</button>
+                <button id="resetBtn">Reset Prior</button>
+            </div>
+        </div>
+
+        <div class="formula-display">
+            <div class="formula-title">Bayesian Update Parameters</div>
+            <div class="formula-content">
+                <div class="formula-item">
+                    <div class="formula-label">Prior α (water)</div>
+                    <div class="formula-value" id="priorAlpha">1</div>
+                </div>
+                <div class="formula-item">
+                    <div class="formula-label">Prior β (land)</div>
+                    <div class="formula-value" id="priorBeta">1</div>
+                </div>
+                <div class="formula-item">
+                    <div class="formula-label">Water Points</div>
+                    <div class="formula-value" id="waterPoints">0</div>
+                </div>
+                <div class="formula-item">
+                    <div class="formula-label">Land Points</div>
+                    <div class="formula-value" id="landPoints">0</div>
+                </div>
+                <div class="formula-item">
+                    <div class="formula-label">Posterior α (water)</div>
+                    <div class="formula-value" id="postAlpha">1</div>
+                </div>
+                <div class="formula-item">
+                    <div class="formula-label">Posterior β (land)</div>
+                    <div class="formula-value" id="postBeta">1</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="waterProp">50.0%</div>
+                <div class="stat-label">Water Coverage</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="landProp">50.0%</div>
+                <div class="stat-label">Land Coverage</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalSamples">0</div>
+                <div class="stat-label">Total Samples</div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3-array@3"></script> 
+    <script src="https://cdn.jsdelivr.net/npm/d3-geo@3"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3-geo@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+    <script>
+        // Global variables
+        let priorAlpha = 1;  // α for water
+        let priorBeta = 1;   // β for land
+        let currentWaterPoints = 0;
+        let currentLandPoints = 0;
+        let totalSamples = 0;
+        let sampledPoints = [];
+        let controls;            // so animate() can see it
+
+        // Three.js variables
+        let scene, camera, renderer, globe, pointsGroup;
+        let isRotating = true;
+        let mouseX = 0, mouseY = 0;
+        let targetRotationX = 0, targetRotationY = 0;
+        let landTexture;
+
+        // Canvas contexts
+        const priorCanvas = document.getElementById('priorChart');
+        const posteriorCanvas = document.getElementById('posteriorChart');
+        const priorCtx = priorCanvas.getContext('2d');
+        const posteriorCtx = posteriorCanvas.getContext('2d');
+
+
+        /* -------- globe-aware land mask -------- */
+        let landPolygons = null;
+
+        // load 110 m Natural-Earth land once
+        fetch("https://unpkg.com/world-atlas@2/land-110m.json")
+        .then(r => r.json())
+        .then(topo => {
+            landPolygons = topojson.feature(topo, topo.objects.land).features;
+        });
+        async function ensurePolygonsLoaded() {
+            if (landPolygons) return;
+            // poll every 50 ms; tiny delay only on first load
+            await new Promise(res => {
+                const t = setInterval(() => {
+                    if (landPolygons) { clearInterval(t); res(); }
+                }, 50);
+            });
+        }
+
+        function isLand(lat, lon) {
+            if (!landPolygons) return false;          // safety net until data arrives
+            // d3-geo uses [lon, lat] order, works on the sphere (no projection!)
+            return landPolygons.some(poly => d3.geoContains(poly, [lon, lat]));
+        }
+
+    
+
+        // Initialize Three.js globe
+        function initGlobe() {
+            const container = document.getElementById('globeContainer');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+
+            /* ---------- 1. Scene & renderer ---------- */
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x0d1b2a,   /* deep blue-grey that matches the card */
+                                    20, 60);     /* starts far away, never hides the globe */
+
+
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+            camera.position.z = 3;    
+
+            renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            /* Keep the clear‐colour the SAME as the fog so the vignette is gone */
+            renderer.setClearColor(0x0d1b2a, 1);
+
+            /* Tone-mapping: more forgiving than ACES and easier to brighten */
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            renderer.toneMappingExposure = 1.8;    // crank this up for a brighter planet
+            renderer.outputEncoding = THREE.sRGBEncoding;
+
+
+            container.appendChild(renderer.domElement);
+
+
+            /* ---------- 2. Lighting (brighter!) ---------- */
+            const hemi = new THREE.HemisphereLight(0xffffff, 0x203a43, 1.0);
+            scene.add(hemi);
+
+            const sun  = new THREE.DirectionalLight(0xffffff, 2.2);  // was 1.8
+            sun.position.set(5, 3, 5);
+            sun.castShadow = false; 
+            scene.add(new THREE.AmbientLight(0x0d1b2a, 0.15));
+            scene.add(sun);
+
+            /* ---------- 3. Globe (once, at startup) ---------- */
+            const texLoader = new THREE.TextureLoader();
+            const globeMat  = new THREE.MeshStandardMaterial({
+            roughness : 1,
+            metalness : 0,
+            map       : texLoader.load('https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/earth_8k.jpg', t => {
+                            t.encoding   = THREE.sRGBEncoding;
+                            t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+                        })
+            });
+
+            globe = new THREE.Mesh(new THREE.SphereGeometry(1, 192, 192), globeMat);
+            // Align texture seam/orientation with geographic math
+            globe.rotation.y = -Math.PI / 2;  // shift equirectangular so lon=0 faces camera
+
+            scene.add(globe);
+
+
+
+            // ------- inside initGlobe(), just below container.appendChild(renderer.domElement)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping  = true;   // smooth drag
+            controls.dampingFactor  = 0.08;
+            controls.enablePan      = false;  // keep globe centered
+            controls.minDistance    = 1.5;    // zoom limits
+            controls.maxDistance    = 5;
+            controls.update();
+
+            // pause your auto-spin while the user is interacting
+            controls.addEventListener('start', () => { isRotating = false; });
+            controls.addEventListener('end',   () => { isRotating = true;  });
+
+
+            // Points group for samples
+            pointsGroup = new THREE.Group();
+            scene.add(pointsGroup);
+
+            // Mouse interaction
+            container.addEventListener('mousedown', () => { isRotating = false; });
+            container.addEventListener('mouseup', () => { isRotating = true; });
+            container.addEventListener('mousemove', (e) => {
+                if (!isRotating) {
+                    const rect = container.getBoundingClientRect();
+                    mouseX = (e.clientX - rect.left) / rect.width - 0.5;
+                    mouseY = (e.clientY - rect.top) / rect.height - 0.5;
+                    targetRotationY = mouseX * Math.PI * 2;
+                    targetRotationX = mouseY * Math.PI;
+                }
+            });
+
+            animate();
+        }
+
+        function animate() {
+            if (controls) controls.update();
+            requestAnimationFrame(animate);
+
+            if (isRotating) {
+                globe.rotation.y += 0.002;
+                if (pointsGroup) pointsGroup.rotation.y += 0.002;
+            } else {
+                globe.rotation.y += (targetRotationY - globe.rotation.y) * 0.1;
+                globe.rotation.x += (targetRotationX - globe.rotation.x) * 0.1;
+                if (pointsGroup) {
+                    pointsGroup.rotation.y = globe.rotation.y;
+                    pointsGroup.rotation.x = globe.rotation.x;
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+
+        function llToXYZ(latDeg, lonDeg, r=1.02) {
+            const φ = THREE.MathUtils.degToRad(latDeg);   // latitude
+            const λ = THREE.MathUtils.degToRad(lonDeg);   // longitude (east positive)
+            return new THREE.Vector3(
+                r * Math.cos(φ) * Math.cos(λ),
+                r * Math.sin(φ),
+                r * Math.cos(φ) * Math.sin(λ)
+            );
+        }
+
+        // define once (top-level)
+        const DOT_GEOM  = new THREE.SphereGeometry(0.015, 8, 8);
+        const LAND_MAT  = new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 1, metalness: 0 });
+        const WATER_MAT = new THREE.MeshStandardMaterial({ color: 0x2196F3, roughness: 1, metalness: 0 });
+
+        function addPointsToGlobeInstanced() {
+        // clear
+        while (pointsGroup.children.length) pointsGroup.remove(pointsGroup.children[0]);
+
+        const landPts  = [];
+        const waterPts = [];
+        for (const p of sampledPoints) (p.isLand ? landPts : waterPts).push(p);
+
+        const landIM  = new THREE.InstancedMesh(DOT_GEOM,  LAND_MAT,  landPts.length);
+        const waterIM = new THREE.InstancedMesh(DOT_GEOM, WATER_MAT, waterPts.length);
+
+        // r128: bounding box of InstancedMesh isn’t expanded by instances, so culling drops them.
+        landIM.frustumCulled  = false;
+        waterIM.frustumCulled = false;
+
+        const m = new THREE.Matrix4();
+
+        for (let i = 0; i < landPts.length; i++) {
+            const p = landPts[i];
+            const pos = llToXYZ(p.lat, -p.lon, 1.02);   // keep your -lon fix
+            m.makeTranslation(pos.x, pos.y, pos.z);
+            landIM.setMatrixAt(i, m);
+        }
+        landIM.instanceMatrix.needsUpdate = true;
+
+        for (let i = 0; i < waterPts.length; i++) {
+            const p = waterPts[i];
+            const pos = llToXYZ(p.lat, -p.lon, 1.02);
+            m.makeTranslation(pos.x, pos.y, pos.z);
+            waterIM.setMatrixAt(i, m);
+        }
+        waterIM.instanceMatrix.needsUpdate = true;
+
+        pointsGroup.add(landIM, waterIM);
+        }
+
+        function addPointsToGlobe() {
+        while (pointsGroup.children.length) pointsGroup.remove(pointsGroup.children[0]);
+        sampledPoints.forEach(p => {
+            const dot = new THREE.Mesh(DOT_GEOM, p.isLand ? LAND_MAT : WATER_MAT);
+            dot.position.copy(llToXYZ(p.lat, -p.lon, 1.02));
+            pointsGroup.add(dot);
+        });
+        }
+
+
+        // Beta distribution PDF
+        function betaPDF(x, alpha, beta) {
+            if (alpha <= 0 || beta <= 0) return 0;
+            
+            // For very large values, use normal approximation
+            if (alpha > 100 || beta > 100) {
+                const mean = alpha / (alpha + beta);
+                const variance = (alpha * beta) / ((alpha + beta) * (alpha + beta) * (alpha + beta + 1));
+                const std = Math.sqrt(variance);
+                return (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * Math.pow((x - mean) / std, 2));
+            }
+            
+            try {
+                const B = Math.exp(logBeta(alpha, beta));
+                return Math.pow(x, alpha - 1) * Math.pow(1 - x, beta - 1) / B;
+            } catch (e) {
+                return 0;
+            }
+        }
+
+        function logBeta(a, b) {
+            return logGamma(a) + logGamma(b) - logGamma(a + b);
+        }
+
+        function logGamma(z) {
+            if (z < 0.5) {
+                return Math.log(Math.PI) - Math.log(Math.sin(Math.PI * z)) - logGamma(1 - z);
+            }
+            
+            const g = 7;
+            const C = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+                      771.32342877765313, -176.61502916214059, 12.507343278686905,
+                      -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+            
+            z -= 1;
+            let x = C[0];
+            for (let i = 1; i < g + 2; i++) {
+                x += C[i] / (z + i);
+            }
+            const t = z + g + 0.5;
+            
+            return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+        }
+
+        // Draw distribution chart
+        function drawDistribution(ctx, alpha, beta, color, label) {
+            const width = ctx.canvas.width;
+            const height = ctx.canvas.height;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw axes
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(40, height - 40);
+            ctx.lineTo(width - 40, height - 40);
+            ctx.moveTo(40, height - 40);
+            ctx.lineTo(40, 40);
+            ctx.stroke();
+            
+            if (alpha > 0 && beta > 0) {
+                const points = [];
+                const steps = 200;
+                let maxY = 0;
+                
+                // Calculate points for range [0.5, 1]
+                for (let i = 0; i <= steps; i++) {
+                    const x = 0.5 + (i / steps) * 0.5;
+                    const y = betaPDF(x, alpha, beta) / 0.5;
+                    
+                    if (isFinite(y) && !isNaN(y)) {
+                        points.push({ x, y });
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+                
+                if (points.length > 0 && maxY > 0) {
+                    // Draw curve
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    
+                    points.forEach((point, i) => {
+                        const px = 40 + (point.x - 0.5) * 2 * (width - 80);
+                        const py = height - 40 - (point.y / maxY) * (height - 80) * 0.8;
+                        
+                        if (i === 0) {
+                            ctx.moveTo(px, py);
+                        } else {
+                            ctx.lineTo(px, py);
+                        }
+                    });
+                    
+                    ctx.stroke();
+                    
+                    // Fill under curve
+                    ctx.lineTo(width - 40, height - 40);
+                    ctx.lineTo(40, height - 40);
+                    ctx.closePath();
+                    ctx.fillStyle = color.replace('rgb', 'rgba').replace(')', ', 0.2)');
+                    ctx.fill();
+                    
+                    // Mean line
+                    const mean = beta / (alpha + beta);
+                    const meanX = 40 + (mean - 0.5) * 2 * (width - 80);
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(meanX, 40);
+                    ctx.lineTo(meanX, height - 40);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = 'bold 14px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`μ = ${mean.toFixed(3)}`, meanX, 35);
+                }
+            }
+            
+            // Labels
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('0.5', 40, height - 20);
+            ctx.fillText('1.0', width - 40, height - 20);
+            ctx.fillText('Water ← Proportion → Land', width / 2, height - 10);
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(label, width / 2, 25);
+        }
+
+        // Setup canvas sizes
+        function setupCanvases() {
+            [priorCanvas, posteriorCanvas].forEach(canvas => {
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            });
+        }
+
+        // Generate random points
+        async function generateRandomPoints(n) {
+            await ensurePolygonsLoaded(); 
+            const points = [];
+            currentWaterPoints = 0;
+            currentLandPoints = 0;
+            
+            for (let i = 0; i < n; i++) {
+                // CORRECT uniform sampling on sphere (matching the Dash app)
+                const u = Math.random() * 2 - 1;  // Random value between -1 and 1
+                const lat = Math.asin(u) * 180 / Math.PI;  // This gives uniform distribution
+                const lon = Math.random() * 360 - 180;  // Random longitude -180 to 180
+                
+                const isLandPoint = isLand(lat, lon);
+                
+                if (isLandPoint) {
+                    currentLandPoints++;
+                } else {
+                    currentWaterPoints++;
+                }
+                
+                points.push({
+                    lat: lat,
+                    lon: lon,
+                    isLand: isLandPoint
+                });
+            }
+            
+            return points;
+        }
+
+        // Update displays
+        function updateDisplays() {
+            // Update formula display
+            document.getElementById('priorAlpha').textContent = priorAlpha - currentWaterPoints;
+            document.getElementById('priorBeta').textContent = priorBeta - currentLandPoints;
+            document.getElementById('waterPoints').textContent = currentWaterPoints;
+            document.getElementById('landPoints').textContent = currentLandPoints;
+            document.getElementById('postAlpha').textContent = priorAlpha;
+            document.getElementById('postBeta').textContent = priorBeta;
+            
+            // Update statistics - WATER proportion is α/(α+β)
+            const waterProp = priorAlpha / (priorAlpha + priorBeta);
+            const landProp = priorBeta / (priorAlpha + priorBeta);
+            
+            document.getElementById('waterProp').textContent = (waterProp * 100).toFixed(1) + '%';
+            document.getElementById('landProp').textContent = (landProp * 100).toFixed(1) + '%';
+            document.getElementById('totalSamples').textContent = totalSamples;
+            
+            // Draw distributions
+            const priorA = Math.max(1, priorAlpha - currentWaterPoints);
+            const priorB = Math.max(1, priorBeta - currentLandPoints);
+            
+            drawDistribution(priorCtx, priorA, priorB, 'rgb(231, 76, 60)', 'Prior Distribution');
+            drawDistribution(posteriorCtx, priorAlpha, priorBeta, 'rgb(46, 204, 113)', 'Posterior Distribution');
+        }
+
+        // Slider functionality
+        const slider = document.getElementById('pointsSlider');
+        const sliderValue = document.getElementById('sliderValue');
+        
+        slider.addEventListener('input', function() {
+            sliderValue.textContent = this.value;
+            const percent = (this.value - this.min) / (this.max - this.min);
+            sliderValue.style.left = `calc(${percent * 100}% - ${sliderValue.offsetWidth / 2}px)`;
+        });
+
+        // Update button
+        document.getElementById('updateBtn').addEventListener('click', async function() {
+            const nPoints = parseInt(slider.value);
+            
+            // Add loading state
+            this.innerHTML = '<span class="loading"></span> Sampling...';
+            this.disabled = true;
+            
+            setTimeout(async () => {
+                // Generate new points
+                const newPoints = await generateRandomPoints(nPoints);
+                
+                // Add new points to the running list
+                sampledPoints = sampledPoints.concat(newPoints);
+                
+                // Update prior with new data
+                priorAlpha += currentWaterPoints;
+                priorBeta += currentLandPoints;
+                totalSamples += nPoints;
+                
+                // Add all points to globe
+                addPointsToGlobe();
+                
+                // Update all displays
+                updateDisplays();
+                
+                // Restore button
+                this.innerHTML = 'Sample & Update';
+                this.disabled = false;
+                
+                // Animate the update
+                animateUpdate();
+            }, 300);
+        });
+
+        // Reset button
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            priorAlpha = 1;
+            priorBeta = 1;
+            currentWaterPoints = 0;
+            currentLandPoints = 0;
+            totalSamples = 0;
+            sampledPoints = [];
+            
+            // Clear globe points
+            while(pointsGroup.children.length > 0) {
+                pointsGroup.remove(pointsGroup.children[0]);
+            }
+            
+            updateDisplays();
+            
+            // Add reset animation
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 200);
+        });
+
+        // Animate update effect
+        function animateUpdate() {
+            const cards = document.querySelectorAll('.stat-card, .formula-item');
+            cards.forEach((card, index) => {
+                card.style.transform = 'scale(0.95)';
+                card.style.opacity = '0.7';
+                setTimeout(() => {
+                    card.style.transform = 'scale(1)';
+                    card.style.opacity = '1';
+                }, index * 50);
+            });
+        }
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            setupCanvases();
+            updateDisplays();
+            
+            // Update Three.js renderer
+            const container = document.getElementById('globeContainer');
+            if (container && renderer) {
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            }
+        });
+
+        // Initialize everything
+        window.addEventListener('load', () => {
+            setupCanvases();
+            initGlobe();
+            updateDisplays();
+            
+            // Set initial slider position
+            const percent = (slider.value - slider.min) / (slider.max - slider.min);
+            sliderValue.style.left = `calc(${percent * 100}% - ${sliderValue.offsetWidth / 2}px)`;
+        });
+
+        // Add expandable info panel
+        const infoPanel = document.querySelector('.info-panel');
+        infoPanel.addEventListener('click', function() {
+            const expanded = this.getAttribute('data-expanded') === 'true';
+            
+            if (!expanded) {
+                this.innerHTML = `
+                    <p>Explore how Bayesian inference can estimate the proportion of Earth's surface covered by land vs water. Each random point updates our belief using the Beta distribution as a conjugate prior.</p>
+                    <br>
+                    <p><strong>How it works:</strong></p>
+                    <p>• We start with a uniform prior Beta(1,1) over the range [0.5, 1]</p>
+                    <p>• Each sampled point is classified as land or water</p>
+                    <p>• The posterior is updated: Beta(α + water points, β + land points)</p>
+                    <p>• The true proportion is approximately 71% water, 29% land</p>
+                    <p>• Watch how our estimate converges to the true value!</p>
+                `;
+                this.setAttribute('data-expanded', 'true');
+            } else {
+                this.innerHTML = `<p>Explore how Bayesian inference can estimate the proportion of Earth's surface covered by land vs water. Each random point updates our belief using the Beta distribution as a conjugate prior.</p>`;
+                this.setAttribute('data-expanded', 'false');
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                document.getElementById('updateBtn').click();
+            } else if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                document.getElementById('resetBtn').click();
+            } else if (e.key === 'ArrowLeft') {
+                slider.value = Math.max(1, parseInt(slider.value) - 100);
+                slider.dispatchEvent(new Event('input'));
+            } else if (e.key === 'ArrowRight') {
+                slider.value = Math.min(5000, parseInt(slider.value) + 100);
+                slider.dispatchEvent(new Event('input'));
+            }
+        });
+    </script>
+</body>
+</html>
