@@ -12,367 +12,266 @@
       </iframe>
    </div>
 
-.. admonition:: Slides
+.. admonition:: Slides 📊
    :class: tip
 
-   `Download Chapter 12 slides (PPTX) <https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/slides/Chapter%2012%20ANOVA/OneWayANOVA_AC.pptx>`_
+   `Download Chapter 12 slides (PPTX) <https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/slides/
+   Chapter%2012%20ANOVA/OneWayANOVA_AC.pptx>`_
 
-
-Multiple Comparison Procedures and Family-Wise Error Rates
+Multiple Comparison Procedures
 =========================================================================
 
-After obtaining statistical significance in our analysis of variance procedure, we have determined 
-that at least one of the means are different from the rest. However, this doesn't tell us which 
-means are different, and it doesn't tell us that it's only one mean that's different from the rest—it 
-could be that all of them are different. We need to explore further after we have obtained statistical 
-significance to identify which means are different, which results in us performing what's called multiple 
-comparison procedures.
+When ANOVA leads to rejection of the null hypothesis, we conclude that at least one population mean
+is different than the others. However, this global conclusion could mean that 
+only one mean differs from the rest, that all means are completely different from each other, 
+or any intermediate scenario.
+
+To understand the specific structure of differences, we need to perform a **multiple comparison procedure**.
 
 .. admonition:: Road Map 🧭
    :class: important
 
-   • **Problem we will solve** – How to make multiple pairwise comparisons after ANOVA while controlling the overall probability of making Type I errors across all tests
+   * Understand the impact of multiple simultaneous testing on the **Family-Wise Error Rate (FWER)**.
+   * Learn the **Bonferroni correction and Tukey's method** as two major ways to control FWER. Recognize the
+     advantages and limitations of each method.
+   * Visually disply multiple comparisons results using an **underline graph**.
+   * Follow the **correct sequence of steps** to perform a complete ANOVA.
 
-   • **Tools we'll learn** – Family-wise error rate concepts, Šidák and Bonferroni corrections, Tukey's HSD method, Dunnett's method, and graphical display techniques for post-hoc comparisons
+The Multiple Testing Problem
+---------------------------------------------------------------
 
-   • **How it fits** – This completes the ANOVA procedure by providing rigorous methods to identify specific group differences while maintaining statistical control, bridging the gap between detecting overall differences and understanding the structure of those differences
-
-The Foundation: Why We Need Multiple Comparisons
-------------------------------------------------
-
-When ANOVA indicates statistical significance with a small p-value from our F-test statistic, we have rejected the null hypothesis :math:`H_0: \mu_1 = \mu_2 = \cdots = \mu_k`. This tells us that at least one of the population means is different from the others, leading to the alternative hypothesis :math:`H_a: \mu_i \neq \mu_j` for some :math:`i \neq j`.
-
-However, this global conclusion could mean several different things:
-
-- Only one pair of means differs (e.g., :math:`\mu_1 \neq \mu_2` but :math:`\mu_3 = \mu_4 = \mu_5`)
-- Multiple pairs differ but some remain equal (e.g., :math:`\mu_1 = \mu_2 \neq \mu_3 = \mu_4 \neq \mu_5`)
-- All means are completely different from each other
-- Any number of intermediate patterns
-
-To understand the specific structure of these differences, we need to perform **multiple comparison procedures**—essentially conducting a series of focused two-sample tests comparing pairs of groups.
-
-Visual Exploration Before Formal Testing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Before diving into formal statistical procedures, we should return to our graphical displays to gain initial insights:
-
-**Effects plots** display the sample means for each group without considering variability, making it easy to see which means are most separated. These plots help us identify the groups that appear most different visually.
-
-**Side-by-side boxplots** allow us to consider both the separation of means and the variability within groups, helping us identify which differences are most likely to be statistically significant when we account for sampling variability.
-
-In our coffeehouse example, the boxplots clearly showed that coffeehouses 2 and 4 had the most separated means relative to their within-group variability, suggesting these would likely be significantly different in formal testing.
-
-The Fundamental Challenge: The Multiple Testing Problem
---------------------------------------------------------
-
-The most natural approach might be to simply perform individual two-sample t-tests for every pair of groups using the pooled variance approach (since we've already established the equal variance assumption in ANOVA). However, this naive approach creates a serious **multiple testing problem**.
-
-The Mathematical Setup
+The Hypotheses
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-For :math:`k` groups, we need to perform :math:`c = \binom{k}{2} = \frac{k!}{(k-2)!2!}` different pairwise comparisons. Each comparison tests:
+The multiple comparisons procedure is equivalent to performing a hypothesis test for each  pair of groups :math:`i` and :math:`j` 
+such that :math:`i,j \in \{1, \cdots,k\}` and :math:`i < j`, using the dual hypothesis:
+
+.. math::
+   :label: MC-HT
+
+   &H_0: \mu_i - \mu_j = 0\\
+   &H_a: \mu_i - \mu_j \neq 0.
+
+The Problem of Type I Error Inflation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When performing multiple simultaneous inferences, we are concerned not only with controlling the individual 
+Type I error probability :math:`\alpha_{\text{single}}`, for each test, but also with managing the 
+**Family-Wise Error Rate (FEWR)**, :math:`\alpha_{\text{overall}}`. The FWER is essentially the probability of 
+making at least one individual Type I error.
+
+Let us denote the number of comparisons to be made as :math:`c`. The naive approach of performing
+:math:`c` different two-sample :math:`t`-procedures with no further adjustments raises the serious issue of 
+FWER inflation. To see how, suppose there are five groups requiring :math:`\binom{5}{2} = 10` pairwise comparisons
+at :math:`\alpha_{\text{single}} = 0.05` for each test. In a simplified setting where the test results are mutually independent, 
+the FWER is:
+
+.. math::
+   
+   \alpha_{\text{overall}} &=P(\text{At least one Type I error})\\
+   & = 1 - P(\text{No Type I errors})\\
+   &= 1 - \prod_{i=1}^{10} P(\text{No Type I error in the } i\text{-th test})\\
+   &= 1-(1 - 0.05)^{10} = 1 - (0.95)^{10} = 0.401
+
+The transition from the second to the thrid line above requires independence.
+The result means that we have about a 40% chance of making at least one false positive—far above our intended 5% level!
+
+General Result
+~~~~~~~~~~~~~~~~~~~~~
+
+In general, the family-wise error rate of :math:`c` independent tests is computed by:
 
 .. math::
 
-   H_0^{(j)}: \mu_i = \mu_j \quad \text{vs} \quad H_a^{(j)}: \mu_i \neq \mu_j
+   \alpha_{\text{overall}} &= P(\text{At least one false positive}) \\
+   &= 1 - P(\text{No false positives}) = 1 - (1 - \alpha_{\text{single}})^c.
 
-for all pairs :math:`i > j`, where :math:`j = 1, 2, \ldots, c`.
-
-Since we're building on ANOVA, we use the pooled variance confidence interval approach:
-
-.. math::
-
-   (\bar{X}_i - \bar{X}_j) \pm t_{\alpha/2,n-k} \sqrt{\text{MSE}\left(\frac{1}{n_i} + \frac{1}{n_j}\right)}
-
-where MSE comes from our ANOVA table and the degrees of freedom are :math:`n-k` from our variance estimate.
-
-The Problem: Type I Error Inflation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Each individual test controls Type I error at level :math:`\alpha`. If we set :math:`\alpha = 0.05` for each test, then each test has a 5% chance of making a Type I error when its null hypothesis is true. However, when we perform many tests simultaneously, the overall probability of making **at least one** Type I error becomes much larger than 5%.
-
-Let's examine this mathematically. For a concrete example, consider 5 groups requiring :math:`\binom{5}{2} = 10` pairwise comparisons. If we naively use :math:`\alpha = 0.05` for each test, what's the probability of making at least one Type I error across all 10 tests?
-
-To understand this, let's think about the complementary event. The probability of making **no** Type I errors means that all 10 tests correctly fail to reject their respective null hypotheses. If we assume the tests are independent (a simplifying assumption we'll discuss), then:
+Even with small :math:`c`, the FWER quickly grows to exceed the individual Type I error probability by a large margin.
+The issue is exacerbated by the fact that :math:`c` grows quadratically with :math:`k` as shown by the general formula:
 
 .. math::
+   c = \binom{k}{2} = \frac{k!}{(k-2)!2!} = \frac{k(k-1)}{2}.
 
-   P(\text{No Type I errors}) = P(\text{Test 1 correct}) \times P(\text{Test 2 correct}) \times \cdots \times P(\text{Test 10 correct})
+Without any adjustments addressing this issue,
+this massive inflation of Type I error rate will undermine our statistical control and lead to false discoveries.
 
-.. math::
+.. admonition:: Important Caveat: The Independence Assumption
+   :class: danger
+   
+   Note that our exploration of Type I error inflation was made under the assumption that the test results are independent.
+   This is in fact quite unrealistic since pairwise comparisons use 
+   overlapping data and share the common MSE estimate. However, this provides 
+   a useful starting point for understanding the problem.
 
-   = (1 - 0.05)^{10} = (0.95)^{10} = 0.599
-
-Therefore:
-
-.. math::
-
-   P(\text{At least one Type I error}) = 1 - 0.599 = 0.401
-
-This means we have about a 40% chance of making at least one false positive—far above our intended 5% level! This massive inflation of Type I error rate undermines our statistical control and can lead to false discoveries.
-
-Visualizing the Multiple Testing Problem
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Imagine we have two simultaneous tests, represented by their test statistic distributions under their respective null hypotheses. Each distribution has rejection regions in its tails corresponding to :math:`\alpha/2` in each tail for a two-sided test.
-
-The overall Type I error occurs when we reject at least one null hypothesis incorrectly. This happens in several scenarios:
-
-- We make a Type I error in the first test but not the second
-- We make a Type I error in the second test but not the first  
-- We make Type I errors in both tests simultaneously
-
-The total probability of "at least one error" encompasses all these scenarios and is much larger than the individual :math:`\alpha` level for any single test.
-
-Family-Wise Error Rate (FWER): The Formal Framework
-------------------------------------------------------
-
-The **family-wise error rate (FWER)** provides a rigorous framework for understanding and controlling the overall Type I error rate across multiple tests.
-
-Formal Definition
-~~~~~~~~~~~~~~~~~~
-
-The family-wise error rate is the probability of making at least one Type I error across all comparisons in a family of tests, assuming all null hypotheses in the family are true:
-
-.. math::
-
-   \text{FWER} = P\left(\bigcup_{j=1}^c \{\text{Reject } H_0^{(j)}\} \Big| \text{All } H_0^{(j)} \text{ are true}\right)
-
-This can be equivalently written as:
-
-.. math::
-
-   \text{FWER} = P(\text{At least one false positive}) = 1 - P(\text{No false positives})
-
-Independence Assumption and Its Implications
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If we assume the :math:`c` tests are statistically independent and each has Type I error rate :math:`\alpha_{\text{single}}`, then:
-
-.. math::
-
-   P(\text{No false positives}) = \prod_{j=1}^c P(\text{Test } j \text{ correct}) = (1 - \alpha_{\text{single}})^c
-
-Therefore:
-
-.. math::
-
-   \text{FWER} = 1 - (1 - \alpha_{\text{single}})^c
-
-**Important caveat**: The independence assumption is actually quite unrealistic in our setting. The pairwise comparisons use overlapping data and share the common MSE estimate, creating dependencies between the tests. However, this assumption provides a useful starting point for understanding the problem and developing solutions.
-
-The General Formula for Any Number of Comparisons
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-For :math:`k` groups requiring :math:`c = \binom{k}{2}` comparisons, if each test uses significance level :math:`\alpha_{\text{single}}`:
-
-.. math::
-
-   \text{FWER} = 1 - (1 - \alpha_{\text{single}})^c
-
-This formula reveals how quickly the family-wise error rate grows as we increase either the number of groups or the individual test significance level.
+   The adjustment methods introduced below will not require the independence assumption.
 
 Methods for Controlling FWER
 ----------------------------
 
-Several statistical methods have been developed to control the family-wise error rate. We'll examine three major approaches: the Šidák correction, the Bonferroni correction, and Tukey's HSD method.
+The Common Structure
+~~~~~~~~~~~~~~~~~~~~~~~
 
-The Šidák Correction
-~~~~~~~~~~~~~~~~~~~~
+Several statistical methods have been developed to control the family-wise error rate. We will examine two major approaches: 
+the the **Bonferroni correction** and **Tukey's HSD method**, and briefly discuss two special cases—Šidák correction
+and Dunnett's method—in the appendix. 
 
-The Šidák correction directly inverts the independence-based FWER formula to find the individual test level needed to achieve a desired overall level.
+For every method, a confidence interval equivalent to the test :eq:`MC-HT` is constructed as:
 
-**Derivation**: If we want :math:`\text{FWER} = \alpha_{\text{overall}}`, we solve:
-
-.. math::
-
-   \alpha_{\text{overall}} = 1 - (1 - \alpha_{\text{single}})^c
-
-Rearranging:
 
 .. math::
+   :label: MC-CI-common-form
 
-   (1 - \alpha_{\text{single}})^c = 1 - \alpha_{\text{overall}}
+   (\bar{X}_i - \bar{X}_j) \pm \mathbf{t^{**}} \sqrt{\text{MSE}\left(\frac{1}{n_i} + \frac{1}{n_j}\right)},
 
-Taking the :math:`c`-th root:
+where the form of :math:`\mathbf{t^{**}}` is specific to each method. All other components remain unchanged and 
+draw a close parallel with the independent two-sample confidence interval under the equal variance assumption.
 
-.. math::
+Method 1: The Bonferroni Correction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-   1 - \alpha_{\text{single}} = (1 - \alpha_{\text{overall}})^{1/c}
-
-Therefore:
-
-.. math::
-
-   \alpha_{\text{single}} = 1 - (1 - \alpha_{\text{overall}})^{1/c}
-
-**Example calculation**: For our coffeehouse study with 5 groups (:math:`c = 10` comparisons) and desired :math:`\alpha_{\text{overall}} = 0.05`:
-
-.. math::
-
-   \alpha_{\text{single}} = 1 - (1 - 0.05)^{1/10} = 1 - (0.95)^{0.1} = 1 - 0.994884 = 0.005116
-
-We would use :math:`\alpha = 0.005116` for each individual test, making our critical values much more stringent.
-
-**Verification**: Using this corrected level:
-
-.. math::
-
-   \text{FWER} = 1 - (1 - 0.005116)^{10} = 1 - (0.994884)^{10} = 1 - 0.95 = 0.05
-
-**Limitations**: The Šidák correction assumes complete independence between tests. In practice, pairwise comparisons using the same data and pooled variance estimate are correlated, making this assumption problematic.
-
-The Bonferroni Correction
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Bonferroni correction takes a different approach, using an inequality to bound the family-wise error rate rather than assuming independence.
-
-**Mathematical foundation**: The correction relies on Boole's inequality (also called the union bound):
+The Bonferroni correction bounds the indidual type I error so that it yields a family-wise error rate
+below a desired level. The correction relies on Boole's inequality (also called the union bound):
 
 .. math::
 
    P\left(\bigcup_{j=1}^c A_j\right) \leq \sum_{j=1}^c P(A_j)
 
-Applied to our context:
+.. admonition:: How does Boole's Inequality Hold?
+   :class: important
+
+   Let us examine a two-way case. Beginning with the general addition rule:
+
+   .. math::
+      P(A \cup B) = P(A) + P(B) - P(A \cap B) \leq P(A) + P(B)
+
+   which agrees with Boole's inequality with :math:`c=2`. Cases with :math:`c > 2` can be inductively reasoned.
+
+Applying the inequality to our context,
+
+.. math::
+   \alpha_{\text{overall}} &= P\left(\text{No Type I error}\right)\\
+   &=P\left(\{\text{No Type I error for Test 1}\} \cup \cdots \cup \{\text{No Type I error for Test c}\} \right)\\
+   &\leq \sum_{\ell=1}^c P(\text{No Type I error for Test } \ell) = c\alpha
+
+To ensure a target FWER of at most :math:`\alpha_{\text{overall}}`, therefore, we choose:
 
 .. math::
 
-   P\left(\bigcup_{j=1}^c \{\text{Reject } H_0^{(j)}\}\right) \leq \sum_{j=1}^c P(\text{Reject } H_0^{(j)})
+   \alpha_{\text{single}} = \frac{\alpha_{\text{overall}}}{c},
 
-If each test uses significance level :math:`\alpha_{\text{single}}`, then under the respective null hypotheses:
+and use the :math:`t`-critical value:
+
+.. math::
+   \mathbf{t^{**}} = t_{\frac{\alpha_{\text{single}}}{2}, n-k} = t_{\frac{\alpha_{\text{overall}}}{2c}, n-k}
+
+in the general confidence interval :eq:`MC-CI-common-form`. Note that independence of test results
+is not required for this approach, since Boole's inequality holds regardless of independence between events.
+
+.. admonition:: Example 💡: Bonferroni Multiple Comparisons for Coffeehouse Data
+   :class: note
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter12/coffeehouse-summary.png
+      :width: 90%
+      :align: center
+      :alt: Coffeehouse data summary
+
+   Recall the coffeehouse dataset. In the ANOVA F-test,
+   we rejected the null hypothesis that all true means are equal.
+
+   Suppose the Bonferroni correction is to be used for all confidence intervals
+   of pairwise differences, with :math:`\alpha_{\text{overall}} = 0.05`. Compute the interval for the difference between Coffeehouse 2 and
+   Coffeehouse 3.
+
+   **Key components**
+
+   * :math:`\bar{x}_2 - \bar{x}_3 = 46.66 - 40.50 = 6.16`
+   * :math:`df_E = n-k = 200-5 = 195`
+   * :math:`MSE = 99.8` from the ANOVA table (see Chapter 12.3)
+   
+   For :math:`k=5`, the number of comparisons is :math:`\binom{5}{2}=10`. 
+   Then, :math:`\alpha_{\text{single}} = \frac{0.05}{10} = 0.005`.
+
+   **Computing the critical value**
+
+   Using R,
+
+   .. code-block:: r 
+
+      qt(0.0025, df=195, lower.tail=FALSE)
+
+   gives :math:`\mathbf{t^{**}} = t_{0.005/2, 195}=2.84`.
+
+   Substituting the appropriate values into Eq :eq:`MC-CI-common-form`,
+
+   .. math::
+      6.16 \pm (2.84)\sqrt{99.8\left(\frac{1}{38} + \frac{1}{42}\right)} = (-0.1920, 12.5120)
+
+   **Conclusion**
+
+   Since the interval includes 0, we do not have enough evidence to conclude that the true mean ages of
+   Coffeehouses 2 and 3 are different at the family-wise error rate of :math:`\alpha_{\text{overall}}`
+   according to the Bonferroni correction.
+..
+   **Key advantages**:
+
+   - No independence assumption required
+   - Simple to calculate and apply
+   - Provides a true upper bound on FWER
+
+   **Key disadvantages**:
+
+   - More conservative than Šidák correction
+   - Can be overly restrictive with many comparisons
+   - Uses an inequality rather than an equality, potentially wasting statistical power
+
+Method 2: Tukey's Honestly Significant Difference (HSD) Method
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The theoretical foundation of Tukey's method rests on the distribution of the **statistic for the largest difference** among all possible 
+pairwise comparisons, :math:`\max_i \bar{X} - \min_i\bar{X}_i`. When the group sizes are balanced and commonly denoted as :math:`n`, the statistic
 
 .. math::
 
-   \text{FWER} \leq c \times \alpha_{\text{single}}
+   Q = \frac{\max_i \bar{X}_i - \min_i \bar{X}_i}{\sqrt{MSE/n}}
 
-**The Bonferroni correction**: To ensure :math:`\text{FWER} \leq \alpha_{\text{overall}}`, we set:
+is called the **studentized range statistic** and follows the **studentized range distribution**, which is determined by two parameters, 
+:math:`k` and :math:`n-k`.
 
-.. math::
-
-   \alpha_{\text{single}} = \frac{\alpha_{\text{overall}}}{c}
-
-**Example calculation**: For 10 comparisons with desired :math:`\alpha_{\text{overall}} = 0.05`:
-
-.. math::
-
-   \alpha_{\text{single}} = \frac{0.05}{10} = 0.005
-
-Notice this is slightly more conservative than the Šidák correction (0.005 vs 0.005116).
-
-**Key advantages**:
-
-- No independence assumption required
-- Simple to calculate and apply
-- Provides a true upper bound on FWER
-
-**Key disadvantages**:
-
-- More conservative than Šidák correction
-- Can be overly restrictive with many comparisons
-- Uses an inequality rather than an equality, potentially wasting statistical power
-
-Why the Inequality Matters
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Bonferroni correction uses an upper bound rather than the exact FWER. To see why this creates conservatism, consider the inclusion-exclusion principle for the union of events:
+We use the distribution of :math:`Q` to compute the critical value for all comparisons since
+if we can identify a wide enough interval for the *largest* difference, then we are safe with all other pairwise comparisons.
+The critical value used for Tukey's HSD is:
 
 .. math::
 
-   P(A_1 \cup A_2) = P(A_1) + P(A_2) - P(A_1 \cap A_2)
+   \mathbf{t^{**}} = \frac{q_{\alpha,k,n-k}}{\sqrt{2}},
 
-The Bonferroni bound ignores the negative intersection term :math:`P(A_1 \cap A_2)`, which represents the probability of making Type I errors in multiple tests simultaneously. Since this intersection probability is always non-negative, the bound overestimates the true FWER.
+where :math:`q_{\alpha,k,n-k}` is the :math:`(1-\alpha)`-quantile of the studentized range distribution with 
+:math:`k` groups and :math:`n-k` degrees of freedom.
 
-For more than two events, the inclusion-exclusion principle involves alternating sums of increasingly complex intersection terms. The Bonferroni bound uses only the first (positive) terms, making it increasingly conservative as the number of comparisons grows.
+Performing Tukey's Method on R
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Conservative Nature and Power Implications
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+**With Summary Statistics**
 
-Both Šidák and Bonferroni corrections are **conservative**—they control the FWER at or below the desired level, often well below it. This conservatism comes at the cost of reduced statistical power (increased probability of Type II errors).
-
-When we make the significance level more stringent for each comparison (from 0.05 to 0.005, for example), we make it more difficult to reject individual null hypotheses. This reduces our ability to detect true differences that actually exist in the population.
-
-As the number of comparisons increases, these methods become increasingly restrictive. For example, with 15 groups requiring 105 pairwise comparisons, the Bonferroni correction would use :math:`\alpha_{\text{single}} = 0.05/105 ≈ 0.0005` for each test—an extremely stringent criterion that would miss many real differences.
-
-Tukey's Honestly Significant Difference (HSD) Method
-----------------------------------------------------
-
-Tukey's HSD method represents a major advance in multiple comparison procedures. Instead of adjusting individual significance levels, it uses a fundamentally different approach based on the studentized range distribution.
-
-The Philosophy Behind Tukey's HSD
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Tukey's method recognizes that the pairwise comparisons in ANOVA are not independent—they all use the same pooled variance estimate (MSE) and involve overlapping group comparisons. Rather than pretending independence or using conservative bounds, Tukey's HSD explicitly accounts for this correlation structure.
-
-The key insight is to control the family-wise error rate by focusing on the **largest** difference among all possible pairwise comparisons. If we can control the probability that the largest difference exceeds a certain threshold when all null hypotheses are true, then we automatically control the FWER for all comparisons.
-
-The Studentized Range Distribution
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The theoretical foundation of Tukey's method rests on the **studentized range statistic**. Suppose we have :math:`k` independent sample means :math:`\bar{X}_1, \bar{X}_2, \ldots, \bar{X}_k` from normal populations with common variance :math:`\sigma^2`, each based on sample size :math:`n`. The studentized range statistic is:
-
-.. math::
-
-   Q = \frac{\max_i \bar{X}_i - \min_i \bar{X}_i}{\sqrt{\sigma^2/n}}
-
-When :math:`\sigma^2` is unknown and estimated by :math:`s^2` with :math:`\nu` degrees of freedom:
-
-.. math::
-
-   Q = \frac{\max_i \bar{X}_i - \min_i \bar{X}_i}{\sqrt{s^2/n}}
-
-follows the studentized range distribution with parameters :math:`k` (number of groups) and :math:`\nu` (degrees of freedom for the variance estimate).
-
-Adaptation to Unequal Sample Sizes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-In practice, we often have unequal sample sizes. The studentized range distribution theory extends to this case, where for any two groups :math:`i` and :math:`j`:
-
-.. math::
-
-   Q_{ij} = \frac{|\bar{X}_i - \bar{X}_j|}{\sqrt{\frac{1}{2}\text{MSE}\left(\frac{1}{n_i} + \frac{1}{n_j}\right)}}
-
-The factor :math:`\frac{1}{2}` appears because the studentized range distribution is constructed for the difference between the maximum and minimum of :math:`k` means, which involves a standard error of :math:`\sqrt{\sigma^2/n}`, while the difference between any two specific means has standard error :math:`\sqrt{\sigma^2(1/n_i + 1/n_j)}`. The relationship between these gives rise to the :math:`\frac{1}{2}` factor.
-
-Tukey's HSD Critical Value
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The critical value for Tukey's HSD is:
-
-.. math::
-
-   t^{**} = \frac{q_{\alpha,k,n-k}}{\sqrt{2}}
-
-where :math:`q_{\alpha,k,n-k}` is the :math:`(1-\alpha)`-quantile of the studentized range distribution with :math:`k` groups and :math:`n-k` degrees of freedom.
-
-The Confidence Interval Formula
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Tukey HSD confidence interval for the difference :math:`\mu_i - \mu_j` is:
-
-.. math::
-
-   (\bar{X}_i - \bar{X}_j) \pm \frac{q_{\alpha,k,n-k}}{\sqrt{2}} \sqrt{\text{MSE}\left(\frac{1}{n_i} + \frac{1}{n_j}\right)}
-
-This interval simultaneously controls the family-wise confidence level at :math:`1 - \alpha` for all :math:`\binom{k}{2}` pairwise comparisons.
-
-Implementation in R
-~~~~~~~~~~~~~~~~~~~
-
-**Method 1: Using confidence level**
+Calculate the critical value for ``alpha``: 
 
 .. code-block:: r
 
-   # Get critical value using confidence level
-   q_crit <- qtukey(0.95, nmeans = k, df = n-k, lower.tail = TRUE) / sqrt(2)
+   q_crit <- qtukey(alpha, nmeans = k, df = n-k, lower.tail = FALSE) / sqrt(2)
 
-**Method 2: Using significance level**
+Then for each pair :math:`(i,j)`,
 
 .. code-block:: r
 
-   # Get critical value using significance level  
-   q_crit <- qtukey(0.05, nmeans = k, df = n-k, lower.tail = FALSE) / sqrt(2)
+   diff <- x_bar_i - x_bar_j
+   se_diff <- sqrt(MSE * (1/n_i + 1/n_j))
+   margin_error <- q_crit * se_diff
+   
+   # Confidence interval
+   ci_lower <- diff - margin_error
+   ci_upper <- diff + margin_error
 
-**Complete procedure with raw data:**
+**Using Raw Data**
 
 .. code-block:: r
 
@@ -385,383 +284,316 @@ Implementation in R
    # View results
    tukey_results
 
-**Manual calculation for summary statistics:**
+..
+   The Confidence Interval Formula
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: r
+   The Tukey HSD confidence interval for the difference :math:`\mu_i - \mu_j` is:
 
-   # Calculate critical value
-   q_crit <- qtukey(0.05, nmeans = k, df = n-k, lower.tail = FALSE) / sqrt(2)
-   
-   # For each pair (i,j)
-   diff <- x_bar_i - x_bar_j
-   se_diff <- sqrt(MSE * (1/n_i + 1/n_j))
-   margin_error <- q_crit * se_diff
-   
-   # Confidence interval
-   ci_lower <- diff - margin_error
-   ci_upper <- diff + margin_error
+   .. math::
 
-Interpreting Tukey HSD Results
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      (\bar{X}_i - \bar{X}_j) \pm \frac{q_{\alpha,k,n-k}}{\sqrt{2}} \sqrt{\text{MSE}\left(\frac{1}{n_i} + \frac{1}{n_j}\right)}
 
-A confidence interval that **does not contain 0** indicates a statistically significant difference between those two groups at the family-wise level :math:`\alpha`.
+   This interval simultaneously controls the family-wise confidence level at :math:`1 - \alpha` for all :math:`\binom{k}{2}` pairwise comparisons.
 
-The R output provides several components:
 
-- **diff**: Difference in sample means (:math:`\bar{X}_i - \bar{X}_j`)
-- **lwr**: Lower bound of confidence interval
-- **upr**: Upper bound of confidence interval  
-- **p adj**: Adjusted p-value accounting for multiple comparisons
+.. admonition:: Example 💡: Tueky Multiple Comparisons for Coffeehouse Data
+   :class: note
 
-The adjusted p-values can be compared directly to :math:`\alpha` (e.g., 0.05) to determine significance, or you can examine whether 0 falls within each confidence interval.
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter12/coffeehouse-summary.png
+      :width: 90%
+      :align: center
+      :alt: Coffeehouse data summary
 
-Advantages of Tukey's HSD
-~~~~~~~~~~~~~~~~~~~~~~~~~
+   Suppose now that Tukey's HSD method is to be used for all confidence intervals
+   of pairwise differences, with :math:`\alpha_{\text{overall}} = 0.05`. Compute the interval for 
+   the difference between Coffeehouse 2 and Coffeehouse 3.
 
-1. **Exact FWER control**: For balanced designs, Tukey's HSD controls the FWER at exactly the specified level (not just an upper bound)
+   Compare the result with the Bonferroni-corrected interval. 
 
-2. **Less conservative**: Generally more powerful than Bonferroni or Šidák corrections because it accounts for the correlation structure among tests
+   **Key components**
 
-3. **No independence assumption**: The method is derived specifically for the correlated structure of pairwise comparisons using pooled variance
+   * :math:`\bar{x}_2 - \bar{x}_3 = 46.66 - 40.50 = 6.16`
+   * :math:`df_E = n-k = 200-5 = 195`
+   * :math:`MSE = 99.8` from the ANOVA table (see Chapter 12.3)
 
-4. **Optimal for all pairwise comparisons**: When the goal is to compare all possible pairs of groups, Tukey's HSD is typically the most powerful method
+   **Computing the critical value**
 
-Alternative: Dunnett's Method for Control Comparisons
--------------------------------------------------------
+   Using R,
 
-When the research design includes a **control group** and the primary interest lies in comparing each treatment to the control (rather than all pairwise comparisons), **Dunnett's method** provides a more powerful alternative.
+   .. code-block:: r 
 
-The Dunnett Setup
-~~~~~~~~~~~~~~~~~~
+      qtukey(0.05, nmeans = 5, df = 195, lower.tail = FALSE) / sqrt(2)
 
-Consider :math:`k` groups where group 1 is a control and groups 2 through :math:`k` are treatments. Instead of :math:`\binom{k}{2}` pairwise comparisons, we perform only :math:`k-1` comparisons:
+   gives :math:`\mathbf{t^{**}} = 2.75`.
 
-.. math::
+   Substituting the appropriate values into Eq :eq:`MC-CI-common-form`,
 
-   \mu_1 \text{ vs } \mu_2, \quad \mu_1 \text{ vs } \mu_3, \quad \ldots, \quad \mu_1 \text{ vs } \mu_k
+   .. math::
+      6.16 \pm (2.75)\sqrt{99.8\left(\frac{1}{38} + \frac{1}{42}\right)} = (0.0014, 12.3107)
 
-This reduction in the number of comparisons (from :math:`\binom{k}{2}` to :math:`k-1`) leads to increased statistical power for detecting differences from the control.
+   **Conclusion**
 
-Advantages of Dunnett's Method
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   Since the interval **does not** include 0, we have enough evidence to conclude that the true mean ages of
+   Coffeehouses 2 and 3 are different at the family-wise error rate of :math:`\alpha_{\text{overall}}`
+   according to the Tukey's HSD method.
 
-1. **Fewer comparisons**: :math:`k-1` instead of :math:`\binom{k}{2}`, dramatically reducing the multiple comparison penalty
+   **Why does it give a different conclusion than Bonferroni?**
 
-2. **Increased power**: More powerful for detecting treatment-vs-control differences
+   The Bonferroni correction tends to make the inference results overly conservative as :math:`c` grows by choosing
+   :math:`\alpha_{\text{singe}}` that falls well below the true requirement. When the number of comparisons 
+   is greater than a few, therefore, Tukey's HSD has higher power and is generally a better choice than Bonferroni.
 
-3. **Targeted inference**: Focuses on the scientifically relevant comparisons when a control group exists
+Bonferroni or Tukey's HSD?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-4. **Still controls FWER**: Maintains proper family-wise error control
+.. flat-table::
+   :widths: 2 4 4
 
-**Example**: With 5 groups, Tukey's HSD requires 10 comparisons while Dunnett's method requires only 4, leading to substantially less stringent critical values.
+   * -
+     - Advantage
+     - Disadvantage
 
-Implementation Considerations
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   * - **Bonferroni**
+     - * Computation is slightly simpler.
+       * It is based on :math:`t`-distribution, which we are more familiar with.
+     - * The :math:`\alpha_{\text{overall}}` is often a loose upper bound to the true FWER. Therefore, the conclusions are more conservative than necesary.
+         As the number of comparisons increases, it become increasingly restrictive with very small :math:`\alpha_{\text{single}}`.
+         True effects may not be detected effectively.
 
-Dunnett's method is not implemented in base R but is available in various packages. The theoretical development parallels Tukey's approach but uses a different multivariate distribution that accounts for the specific correlation structure among control-vs-treatment comparisons.
+   * - **Tukey's HSD**
+     - * Generally more powerful than Bonferroni.
+       * For balanced designs, Tukey's HSD controls the FWER at exactly the specified level.
+     - * Requires a slightly more advanced statistical understanding. However, Tukey's method is generally a better option than Bonferroni.
 
-.. code-block:: r
 
-   # Example using a hypothetical package
-   # install.packages("multcomp")  # or another package
-   # library(multcomp)
-   # dunnett_results <- dunnett.test(fit, control = "group1")
-
-The exact implementation details vary by package, but the conceptual approach remains the same: use a specialized distribution to set critical values that control the FWER for the specific set of control-vs-treatment comparisons.
-
-Visual Display of Multiple Comparison Results
+Interpreting Multiple Comparisons Results
 ---------------------------------------------
 
-After obtaining multiple comparison results, creating an effective visual summary helps communicate the pattern of group differences clearly and intuitively.
-
-The Underline Method: Step-by-Step Process
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The standard approach uses an "underline" notation to show which groups cannot be distinguished statistically:
-
-1. **Order groups by sample means**: Arrange groups from smallest to largest sample mean
-
-2. **Identify non-significant pairs**: From your multiple comparison results, identify all pairs that are NOT significantly different
-
-3. **Draw underlines for adjacent groups**: Start by drawing lines under groups that are adjacent in your ordering and not significantly different
-
-4. **Extend underlines when possible**: If groups A and B are connected by an underline, and B and C are connected by an underline, and A and C are also not significantly different, extend the line to cover A, B, and C
-
-5. **Interpret the grouping pattern**: Groups connected by the same underline are statistically indistinguishable from each other
-
-Visual Example 1: Simple Grouping
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Consider four groups A, B, C, D with sample means ordered as :math:`\bar{X}_A < \bar{X}_B < \bar{X}_C < \bar{X}_D`.
-
-Suppose Tukey HSD results show:
-
-- A vs B: not significant  
-- B vs C: not significant
-- C vs D: not significant
-- A vs C: significant
-- A vs D: significant  
-- B vs D: significant
-
-Visual display:
-
-.. raw:: html
-
-   <pre>
-   A ——— B ——— C ——— D
-         |_______|
-   </pre>
-
-**Interpretation**: Groups A and B form one cluster, groups C and D form another cluster, but these two clusters are significantly different from each other.
-
-Visual Example 2: Complex Overlapping Pattern
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Consider the same four groups with different significance results:
-
-- A vs B: not significant
-- B vs C: not significant  
-- C vs D: not significant
-- A vs C: not significant
-- A vs D: significant
-- B vs D: significant
-
-Visual display:
-
-.. raw:: html
-
-   <pre>
-   A ——————————— B ——— C ——— D
-   </pre>
-
-**Interpretation**: Groups A, B, and C are all statistically indistinguishable from each other, but group D is significantly different from groups A and B (though not from group C).
-
-Visual Example 3: Ambiguous Transitivity
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Sometimes the results create apparent contradictions that require careful interpretation:
-
-- A vs B: not significant
-- B vs C: significant  
-- C vs D: not significant
-- A vs C: significant
-- A vs D: not significant
-- B vs D: significant
-
-Visual display:
-
-.. raw:: html
-
-   <pre>
-   A ——— B          C ——— D
-   </pre>
-
-**Interpretation**: Groups A and B are similar; groups C and D are similar; but the statistical evidence suggests that A is more similar to D than to C, even though D and C are not significantly different. This illustrates the limitations of interpreting statistical significance as a perfect ordering—the underlying population means may have a different relationship than what our sample evidence suggests.
-
-Complete Example: Coffeehouse Analysis Revisited
-------------------------------------------------
-
-Let's work through a comprehensive multiple comparison analysis using our coffeehouse customer age data.
-
-Step 1: ANOVA Foundation
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Our previous ANOVA analysis yielded:
-
-- F-statistic = 22.14 
-- p-value ≈ 0 (highly significant)
-- MSE = 99.8
-- Error degrees of freedom: :math:`n - k = 200 - 5 = 195`
-- Between-groups degrees of freedom: :math:`k - 1 = 4`
-
-**Conclusion**: We have strong evidence that at least one coffeehouse differs in mean customer age. We proceed to multiple comparisons to identify the specific differences.
-
-Step 2: Choosing the Appropriate Method
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Since we want to compare all possible pairs of coffeehouses (no natural control group), Tukey's HSD is the appropriate method. We'll use a family-wise confidence level of 95% (:math:`\alpha = 0.05`).
-
-Step 3: Tukey HSD Implementation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: r
-
-   # Assuming we have the fitted ANOVA model
-   tukey_results <- TukeyHSD(fit, ordered = TRUE, conf.level = 0.95)
-
-The critical value calculation:
-
-.. code-block:: r
-
-   # Manual critical value calculation
-   q_crit <- qtukey(0.05, nmeans = 5, df = 195, lower.tail = FALSE) / sqrt(2)
-   # q_crit ≈ 2.83
-
-Step 4: Detailed Results Interpretation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Significant differences** (confidence intervals not containing 0):
-
-.. list-table:: Significant Comparisons
-   :header-rows: 1
-   :widths: 15 15 15 15 40
-
-   * - Comparison
-     - Difference
-     - 95% CI Lower
-     - 95% CI Upper
-     - Interpretation
-   * - 5-4
-     - 7.65
-     - 1.53
-     - 13.77
-     - CH5 customers significantly older than CH4
-   * - 1-4
-     - 12.71
-     - 6.44
-     - 18.98
-     - CH1 customers significantly older than CH4
-   * - 3-4
-     - 14.08
-     - 7.92
-     - 20.24
-     - CH3 customers significantly older than CH4
-   * - 2-4
-     - 20.24
-     - 13.93
-     - 26.55
-     - CH2 customers significantly older than CH4
-   * - 3-5
-     - 6.43
-     - 0.46
-     - 12.40
-     - CH3 customers significantly older than CH5
-   * - 2-5
-     - 12.59
-     - 6.47
-     - 18.71
-     - CH2 customers significantly older than CH5
-   * - 2-1
-     - 7.53
-     - 1.26
-     - 13.80
-     - CH2 customers significantly older than CH1
-   * - 2-3
-     - 6.16
-     - 0.0009
-     - 12.31
-     - CH2 customers significantly older than CH3 (barely)
-
-**Non-significant differences** (confidence intervals containing 0):
-
-.. list-table:: Non-Significant Comparisons
-   :header-rows: 1
-   :widths: 15 15 15 15 40
-
-   * - Comparison
-     - Difference
-     - 95% CI Lower
-     - 95% CI Upper
-     - Interpretation
-   * - 1-5
-     - 5.06
-     - -1.02
-     - 11.14
-     - No significant difference
-   * - 3-1
-     - 1.37
-     - -4.74
-     - 7.49
-     - No significant difference
-
-Step 5: Sample Mean Ordering and Visual Display
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Sample means in ascending order**:
-
-.. math::
-
-   \bar{X}_{CH4} = 26.42 < \bar{X}_{CH5} = 34.07 < \bar{X}_{CH1} = 39.13 < \bar{X}_{CH3} = 40.50 < \bar{X}_{CH2} = 46.66
-
-**Non-significant adjacent and non-adjacent pairs**: 1-5, 3-1
-
-**Visual representation**:
-
-.. raw:: html
-
-   <pre>
-   CH4    CH5 ——— CH1 ——— CH3    CH2
-   </pre>
-
-Step 6: Comprehensive Interpretation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Population mean relationships**:
-
-- **Coffeehouse 4** has the youngest customer base, significantly different from all other coffeehouses
-- **Coffeehouse 2** has the oldest customer base, significantly different from all other coffeehouses  
-- **Coffeehouses 5, 1, and 3** form an intermediate cluster where customers cannot be distinguished by age statistically, though their sample means suggest the ordering CH5 < CH1 < CH3
-
-**Statistical conclusion**: The data suggests that Coffeehouse 4 might be popular with undergraduates (younger customers) while Coffeehouse 2 might attract graduate students and faculty (older customers). Coffeehouses 5, 1, and 3 have overlapping age demographics that cannot be statistically distinguished from each other.
-
-Advanced Topics in Multiple Comparisons
----------------------------------------
-
-Controlling False Discovery Rate (FDR)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-While family-wise error rate provides strong control over Type I errors, it can be overly conservative when the number of comparisons is large. An alternative approach controls the **false discovery rate (FDR)**—the expected proportion of false discoveries among all rejected hypotheses.
-
-The FDR approach is particularly useful in exploratory research where some false positives are acceptable in exchange for increased power to detect true effects. However, for the controlled experimental settings typical in introductory statistics courses, FWER control remains the standard approach.
-
-Simultaneous Confidence Intervals
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The multiple comparison methods we've discussed provide **simultaneous confidence intervals**—sets of intervals that jointly have the specified confidence level. This means we can be 95% confident that **all** intervals simultaneously contain their respective true population differences.
-
-This simultaneity distinguishes these intervals from individual confidence intervals, each of which would have 95% confidence individually but would not maintain 95% confidence when considered together.
-
-Power Considerations in Multiple Comparisons
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The choice among multiple comparison methods involves a fundamental trade-off between Type I and Type II error control:
-
-**Most conservative** (lowest power): Bonferroni correction
-**Moderately conservative**: Šidák correction  
-**Least conservative** (highest power): Tukey's HSD (for all pairwise comparisons)
-**Most powerful** (for specific designs): Dunnett's method (for control comparisons)
-
-When planning studies, researchers should consider:
-
-- The number of planned comparisons
-- The relative costs of Type I vs Type II errors in their context
-- Whether all pairwise comparisons are scientifically meaningful
-- The availability of natural control groups
-
-Best Practices for Multiple Comparisons
----------------------------------------
-
-1. **Always perform ANOVA first** as a gatekeeper test
-2. **Only proceed with multiple comparisons** if ANOVA is significant
-3. **Choose the appropriate method** based on your research design:
+Reading the R output
+~~~~~~~~~~~~~~~~~~~~~~~
+
+A confidence interval that **does not contain 0** indicates a statistically significant difference 
+at the family-wise error rate :math:`\alpha_{\text{overall}}`.
+
+A typical  R output for a multiple comparisons procedure consists of:
+
+- ``diff``: The evaluated difference :math:`\bar{x}_{i\cdot} - \bar{x}_{j\cdot}`
+- ``lwr``: Lower bound of confidence interval
+- ``upr``: Upper bound of confidence interval  
+- ``p adj``: Adjusted :math:`p`-value accounting for multiple comparisons
+
+The adjusted :math:`p`-values can be compared directly to :math:`\alpha_{\text{overall}}` to determine significance, 
+or you can examine whether 0 falls within each confidence interval.
+
+Visually Displaying the Results
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After obtaining multiple comparison results, creating an effective visual summary helps communicate the pattern 
+of group differences clearly and intuitively.
+The standard approach uses an "underline" notation to show which groups cannot be distinguished statistically.
+To construct underline diagrams, follow the steps below:
+
+1. Arrange the groups from smallest to largest sample mean.
+2. Identify all pairs that are NOT significantly different.
+3. Draw lines under groups that are not significantly different.
+4. Interpret the grouping pattern. Groups connected by the same underline are statistically indistinguishable from each other.
+
+.. admonition:: Example 💡: Underline Diagraams
+   :class: note 
+
+   Consider four groups A, B, C, D whose observed sample means are ordered as :math:`\bar{x}_A < \bar{x}_B < \bar{x}_C < \bar{x}_D.`
+   For each case of multiple comparisons results, draw and interpret the underline diagram.
+
+   **Example 1: Simple Grouping**
+
+   - A vs B: not significant  
+   - B vs C: significant
+   - C vs D: not significant
+   - A vs C: significant
+   - A vs D: significant  
+   - B vs D: significant
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter12/underline1.png
+      :width: 50%
+      :align: center
+      :alt: Underline graph for example 1
+
+   Groups A and B form one cluster and groups C and D form another cluster. The two clusters are significantly 
+   different from each other.
+
+   **Example 2: Complex Overlapping Pattern**
+
+   - A vs B: not significant
+   - B vs C: not significant  
+   - C vs D: not significant
+   - A vs C: not significant
+   - A vs D: significant
+   - B vs D: significant
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter12/underline2.png
+      :width: 50%
+      :align: center
+      :alt: Underline graph for example 2
+
+   Groups A, B, and C are all statistically indistinguishable from each other. Groups C and D 
+   are not statistically different, either. However, Group D is significantly different from groups A and B.
+
+   **Example 3: Ambiguous Transitivity**
+
+   - A vs B: not significant
+   - B vs C: significant  
+   - C vs D: not significant
+   - A vs C: significant
+   - A vs D: not significant
+   - B vs D: significant
+
+   .. figure:: https://yjjpfnblgtrogqvcjaon.supabase.co/storage/v1/object/public/stat-350-assets/images/chapter12/underline3.png
+      :width: 50%
+      :align: center
+      :alt: Underline graph for example 3
+
+   Sometimes the results create apparent contradictions that require careful interpretation, mainly due to 
+   heavy imbalance in group sizes.
    
-   - Tukey HSD for all pairwise comparisons
-   - Dunnett's method for treatment-vs-control designs
-
-4. **Avoid Bonferroni correction** unless you have specific reasons to use it
-5. **Create visual displays** to communicate results clearly
-6. **Report both statistical significance and effect sizes**
+   Groups A and B are similar; groups C and D are similar. However, the data also suggests that A is more similar 
+   to D than to C. This illustrates the limitations of 
+   interpreting statistical significance as a perfect ordering—the underlying population means may have a different 
+   relationship than what our sample evidence suggests.
 
 The Complete ANOVA Workflow
 ---------------------------
 
-1. **Exploratory analysis**: Side-by-side boxplots, effects plots
-2. **Check assumptions**: Independence, normality, equal variances
-3. **Perform ANOVA**: Test for any group differences
-4. **If ANOVA significant**: Proceed to multiple comparisons
-5. **Apply appropriate method**: Usually Tukey HSD
-6. **Create visual display**: Show pattern of group differences
-7. **Interpret results**: Identify which groups differ and by how much
+An ANOVA procedure requires a series of steps to be performed in the correct order. The list below summarizes
+the complete ANOVA workflow:
+
+1. Perform exploratory data analysis. Use side-by-side boxplots.
+2. Graphically and numerically check assumptions of  independence, normality, and equal variances.
+3. Construct the ANOVA table. Perform the ANOVA :math:`F`-test for any group differences.
+4. If the result of Step 3 is statistically significant, proceed to multiple comparisons.
+5. Apply the appropriate multiple comparisons method.
+6. Create an underline diagram and interpret the results.
+
+
+.. admonition:: Example 💡: Comnplete Tukey's HSD Multiple Comparisons ☕️
+   :class: note
+
+   Let us continue with the coffeehouse example. Disregarding the Bonferroni example, 
+   suppose the multiple comparison procedure is to be performed using Tukey's HSD. This is in fact more appropriate 
+   since with :math:`c=10`, the Bonferroni adjusted :math:`\alpha_{\text{single}}` is too small.
+
+   Use :math:`\alpha_{\text{overall}} = 0.05`.
+
+
+   **Manual Computation** 
+
+   The critical value calculation:
+
+   .. code-block:: r
+
+      # Manual critical value calculation
+      q_crit <- qtukey(0.05, nmeans = 5, df = 195, lower.tail = FALSE) / sqrt(2)
+      # q_crit ≈ 2.75
+
+   Then for all possible pairs :math:`(i,j)`, compute the interval using Equation :eq:`MC-CI-common-form`.
+
+   **Using the Raw Data**
+
+   Assuming that we have the fitted ANOVA model saved to ``fit``, we can also run:
+
+   .. code-block:: r
+
+      tukey_results <- TukeyHSD(fit, ordered = TRUE, conf.level = 0.95)
+
+   
+
+   **Results**
+
+   .. list-table:: 
+      :header-rows: 1
+      :widths: 10 10 10 10 10
+
+      * - Pair
+        - Difference
+        - 95% CI Lower
+        - 95% CI Upper
+        - Significant?
+
+      * - 5-4
+        - 7.65
+        - 1.53
+        - 13.77
+        - ✔
+
+      * - 1-4
+        - 12.71
+        - 6.44
+        - 18.98
+        - ✔
+
+      * - 3-4
+        - 14.08
+        - 7.92
+        - 20.24
+        - ✔
+
+      * - 2-4
+        - 20.24
+        - 13.93
+        - 26.55
+        - ✔
+
+      * - 3-5
+        - 6.43
+        - 0.46
+        - 12.40
+        - ✔
+
+      * - 2-5
+        - 12.59
+        - 6.47
+        - 18.71
+        - ✔
+
+      * - 2-1
+        - 7.53
+        - 1.26
+        - 13.80
+        - ✔
+
+      * - 2-3
+        - 6.16
+        - 0.0009
+        - 12.31
+        - ✔
+
+      * - 1-5
+        - 5.06
+        - -1.02
+        - 11.14
+        - ❌
+
+      * - 3-1
+        - 1.37
+        - -4.74
+        - 7.49
+        - ❌
+
+   **The Underline Graph**
+
+   First, order the groups in the ascending order of the sample means. Since pairs 1-5 and 3-1 have
+   non-significant relationships, the appropriate underline graph is:
+
+   .. raw:: html
+
+      <pre>
+      CH4    CH5 ——— CH1 ——— CH3    CH2
+      </pre>
+
+   - Coffeehouse 4 has the youngest customer base, significantly different from all other coffeehouses.
+   - Coffeehouse 2 has the oldest customer base, significantly different from all other coffeehouses.  
+   - Coffeehouses 5, 1, and 3 form an intermediate cluster where customers cannot be distinguished
+     by age statistically.
 
 Bringing It All Together
 ------------------------------
@@ -769,21 +601,22 @@ Bringing It All Together
 .. admonition:: Key Takeaways 📝
    :class: important
 
-   1. **Multiple comparisons are essential** after significant ANOVA to identify which specific groups differ, but naive approaches inflate Type I error rates dangerously.
+   1. After the ANOVA :math:`F`-test yields a significant result, **multiple comparisons are essential**
+      to identify which specific groups differ.
 
-   2. **Family-wise error rate (FWER)** provides the theoretical framework for understanding and controlling the overall probability of making at least one Type I error across all comparisons.
+   2. **Family-wise error rate (FWER)** must be controlled in multiple comparisons contexts.
 
-   3. **Bonferroni and Šidák corrections** control FWER by adjusting individual test significance levels, but they tend to be overly conservative, especially with many comparisons.
+   3. **Bonferroni correction** controls FWER by adjusting individual test significance levels, but it tends 
+      to be overly conservative, especially with many comparisons.
 
-   4. **Tukey's HSD method** provides superior power while maintaining exact FWER control by using the studentized range distribution, which accounts for the correlation structure among pairwise comparisons.
+   4. **Tukey's HSD method** provides superior power while maintaining exact FWER control by using the studentized range 
+      distribution. 
 
-   5. **Dunnett's method** offers the most powerful approach when comparing multiple treatments to a single control group by reducing the number of required comparisons.
+   5. **Visual displays using underlines** effectively communicate complex patterns of group similarities and differences, 
+      though they should be interpreted carefully regarding transitivity.
 
-   6. **Visual displays using underlines** effectively communicate complex patterns of group similarities and differences, though they should be interpreted carefully regarding transitivity.
-
-   7. **The complete ANOVA workflow** integrates exploratory analysis, assumption checking, overall F-testing, and targeted multiple comparisons to provide comprehensive understanding of group differences.
-
-   8. **Method selection matters**: The choice among multiple comparison procedures should align with research questions, study design, and the relative costs of Type I vs Type II errors in the specific context.
+   6. **The complete ANOVA workflow** integrates exploratory analysis, assumption checking, overall F-testing, and targeted multiple comparisons to 
+      provide comprehensive understanding of group differences.
 
 Exercises
 ~~~~~~~~~~~~~~~~
@@ -791,16 +624,10 @@ Exercises
 1. **FWER Calculation and Method Comparison**: A researcher plans to compare 6 different teaching methods using all pairwise comparisons.
 
    a) How many individual comparisons will be performed?
-   
-   b) If each test uses :math:`\alpha = 0.05`, what is the family-wise error rate assuming independence?
-   
-   c) What individual :math:`\alpha` level should be used with Bonferroni correction to achieve FWER = 0.05?
-   
-   d) What individual :math:`\alpha` level should be used with Šidák correction?
-   
-   e) Which correction is more powerful, and why?
+   b) What individual :math:`\alpha` level should be used with Bonferroni correction to achieve FWER = 0.05?
 
-2. **Tukey HSD Interpretation**: Consider these Tukey HSD confidence intervals for differences in means (all at 95% family-wise confidence level):
+2. **Tukey HSD Interpretation**: Consider the Tukey HSD confidence intervals for differences in means 
+   at 95% family-wise confidence level:
 
    - A vs B: [-2.1, 4.8]
    - A vs C: [1.2, 8.1]  
@@ -810,66 +637,69 @@ Exercises
    - C vs D: [-2.0, 4.9]
 
    a) Which pairs are significantly different at the 0.05 family-wise level?
-   
-   b) Create a visual display showing group relationships using the underline method
-   
-   c) Order the population means from smallest to largest based on the evidence
-   
-   d) If these were individual confidence intervals (not simultaneous), would your conclusions change? Explain.
+   b) Create a visual display showing group relationships using the underline method.
+   c) If these were individual confidence intervals (not simultaneous), would your conclusions change? Explain.
 
-3. **Method Selection and Design Considerations**: For each scenario, identify the most appropriate multiple comparison method and justify your choice:
+3. **Complete Analysis with Real Data**: A nutrition study compares the effectiveness of 5 different diets on weight 
+   loss over 12 weeks. ANOVA yields :math:`F = 8.2` with :math:`p`-value :math:`= 0.0003`. The data summary is:
 
-   a) A pharmaceutical company tests 4 new drugs against a placebo for reducing blood pressure
+   - Diet A (Control): :math:`n_1 = 20`, :math:`\bar{x}_{1\cdot} = 8.2` lbs, :math:`s_{1\cdot} = 3.1`
+   - Diet B (Low-carb): :math:`n_2 = 18`, :math:`\bar{x}_{2\cdot} = 12.7` lbs, :math:`s_{2\cdot} = 2.8`
+   - Diet C (Low-fat): :math:`n_3 = 22`, :math:`\bar{x}_{3\cdot} = 6.1` lbs, :math:`s_{3\cdot} = 3.4`
+   - Diet D (Mediterranean): :math:`n_4 = 19`, :math:`\bar{x}_{4\cdot} = 15.3` lbs, :math:`s_{4\cdot} = 3.0`
+   - Diet E (Intermittent fasting): :math:`n_5 = 21`, :math:`\bar{x}_{5\cdot} = 10.8` lbs, :math:`s_{5\cdot} = 2.9`
    
-   b) A psychologist compares reaction times across 5 different age groups with no control condition
-   
-   c) An agricultural researcher compares crop yields for 8 different fertilizer treatments
-   
-   d) A marketing team compares customer satisfaction across 3 store locations
-   
-   e) An education researcher compares test scores for students using 6 different learning apps vs traditional instruction
-
-4. **Complete Analysis with Real Data**: A nutrition study compares the effectiveness of 5 different diets on weight loss over 12 weeks. ANOVA yields F = 8.2 with p-value = 0.0003. The summary data is:
-
-   - Diet A (Control): :math:`n_1 = 20`, :math:`\bar{x}_1 = 8.2` lbs, :math:`s_1 = 3.1`
-   - Diet B (Low-carb): :math:`n_2 = 18`, :math:`\bar{x}_2 = 12.7` lbs, :math:`s_2 = 2.8`
-   - Diet C (Low-fat): :math:`n_3 = 22`, :math:`\bar{x}_3 = 6.1` lbs, :math:`s_3 = 3.4`
-   - Diet D (Mediterranean): :math:`n_4 = 19`, :math:`\bar{x}_4 = 15.3` lbs, :math:`s_4 = 3.0`
-   - Diet E (Intermittent fasting): :math:`n_5 = 21`, :math:`\bar{x}_5 = 10.8` lbs, :math:`s_5 = 2.9`
-   
-   MSE = 9.12, total :math:`n = 100`
+   In addition, :math:`MSE = 9.12` and the total sample size is :math:`n = 100`.
 
    a) What can you conclude from the ANOVA results?
-   
    b) Should you proceed with multiple comparisons? Which method is most appropriate?
-   
-   c) Which pairs of diets would you expect to be significantly different based on the sample means?
-   
-   d) Calculate the Tukey HSD critical value for this study
-   
-   e) Calculate the 95% family-wise confidence interval for the difference between Diet D and Diet C
-   
-   f) If the research question focused on comparing each diet to the control (Diet A), which method would be more appropriate and why?
+   c) Calculate the Tukey HSD critical value for this study.
+   d) Calculate the 95% family-wise confidence interval for the difference between Diet D and Diet C.
 
-5. **Power and Sample Size Considerations**: 
+Appendix: Other FWER-Controlling Methods
+---------------------------------------------
 
-   a) Explain why Tukey's HSD becomes more conservative as the number of groups increases
-   
-   b) A researcher is planning a study with 4 groups and wants 80% power to detect a difference of 2 units between any pair of means, assuming :math:`\sigma = 3`. How would the required sample size change if they planned to use Bonferroni correction instead of Tukey's HSD?
-   
-   c) Under what circumstances might a researcher choose to use individual t-tests without multiple comparison correction, and what would be the statistical and ethical implications?
+Method 3: The Šidák Correction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-6. **Interpretation Challenge**: Given this underline display for 5 groups:
+The Šidák correction continues from the discussion of FWER inflation under the assumption that the test results 
+are independent. By isolating :math:`\alpha_{\text{single}}` in:
 
-   ::
+.. math::
 
-      A ——— B ——— C          D ——— E
-            |______________|
+   \alpha_{\text{overall}} = 1 - (1 - \alpha_{\text{single}})^c,
 
-   a) Which pairs of groups are significantly different?
+we get:
+
+.. math::
+
+   \alpha_{\text{single}} = 1 - (1 - \alpha_{\text{overall}})^{1/c}.
    
-   b) Which pairs are not significantly different?
+Once :math:`\alpha_{\text{single}}` is obtained, we use it to compute the critical value as
+:math:`\mathbf{t^{**}} = t_{\alpha_{\text{single}}/2, n-k}`.
+
+.. admonition:: Limitaions of the Šidák Correction
+   :class: danger
    
-   c) Is it possible for A and D to be significantly different while C and D are not? Explain the statistical reasoning.
-   
-   d) What does this pattern suggest about the underlying population means?
+   The Šidák correction assumes mutual independence between tests. In practice, pairwise comparisons 
+   using the same data and pooled variance estimate are correlated, making this assumption problematic.
+
+Method 4: Dunnett's Method for Control Comparisons
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider :math:`k` groups where group 1 is a **control** and groups 2 through :math:`k` are treatments. 
+If the primary interest lies in comparing each treatment to the control rather than all pairwise comparisons, **Dunnett's method** provides a more powerful alternative.
+The increased power is partially due to the reduced number of comparisons from all :math:`\binom{k}{2}` pairs to only :math:`k-1` 
+control-treatment pairs. Another contributing factor is the specialized distribution that allows control over
+the FWER for the specific set of control-vs-treatment comparisons.
+
+Dunnett's method is not implemented in base R but is available in various packages. The exact implementation details vary 
+by package, but the conceptual approach remains the same.
+
+.. code-block:: r
+
+   # Example using a hypothetical package
+   # install.packages("multcomp")  # or another package
+   # library(multcomp)
+   # dunnett_results <- dunnett.test(fit, control = "group1")
+
