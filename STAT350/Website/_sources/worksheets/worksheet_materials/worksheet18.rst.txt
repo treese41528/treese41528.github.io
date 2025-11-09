@@ -1,0 +1,434 @@
+.. _worksheet18:
+
+Worksheet 18: One-Way ANOVA (Analysis of Variance)
+===================================================
+
+.. admonition:: Learning Objectives 🎯
+   :class: info
+
+   • **Master** the rationale for using One-Way ANOVA instead of multiple t-tests
+   • **Understand** the partitioning of variability into between-group and within-group components
+   • **Apply** the F-test statistic to test for differences among three or more population means
+   • **Interpret** ANOVA tables and identify which components measure different sources of variation
+   • **Verify** ANOVA assumptions and assess their validity using appropriate diagnostic methods
+   • **Compute** and interpret degrees of freedom in the context of ANOVA
+   • **Implement** ANOVA calculations and hypothesis testing procedures in R
+
+Introduction
+------------
+
+In previous worksheets, we explored statistical inference methods for one or two groups. However, when comparing more than two groups, repeatedly performing multiple two-sample t-tests inflates the overall Type I error rate. One-Way ANOVA (Analysis of Variance) provides a unified approach to assess if there are differences among three or more group means while controlling the overall Type I error.
+
+Why Use One-Way ANOVA?
+-----------------------
+
+Imagine comparing the effectiveness of four different fertilizers (A, B, C, and D) on crop yields. Conducting multiple pairwise t-tests (A vs. B, A vs. C, etc.) would increase the chance of making a Type I error (false positive). ANOVA addresses this issue by allowing us to test a single comprehensive hypothesis:
+
+*"Are the population mean crop yield using these four fertilizer groups identical, or is there evidence that at least one differs?"*
+
+With ANOVA, we control the overall significance level at a predetermined rate (e.g., 5%) with one collective test.
+
+One-Way ANOVA Assumptions
+--------------------------
+
+The validity of ANOVA depends on several assumptions:
+
+.. admonition:: ANOVA Assumptions 📋
+   :class: important
+
+   1. **Independence:** Observations within and across groups must be independently sampled.
+   
+   2. **Normality:** Each group should be normally distributed or we have sufficiently large sample sizes for the Central Limit Theorem to apply.
+   
+   3. **Homogeneity of Variances:** Population variances across groups are assumed equal (:math:`\sigma_1^2 = \sigma_2^2 = \cdots = \sigma_k^2`).
+
+.. note::
+   If the assumption of homogeneity of variances is questionable or violated, alternative methods such as **Welch's ANOVA** (analogous to the Welch two-sample t-test used for unequal variances in the two-group scenario) can be applied. Note that Welch's ANOVA specifically addresses violations of homogeneity of variances, but does not correct for violations of independence or normality.
+
+One-Way ANOVA F-test Statistic and Sources of Variation
+--------------------------------------------------------
+
+Previously, we've relied on test statistics of the form:
+
+.. math::
+
+   \text{Test Statistic} = \frac{\text{Estimate} - \text{Null Hypothesis Value}}{\text{Standard Error of Estimate}}
+
+This standardized structure directly measures how far our observed estimate is from the null hypothesis value in units of standard error.
+
+However, One-Way ANOVA uses a fundamentally different approach. Instead of standardizing a single estimator against its null hypothesis, ANOVA evaluates how variability within data is structured or partitioned:
+
+Between-Group Variability
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Under the null hypothesis, all group means are the same and should theoretically coincide with the overall "grand population mean." In practice, each sample group mean will still shift somewhat around this grand mean due to random sampling. **Between-group variability** measures how far each group's mean deviates from the grand mean.
+
+• If the null hypothesis is correct, each group's mean should land reasonably close to the grand mean; we would see minimal spread among group means, consistent with chance variation.
+
+• If we see large between-group variation, it suggests at least one group mean differs substantially from the others, giving evidence to reject the null.
+
+Within-Group Variability
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Even if each group has the same population mean, individual observations in a group still vary around their own group's sample mean. This scatter around the group sample mean is the **within-group variability**.
+
+When the null hypothesis is true, all observed differences among individuals in a group simply reflect ordinary randomness. There's no additional systematic difference attributable to being in one group vs. another because, theoretically, all groups share the same mean.
+
+In the F-test statistic formula, this within-group variation is used in the denominator. It acts as the "baseline" estimate of ordinary noise. If the observed differences among group means (the numerator) are large relative to this baseline, that signals a possible departure from the null hypothesis (i.e., at least one group mean differs).
+
+By comparing between-group variation (the "signal" of possible mean differences) to within-group variation (the "noise" expected if all groups share the same mean), ANOVA determines whether at least one group mean diverges beyond what random chance would predict.
+
+Notation and Setup
+------------------
+
+Consider an experiment with :math:`k` groups. Each group :math:`i` has :math:`n_i` observations, and the total number of observations is :math:`n = \sum_{i=1}^{k} n_i`.
+
+Each observation is represented using double indexing notation :math:`x_{ij}` where:
+
+• :math:`i` indicates the specific group :math:`(i = 1, 2, \ldots, k)`.
+
+• :math:`j` indicates the individual observation within group :math:`i` :math:`(j = 1, 2, \ldots, n_i)`.
+
+We define the following summary statistics:
+
+**Group Sample Means** :math:`\bar{x}_i` for each :math:`i`:
+
+.. math::
+
+   \bar{x}_{i.} = \frac{1}{n_i} \sum_{j=1}^{n_i} x_{ij}
+
+**Overall (Grand) Sample Mean** :math:`\bar{x}`:
+
+.. math::
+
+   \bar{x}_{..} = \frac{1}{n} \sum_{i=1}^{k} \sum_{j=1}^{n_i} x_{ij}
+
+**Group sample variances** :math:`s_i^2` for each :math:`i`:
+
+.. math::
+
+   s_i^2 = \frac{1}{n_i - 1} \sum_{j=1}^{n_i} (x_{ij} - \bar{x}_{i.})^2
+
+ANOVA testing makes specific assumptions about the population parameters:
+
+• **Population Means** :math:`\mu_i` for each :math:`i`. Under the null hypothesis :math:`H_0: \mu_1 = \mu_2 = \cdots = \mu_k`, all share a common mean: :math:`\mu_1 = \mu_2 = \cdots = \mu_k = \mu`.
+
+• **Population Variances** :math:`\sigma_i^2` are assumed equal (Homogeneity of Variances): :math:`\sigma_1^2 = \sigma_2^2 = \cdots = \sigma_k^2 = \sigma^2`. This assumption must be carefully verified to ensure valid results. We use a rule of thumb: Compute the ratio of the largest group sample standard deviation to the smallest group sample standard deviation. If this ratio is less than about 2, the assumption of equal variance is usually considered reasonable. More formal procedures exist but they are beyond the scope of the course material.
+
+Part 1: Computing the Overall Sample Mean
+------------------------------------------
+
+Consider the following summarized data from three treatment groups (A, B, and C) which are known to be Normally distributed:
+
+.. flat-table::
+   :header-rows: 1
+   :width: 60%
+   :align: center
+   
+   * - Group
+     - :math:`n_i`
+     - :math:`\bar{x}_i`
+     - :math:`s_i`
+   * - A
+     - 10
+     - 20
+     - 4
+   * - B
+     - 8
+     - 22
+     - 2
+   * - C
+     - 7
+     - 18
+     - 3
+
+**Question 1a:** Derive a formula for computing overall sample mean :math:`\bar{x}_{..}` from the individual group sample means :math:`\bar{x}_{1.}, \bar{x}_{2.}, \ldots, \bar{x}_{k.}` and use it to compute the overall sample mean using the summary statistics in the table above.
+
+.. note::
+   Remember that the overall sample mean is a weighted average of the group means, where the weights are determined by the sample sizes.
+
+**Formula derivation:**
+
+[Space for your work]
+
+**Calculation:**
+
+:math:`\bar{x}_{..}` = ____________
+
+
+Part 2: Checking the Equal Variance Assumption
+-----------------------------------------------
+
+**Question 1b:** Use the rule of thumb to confirm that the equal variance assumption is reasonable.
+
+**Calculation:**  = ____________
+
+**Conclusion:** [State whether the equal variance assumption appears reasonable]
+
+
+Part 3: Pooled Variance Estimator
+----------------------------------
+
+**Question 1c:** Assume the equal variance assumption is reasonable. Previously (in the two sample independent scenario), you learned about the pooled variance estimator for two groups.
+
+i) Write down the generalized formula for the pooled variance estimator that extends this concept to :math:`k` groups, clearly, using the notation :math:`n_i`, :math:`s_i^2`, and :math:`k`.
+
+**Generalized pooled variance formula:**
+
+.. math::
+
+   s_p^2 = 
+
+
+ii) Using the summary statistics from the table above, compute the pooled variance estimate. Show each step in your calculation.
+
+**Calculation:**
+
+[Space for your work showing each step]
+
+:math:`s_p^2` = ____________
+
+
+
+Part 4: Within-Group Variability (Sum of Squares Within, SSE)
+--------------------------------------------------------------
+
+**Question 1d:** Previously, we introduced the within-group variability as measuring the spread of observations around each group's sample mean. The within-group variability (Sum of Squares Within, SSE) is defined by the following formula:
+
+.. math::
+
+   \text{SSE} = \sum_{i=1}^{k} \sum_{j=1}^{n_i} (X_{ij} - \bar{x}_i)^2
+
+i) Clearly show how this definition relates directly to the generalized pooled variance estimator formula from the previous question.
+
+[Space for your explanation]
+
+
+ii)  Provide a concise interpretation explaining why the pooled variance estimator naturally represents within-group variability.
+
+[Space for your interpretation]
+
+
+Part 5: Between-Group Variability (Sum of Squares Among, SSA)
+--------------------------------------------------------------
+
+**Question 1e:** Previously, we introduced the between-group variability as measuring how far each group's sample mean is from the overall (grand) sample mean. Formally, the between-group variability (Sum of Squares Among, SSA) is defined by the following formula:
+
+.. math::
+
+   \text{SSA} = \sum_{i=1}^{k} n_i (\bar{x}_i - \bar{x})^2
+
+i) Clearly explain in your own words what :math:`\text{SSA}` measures in the context of comparing multiple treatment groups. Specifically, what does a large :math:`\text{SSA}` value indicate about differences among groups? What would a small :math:`\text{SSA}` value indicate?
+
+[Space for your explanation]
+
+
+ii) Using the summary statistics from the table provided earlier, compute the value of :math:`\text{SSA}` step by step.
+
+**Calculation:**
+
+[Space for your work showing each step]
+
+:math:`\text{SSA}` = ____________
+
+
+
+Part 6: Total Variability and Partitioning
+-------------------------------------------
+
+**Question 1f:** Next, formally write the total variability (Sum of Squares Total, :math:`\text{SST}`) as the sum of the between-group variability (:math:`\text{SSA}`) and the within-group variability (:math:`\text{SSE}`). Clearly state the relationship mathematically. Explain clearly in your own words why it makes intuitive sense that the total variability in the data can be partitioned into these two distinct parts (:math:`\text{SSA}` and :math:`\text{SSE}`).
+
+**Mathematical relationship:**
+
+.. math::
+
+   \text{SST} = 
+
+
+**Intuitive explanation:**
+
+[Space for your explanation of why this partitioning makes sense]
+
+
+Part 7: Degrees of Freedom
+---------------------------
+
+The term degrees of freedom frequently arises throughout statistical inference. We previously encountered degrees of freedom when working with one and two sample procedures. However, beyond just numeric formulas, the degrees of freedom concept has a deeper, fundamental meaning:
+
+.. admonition:: Degrees of Freedom Concept 💡
+   :class: tip
+
+   **Degrees of freedom represent the number of independent values or pieces of information in your data that remain free to vary after you've estimated certain parameters.**
+
+For example, in a single-sample case, we start with :math:`n` data points. Once we estimate the mean from these points, only :math:`n-1` data values remain free to vary; the last data value is constrained by the requirement that the average matches our estimate.
+
+In One-Way ANOVA, this concept extends naturally:
+
+• For the **between-group variability**, we have :math:`k` group means. Once we estimate the overall (grand) mean from these, we impose a single constraint, leaving :math:`k-1` independent group means that can freely vary. Hence, the degrees of freedom between groups is :math:`df_{\text{between}} = k - 1`.
+
+• For the **within-group variability**, we have :math:`n` total observations. Since we must estimate each of the :math:`k` group means separately, we place :math:`k` constraints on our data. Thus, the degrees of freedom within groups equals :math:`df_{\text{within}} = n - k`.
+
+• The **total variability** has :math:`n - 1` degrees of freedom because, from the :math:`n` total observations, we estimate only one parameter: the overall mean.
+
+**Question 1g:** Using the summary statistics from the table provided earlier, compute the values for the different degrees of freedom.
+
+**Calculations:**
+
+Number of groups: :math:`k` = ____________
+
+Total sample size: :math:`n` = ____________
+
+:math:`df_{\text{A}}` = ____________
+
+:math:`df_{\text{E}}` = ____________
+
+:math:`df_{\text{total}}` = ____________
+
+
+Part 8: Mean Squares
+--------------------
+
+However, these sums of squares alone do not allow for a fair comparison between these two sources of variability (:math:`\text{SSA}` and :math:`\text{SSE}`) because they depend directly on how many groups and observations we have. For example, with more groups, we would naturally expect :math:`\text{SSA}` to increase even if groups have similar means.
+
+To properly compare these two sources of variability, we must place them on a comparable scale by dividing each sum of squares by its degrees of freedom. Dividing by degrees of freedom converts the sums of squares into "mean squares," which represent average measures of variability per unit of independent information.
+
+**Question 1h:** Compute the mean squares for both the between-group and within-group variabilities.
+
+**Calculations:**
+
+:math:`\text{MSA} = \frac{\text{SSA}}{df_{\text{A}}}` = ____________
+
+:math:`\text{MSE} = \frac{\text{SSE}}{df_{\text{E}}}` = ____________
+
+
+.. note::
+   By calculating mean squares, we standardize the variability estimates so that they can be meaningfully compared to each other regardless of the number of groups or observations.
+
+
+Part 9: The F-Test Statistic
+-----------------------------
+
+The ANOVA :math:`F` test statistic is computed as the ratio of these two mean squares.
+
+**Question 1i:** Compute the :math:`F`-test statistic using your calculations from part k).
+
+**Calculation:**
+
+.. math::
+
+   F = \frac{\text{MSA}}{\text{MSE}} = 
+
+
+:math:`F` = ____________
+
+
+**Interpreting the F test statistic:**
+
+• If the null hypothesis :math:`H_0: \mu_1 = \mu_2 = \cdots = \mu_k` is true and the equal variance assumption is valid, both the numerator :math:`\text{MSA}` and denominator :math:`\text{MSE}` are unbiased estimators of the common variance :math:`\sigma^2`. Under these conditions, we would expect their ratio :math:`F` to be approximately equal to 1.
+
+• If the alternative hypothesis :math:`H_A:` at least one :math:`\mu_i` differs is true, the among groups variability (numerator) is expected to be larger relative to the within groups variability (denominator), resulting in a value of :math:`F` greater than 1.
+
+
+Part 10: Computing the P-Value and Making a Decision
+-----------------------------------------------------
+
+**Distribution of the F statistic under the null hypothesis:**
+
+Under the null hypothesis, the :math:`F`-test statistic follows an :math:`F` distribution with numerator degrees of freedom :math:`df_1 = k - 1` and denominator degrees of freedom :math:`df_2 = n - k`.
+
+The :math:`p`-value is obtained as the area to the right of the calculated :math:`F`-test statistic value, which represents the probability of observing such an extreme (or more extreme) value if the null hypothesis is true.
+
+**Question 1j:** Compute the :math:`p`-value using the ``pf()`` function in R to assess whether there is statistically significant evidence to conclude that the population means of these three treatment groups differ. Provide a formal decision and conclusion at the :math:`\alpha = 0.05` significance level.
+
+**P-value:** ____________
+
+**Decision:** [Reject or Fail to reject :math:`H_0`]
+
+**Conclusion:** [State your conclusion in context]
+
+
+
+Part 11: Completing the ANOVA Table
+------------------------------------
+
+The calculations and procedures for One-Way ANOVA are commonly summarized in a structured ANOVA table. This table neatly organizes the sources of variability, their corresponding sums of squares, degrees of freedom, mean squares, the calculated F test statistic, and the resulting p-value.
+
+**Question 1k:** Using all previously computed results (sums of squares, degrees of freedom, mean squares, and F test statistic), carefully and clearly complete the ANOVA table below:
+
+.. flat-table::
+   :header-rows: 1
+   :width: 100%
+   :align: center
+   
+   * - Source
+     - Degrees of Freedom
+     - Sum of Squares
+     - Mean Squares
+     - :math:`F`-test statistic
+     - :math:`p`-value
+   * - Between Groups
+     - 
+     - 
+     - 
+     - 
+     - 
+   * - Within Groups
+     - 
+     - 
+     - 
+     - 
+     - 
+   * - Total
+     - 
+     - 
+     - 
+     - 
+     - 
+
+.. note::
+   The "Total" row does not include values for Mean Squares, F-test statistic, or p-value, as these are not meaningful for the total variability. 
+
+
+Part 12: Limitations and Follow-Up Questions
+---------------------------------------------
+
+In this worksheet, we determined that at least one group mean significantly differs from the others. However, the ANOVA F test alone does not tell us precisely which pairs or combinations of group means differ significantly. Thus, a logical follow-up question arises:
+
+*If we find statistically significant differences among the groups, how do we determine specifically which of the* :math:`k` *population means differ from one another?*
+
+Explain why the ANOVA test alone does not specify which specific groups differ from each other.
+
+[Space for your explanation]
+
+
+Briefly consider what additional information or methods might be necessary to address this question.
+
+[Space for your thoughts]
+
+
+.. admonition:: Looking Ahead 🔍
+   :class: tip
+
+   This important question about identifying specific differences among group means will be explored in detail in the next worksheet.
+
+Key Takeaways
+-------------
+
+.. admonition:: Summary 📝
+   :class: important
+
+   • **One-Way ANOVA** provides a unified framework for comparing three or more population means while controlling the overall Type I error rate, avoiding the multiple testing problem that arises from conducting multiple two-sample t-tests.
+   
+   • **Partitioning of variability** is central to ANOVA: Total variability (SST) is decomposed into between-group variability (SSA) measuring differences among group means, and within-group variability (SSE) measuring variation within each group around their respective means.
+   
+   • **The F-test statistic** :math:`(F = \text{MSA}/\text{MSE})` compares the ratio of between-group to within-group mean squares. Under the null hypothesis, both estimate the same variance and F ≈ 1; under the alternative, F > 1 when group means differ.
+   
+   • **Degrees of freedom** represent independent pieces of information: :math:`df_{\text{between}} = k-1` for group means, :math:`df_{\text{within}} = n-k` for individual observations, and :math:`df_{\text{total}} = n-1` for overall variability.
+   
+   • **ANOVA assumptions** must be checked: independence of observations, normality of populations (or large samples), and homogeneity of variances (ratio of largest to smallest standard deviation should be less than 2).
+   
+   • **The pooled variance estimator** :math:`s_p^2` generalizes to multiple groups and represents the within-group variability, serving as the baseline noise level for comparison.
+   
+   • **R provides computational tools** for implementing ANOVA, including calculation of test statistics, p-values using the F distribution, and verification of intermediate calculations.
+   
+   • **A significant F-test** indicates that at least one population mean differs, but does not identify which specific pairs of means are different—this requires additional follow-up procedures (post-hoc tests) covered in the next worksheet.
