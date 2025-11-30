@@ -1,0 +1,491 @@
+.. _worksheet21:
+
+Worksheet 21: Inference for Simple Linear Regression
+=====================================================
+
+.. admonition:: Learning Objectives 🎯
+   :class: info
+
+   • Transition from estimation to formal statistical inference in regression
+   • Understand the sampling distributions of the slope and intercept estimators
+   • Master the assessment of regression model assumptions through diagnostic plots
+   • Perform hypothesis tests and construct confidence intervals for regression parameters
+   • Connect regression inference to the ANOVA framework through the F-test
+   • **Apply residual analysis and inference procedures using R**
+
+Introduction
+------------
+
+In :ref:`worksheet20`, we introduced the method of least squares to fit a line to bivariate data. We derived closed-form expressions for the slope and intercept estimators (:math:`\hat{\beta}_1` and :math:`\hat{\beta}_0`) and explored their sampling behavior through simulations. Specifically, we observed that:
+
+- Under the assumption of Normal errors, our estimators :math:`\hat{\beta}_1` and :math:`\hat{\beta}_0` themselves followed a Normal distribution.
+- Even when errors deviated from Normality, the Central Limit Theorem (CLT) ensured our estimators remained approximately Normally distributed with sufficiently large samples.
+
+Thus far, our work has primarily focused on **estimation**, describing the linear relationship using sample data and investigating the distributions of these sample estimators. Now we shift our attention from describing sample data toward formal **statistical inference** about the underlying population mean response line:
+
+.. math::
+
+   \mu_{Y|X=x_i} = \beta_0 + \beta_1 x_i
+
+We will rigorously examine the assumptions and properties of the regression model we introduced previously:
+
+.. math::
+
+   Y_i = \beta_0 + \beta_1 x_i + \varepsilon_i, \quad \text{where } \varepsilon_i \overset{iid}{\sim} N(0, \sigma^2), \quad \text{for } i \in \{1, 2, \ldots, n\}
+
+This model is assumed to represent the true underlying relationship between our explanatory and response variables in the population. Our goal now is to use formal tests and intervals to determine whether observed relationships in our sample data reflect genuine population level patterns, and to quantify our uncertainty about the estimated model parameters.
+
+.. admonition:: Goals of Worksheet 21 📋
+   :class: important
+
+   .. flat-table::
+      :header-rows: 1
+      :widths: 25 45 30
+
+      * - Goal
+        - Question Answered
+        - Test / Interval
+
+      * - Overall linear association
+        - "Is any straight-line trend present?"
+        - :math:`F`-test (df1 = 1, df2 = n − 2)
+
+      * - Practical significance of slope
+        - "For every one-unit change in :math:`x`, is the average change in :math:`y` non-zero?"
+        - :math:`t`-test / CI for :math:`\beta_1`
+
+      * - Meaning of intercept
+        - "What is the true mean response when :math:`x = 0` and is it meaningful?"
+        - :math:`t`-test / CI for :math:`\beta_0`
+
+Part 1: Sampling Distributions of Regression Estimators
+-------------------------------------------------------
+
+Recall our **Simple Linear Regression (SLR) model assumptions**:
+
+- **Linearity**: :math:`\mu_{Y|X=x} = E[Y|X = x] = \beta_0 + \beta_1 x`
+- **Independence**: The observations :math:`(x_i, y_i)`, for :math:`i = 1, 2, \ldots, n`, are independently collected. This means that knowing the value or error term for any one observation provides no information about another. Formally, the errors :math:`\varepsilon_i` associated with each observation must be independent random variables.
+- **Constant Variance**: The variance of the errors is constant across all values of :math:`x`:
+
+  .. math::
+
+     \text{Var}(\varepsilon_i) = \sigma^2, \quad \text{for all } i = 1, 2, \ldots, n
+
+- **Normality**: The errors are normally distributed:
+
+  .. math::
+
+     \varepsilon_i \overset{iid}{\sim} N(0, \sigma^2)
+
+Under these clearly stated assumptions, the following results hold exactly:
+
+.. admonition:: Sampling Distributions of Estimators 📐
+   :class: important
+
+   .. math::
+
+      \hat{\beta}_0 \sim N\left(\beta_0, \sigma^2 \left(\frac{1}{n} + \frac{\bar{x}^2}{\sum_{i=1}^{n}(x_i - \bar{x})^2}\right)\right)
+
+   .. math::
+
+      \hat{\beta}_1 \sim N\left(\beta_1, \frac{\sigma^2}{\sum_{i=1}^{n}(x_i - \bar{x})^2}\right)
+
+Because the true variance :math:`\sigma^2` is unknown in practice, we estimate it by the unbiased estimator:
+
+.. math::
+
+   s^2 = \text{MS}_E = \frac{\text{SS}_E}{n - 2}
+
+where :math:`\text{SS}_E` is the sum of squared residuals, the same quantity we originally minimized to derive the formulas for :math:`\hat{\beta}_1` and :math:`\hat{\beta}_0`.
+
+Substituting this estimator of :math:`\sigma^2` into our expressions transforms the distributions of the standardized estimators from Normal to **t-distributions**, enabling us to formally perform statistical inference (hypothesis tests and confidence intervals):
+
+.. math::
+
+   \frac{\hat{\beta}_0 - \beta_0}{\sqrt{\text{MS}_E \cdot \left(\frac{1}{n} + \frac{\bar{x}^2}{\sum_{i=1}^{n}(x_i - \bar{x})^2}\right)}} \sim t(n-2)
+
+.. math::
+
+   \frac{\hat{\beta}_1 - \beta_1}{\sqrt{\frac{\text{MS}_E}{\sum_{i=1}^{n}(x_i - \bar{x})^2}}} \sim t(n-2)
+
+These :math:`t`-distributions (with :math:`n - 2` **degrees of freedom**) form the foundation for several of the inference procedures we will now explore in simple linear regression.
+
+Part 2: Checking Regression Assumptions
+---------------------------------------
+
+The first major problem we encounter is that we must rigorously **assess whether the regression assumptions are reasonably satisfied**.
+
+Although we've stated our assumptions clearly, they are not guaranteed to hold for real datasets. Thus, before proceeding with formal inference (hypothesis tests and confidence intervals), we need to:
+
+**Check assumptions graphically and numerically:**
+
+- **Linearity** of the relationship between :math:`X` and :math:`Y` (No serious deviations from linear): Examine a **scatter plot** of :math:`y` versus :math:`x` and a **residual plot** (residuals versus fitted values) for any clear patterns or curvature. The relationship should appear approximately linear, with no serious deviations or systematic curvature.
+
+- **Independence**: Independence is typically ensured by careful experimental design or random sampling. Always consider how your data were collected. Patterns in the residuals (for example, residuals ordered by time or location) could suggest violation of independence.
+
+- **Constant variance (Homoscedasticity)**: Evaluate a **residual plot** (residuals versus fitted values) for a "funnel" or "hourglass" pattern. Residual scatter should remain approximately consistent in magnitude across all fitted values.
+
+- **Normality of the residuals**: Use a **QQ-plot** (Normal probability plot) and/or **histogram** of the residuals to visually assess if they follow an approximately Normal distribution. Severe deviations from a straight line in the QQ-plot or strong skewness in a histogram would indicate possible violations of Normality.
+
+.. warning::
+
+   Only once these assumptions have been carefully validated, or adequately addressed if violated, can we confidently apply the inference procedures derived from the :math:`t`-distributions given above. This structured, careful approach ensures the reliability and accuracy of our statistical conclusions.
+
+Part 3: Bird Data Analysis
+--------------------------
+
+Now let's put our conceptual understanding into action by revisiting the dataset we explored previously in :ref:`worksheet20`.
+
+**Question 1:** Recall that a biologist is investigating how the **weight** of a certain species of bird (:math:`x`, measured in grams) affects its average **wing length** (:math:`y`, measured in centimeters). The biologist collected a random sample of 8 birds, yielding the following data:
+
+.. flat-table::
+   :header-rows: 1
+   :widths: 20 25 30 25
+
+   * - :math:`(x)` Weight (grams)
+     - :math:`(y)` WingLength (cm)
+     - :math:`(\hat{y})` Predicted WingLength (cm)
+     - :math:`(y - \hat{y})` Residual Error
+
+   * - 130.8
+     - 24.9
+     - 
+     - 
+
+   * - 125.8
+     - 24.5
+     - 
+     - 
+
+   * - 155.2
+     - 27.1
+     - 
+     - 
+
+   * - 105.6
+     - 22.3
+     - 
+     - 
+
+   * - 146.9
+     - 25.4
+     - 
+     - 
+
+   * - 148.4
+     - 26.5
+     - 
+     - 
+
+   * - 181.2
+     - 32.4
+     - 
+     - 
+
+   * - 137.0
+     - 25.7
+     - 
+     - 
+
+**a)** Previously, you manually calculated the least squares estimates for the slope (:math:`b_1`) and intercept (:math:`b_0`) and sketched a scatterplot with the fitted regression line. What assumptions can you check directly from your scatterplot, and do these assumptions seem valid based on the scatterplot alone?
+
+|
+|
+|
+|
+
+**b)** To thoroughly evaluate the remaining regression assumptions, we must examine the residuals. First, however, we need the predicted values :math:`\hat{y}` to calculate these residuals. Using your previously computed estimates (:math:`b_0` and :math:`b_1`), complete the missing cells in the provided table above.
+
+|
+|
+|
+
+**c)** Now, using the residual errors you've computed, sketch a **residual plot** by hand.
+
+   i. Clearly label the axes, with "Bird Weight (grams)" (:math:`x`) on the horizontal axis and "Residual (:math:`y - \hat{y}`)" on the vertical axis.
+   ii. Draw a horizontal reference line at zero to assist your visual evaluation of patterns.
+   iii. Use your residual plot to visually assess whether the assumptions of **linearity** and **constant variance (homoscedasticity)** appear reasonable.
+
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+|
+
+**d)** Creating a histogram and QQ-plot of the residuals by hand would be tedious and impractical. Instead, perform these checks in **R**. First, create a small dataframe containing your residual values, and then use the provided R code below to plot a histogram and a QQ-plot of the residuals. Interpret these plots to assess if the assumption of **Normality** seems reasonable.
+
+.. code-block:: r
+
+   library(ggplot2)
+   
+   # Create the dataset
+   bird_data <- data.frame(
+     Weight = c(130.8, 125.8, 155.2, 105.6, 146.9, 148.4, 181.2, 137.0),
+     WingLength = c(24.9, 24.5, 27.1, 22.3, 25.4, 26.5, 32.4, 25.7)
+   )
+   
+   # Fit the linear regression model
+   bird_lm <- lm(WingLength ~ Weight, data = bird_data)
+   
+   # Get residuals and fitted values for diagnostics
+   bird_data$resids <- resid(bird_lm)
+   bird_data$fitted <- fitted(bird_lm)
+   
+   # Parameters for residual distribution
+   n_bins <- 5
+   xbar_resids <- mean(bird_data$resids)
+   s_resids <- sd(bird_data$resids)
+   
+   # Histogram of residuals
+   ggplot(bird_data, aes(x = resids)) +
+     geom_histogram(aes(y = after_stat(density)), 
+                    bins = n_bins, fill = "grey", col = "black") +
+     geom_density(col = "red", linewidth = 1) +
+     stat_function(fun = dnorm, args = list(mean = xbar_resids, sd = s_resids), 
+                   col = "blue", linewidth = 1) +
+     labs(title = "Histogram and Density of Residuals",
+          x = "Residuals", y = "Density") +
+     theme_minimal()
+   
+   # QQ-plot of residuals
+   ggplot(bird_data, aes(sample = resids)) + 
+     stat_qq(size = 4) + 
+     stat_qq_line(col = "blue", linewidth = 1.5) + 
+     labs(title = "QQ Plot of Residuals",
+          x = "Theoretical Quantiles", y = "Sample Residual Quantiles") +
+     theme_minimal()
+
+**Your interpretation of the diagnostic plots:**
+
+|
+|
+|
+|
+|
+
+.. note::
+
+   From your graphical analysis, you may have noticed some minor deviations from the ideal regression assumptions. With a small sample size, such slight deviations from linearity, constant variance, or Normality are common and do not necessarily indicate serious issues. Moreover, relationships between the weight of a species and other measured characteristics, such as wing length, typically exhibit patterns that reasonably meet regression assumptions. Thus, despite observing minor deviations, we will cautiously proceed under the assumption that the regression conditions are adequately satisfied, and move forward to formal statistical inference.
+
+**e)** It is biologically expected that birds with larger body weights will also have greater wing lengths. We therefore wish to statistically test if the true population slope (:math:`\beta_1`) of the mean response line is indeed positive. Perform the hypothesis test formally using the appropriate distribution for the slope estimate (:math:`b_1`). Conduct your test at a significance level :math:`\alpha = 0.05`, clearly following the **full four-step inference procedure**. Additionally, compute and clearly report the corresponding confidence interval/bound, and provide a careful interpretation of your results in context.
+
+**Step 1:** State the parameter of interest.
+
+|
+|
+
+**Step 2:** State the hypotheses.
+
+.. math::
+
+   H_0: \hspace{3cm}
+
+.. math::
+
+   H_a: \hspace{3cm}
+
+**Step 3:** Calculate the test statistic, p-value, and provide the degrees of freedom.
+
+|
+|
+|
+|
+
+**Step 4:** State your conclusion in context.
+
+|
+|
+|
+|
+
+**Confidence Interval/Bound:**
+
+|
+|
+|
+
+**f)** Additionally, answer if we should consider the estimate of the intercept meaningful in context.
+
+|
+|
+|
+
+Now that you've manually analyzed the bird data, let's verify your previous results by analyzing the data in **R**. Use the provided R code below to:
+
+- Fit the simple linear regression model.
+- Summarize the regression results (including estimates, test statistics, and p-values).
+- Obtain the corresponding 95% confidence interval/bound for the slope to confirm your manual inference.
+- After running this R analysis, clearly summarize how these results confirm or differ from your manual calculations.
+
+.. code-block:: r
+
+   # Fit the model (if not already done)
+   bird_lm <- lm(WingLength ~ Weight, data = bird_data)
+   
+   # View the full summary
+   summary(bird_lm)
+   
+   # For a one-sided test, compute the lower bound manually
+   b_1 <- coef(bird_lm)['Weight']
+   MSE <- sum(resid(bird_lm)^2) / (nrow(bird_data) - 2)
+   Sxx <- sum((bird_data$Weight - mean(bird_data$Weight))^2)
+   t_crit <- qt(0.05, df = nrow(bird_data) - 2, lower.tail = FALSE)
+   
+   lower_bound <- b_1 - t_crit * sqrt(MSE / Sxx)
+   cat("95% lower confidence bound for slope:", lower_bound, "\n")
+
+
+Part 4: Regression ANOVA
+------------------------
+
+Testing the slope using a :math:`t`-test is intuitive and powerful when we are specifically interested in determining if changes in our explanatory variable (:math:`x`) systematically affect the response (:math:`y`). However, in simple linear regression, there's also another widely used inference procedure that parallels the logic of ANOVA.
+
+Recall from previous lessons that in ANOVA, we decomposed the total variability observed in our response variable into meaningful sources: variability explained by differences between groups, and residual (unexplained) variability within groups.
+
+We can apply similar reasoning to simple linear regression by partitioning the total variability of the response variable (:math:`y`) into two clear and meaningful sources:
+
+- **Regression Model Variability (explained variability)**: This measures how much of the variation in our observed responses is captured by the fitted regression line. A large value suggests the regression model explains a substantial portion of the total variation.
+
+  .. math::
+
+     \text{SS}_R = \sum_{i=1}^{n}(\hat{y}_i - \bar{y})^2
+
+- **Residual Variability (unexplained variability)**: This measures the amount of observed variability around the fitted regression line, reflecting natural scatter or random error not explained by our linear model.
+
+  .. math::
+
+     \text{SS}_E = \sum_{i=1}^{n}(y_i - \hat{y}_i)^2
+
+Formally, we express this decomposition as:
+
+.. math::
+
+   \text{SS}_T = \text{SS}_R + \text{SS}_E
+
+By dividing each of these sums of squares by their corresponding degrees of freedom, we obtain mean squares:
+
+.. flat-table::
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - Source of Variation
+     - Degrees of Freedom
+     - Mean Square
+
+   * - Regression
+     - :math:`df_R = 1`
+     - :math:`\frac{\text{SS}_R}{df_R}`
+
+   * - Error (Residual)
+     - :math:`df_E = n - 2`
+     - :math:`\frac{\text{SS}_E}{df_E}`
+
+From these mean squares, we construct the **F-test statistic** which follows an :math:`F`-distribution provided :math:`H_0` is true:
+
+.. math::
+
+   F_{TS} = \frac{\text{MS}_R}{\text{MS}_E} \sim F(df_1 = 1, df_2 = n - 2)
+
+This :math:`F`-test evaluates whether there is a statistically significant linear relationship between the explanatory and response variables, by testing if the regression line explains a meaningful portion of the observed variability in the data.
+
+.. note::
+
+   In simple linear regression, the :math:`F`-test and the :math:`t`-test for the slope lead to identical conclusions, due to the mathematical relationship :math:`F = t^2`. However, conceptually these tests differ in their broader purpose and interpretation. The :math:`F`-test explicitly connects regression inference to the ANOVA framework by directly evaluating the overall significance of the linear model. This unified perspective emphasizes how statistical inference procedures share common underlying logic across diverse contexts.
+
+   While the :math:`F`-test and :math:`t`-test provide equivalent conclusions in simple linear regression, their roles become distinctly different when multiple explanatory variables are included. In such multiple regression scenarios, the :math:`F`-test assesses the overall significance of the entire model (analogous to the global ANOVA test), while individual :math:`t`-tests are used to examine the significance of each explanatory variable separately.
+
+**Question 2:** Now, let's explore the regression ANOVA procedure manually using the bird data.
+
+**a)** Complete the ANOVA table below:
+
+   i. **Compute the** :math:`\text{SS}_E` **(Sum of Squared Errors)**: You already computed the residuals earlier. Simply square these residuals and sum them to obtain the :math:`\text{SS}_E`.
+   
+   ii. **Compute the** :math:`\text{SS}_R` **(Sum of Squares due to Regression)**: Use the following convenient relationship to calculate :math:`\text{SS}_R` easily:
+
+      .. math::
+
+         \text{SS}_R = b_1 \times S_{xy}
+
+      Recall :math:`b_1` is your previously computed slope, and :math:`S_{xy}` is obtained as follows:
+
+      .. math::
+
+         S_{xy} = \sum_{i=1}^{n}(x_i - \bar{x})(y_i - \bar{y}) = \sum_{i=1}^{n} x_i y_i - n\bar{x}\bar{y}
+
+   iii. Complete the table:
+
+.. flat-table::
+   :header-rows: 1
+   :widths: 18 15 20 20 15 12
+
+   * - Source
+     - Degrees of Freedom
+     - Sum of Squares
+     - Mean Squares
+     - :math:`F_{TS}`
+     - :math:`p`-value
+
+   * - Regression
+     - 
+     - 
+     - 
+     - 
+     - 
+
+   * - Error
+     - 
+     - 
+     - 
+     - 
+     - 
+
+   * - Total
+     - 
+     - 
+     - 
+     - 
+     - 
+
+.. code-block:: r
+
+   # Verify your ANOVA table in R
+   bird_lm <- lm(WingLength ~ Weight, data = bird_data)
+   anova(bird_lm)
+
+**b)** After completing your calculations, carefully answer this conceptual question: Why doesn't the regression :math:`F`-test exactly answer the same question we asked previously (testing specifically if the slope is positive)? Explain clearly and concisely what the :math:`F`-test specifically tests, and how this differs from our earlier :math:`t`-test of the slope.
+
+|
+|
+|
+|
+|
+|
+
+Key Takeaways
+-------------
+
+.. admonition:: Summary 📝
+   :class: important
+
+   • **Regression inference** moves beyond estimation to formally test whether observed relationships reflect genuine population patterns
+
+   • The **sampling distributions** of :math:`\hat{\beta}_0` and :math:`\hat{\beta}_1` follow :math:`t`-distributions with :math:`n-2` degrees of freedom when :math:`\sigma^2` is estimated
+
+   • **Assumption checking** is critical before inference: use scatterplots, residual plots, histograms, and QQ-plots to assess linearity, independence, constant variance, and normality
+
+   • The **t-test for the slope** tests whether :math:`\beta_1 = 0` (or directional alternatives), while **confidence intervals** quantify uncertainty about the true slope
+
+   • The **regression F-test** partitions total variability into explained (regression) and unexplained (error) components, testing overall model significance
+
+   • In simple linear regression, :math:`F = t^2`, so the F-test and two-sided t-test for the slope give equivalent conclusions
+
+   • The **intercept** :math:`\beta_0` represents the mean response when :math:`x = 0`, which may or may not be meaningful depending on context
+
+   • **R functions** like ``lm()``, ``summary()``, ``confint()``, and ``anova()`` provide efficient tools for regression analysis and inference
