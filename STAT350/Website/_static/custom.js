@@ -174,7 +174,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-
     // Add titles to all iframes that don't have them
     const iframes = document.querySelectorAll('iframe:not([title])');
     
@@ -209,4 +208,47 @@ document.addEventListener('DOMContentLoaded', function() {
             console.warn(`No title found for video ID: ${videoId}`);
         }
     });
+
+    // Fix region landmark - wrap orphaned content outside landmarks
+    const rstVersions = document.querySelector('.rst-versions');
+    if (rstVersions && !rstVersions.closest('main, nav, aside, header, footer, [role="main"], [role="navigation"], [role="region"], [role="banner"], [role="contentinfo"]')) {
+        rstVersions.setAttribute('role', 'region');
+        rstVersions.setAttribute('aria-label', 'Version selector');
+    }
+
+    // Fix footer landmark - consolidate contentinfo role
+    const footer = document.querySelector('footer');
+    if (footer) {
+        const innerContentinfo = footer.querySelector('[role="contentinfo"]');
+        if (innerContentinfo) {
+            innerContentinfo.removeAttribute('role');
+        }
+        footer.setAttribute('role', 'contentinfo');
+    }
+    // Fix MathJax v4 invalid ARIA references
+    if (typeof MathJax !== 'undefined' && MathJax.startup) {
+        MathJax.startup.promise.then(() => {
+            // Remove aria-describedby pointing to non-existent IDs
+            document.querySelectorAll('[aria-describedby]').forEach(el => {
+                const ids = el.getAttribute('aria-describedby').split(/\s+/);
+                const validIds = ids.filter(id => document.getElementById(id));
+                if (validIds.length === 0) {
+                    el.removeAttribute('aria-describedby');
+                } else if (validIds.length !== ids.length) {
+                    el.setAttribute('aria-describedby', validIds.join(' '));
+                }
+            });
+            
+            // Same for aria-labelledby
+            document.querySelectorAll('[aria-labelledby]').forEach(el => {
+                const ids = el.getAttribute('aria-labelledby').split(/\s+/);
+                const validIds = ids.filter(id => document.getElementById(id));
+                if (validIds.length === 0) {
+                    el.removeAttribute('aria-labelledby');
+                } else if (validIds.length !== ids.length) {
+                    el.setAttribute('aria-labelledby', validIds.join(' '));
+                }
+            });
+        });
+    }
 });
