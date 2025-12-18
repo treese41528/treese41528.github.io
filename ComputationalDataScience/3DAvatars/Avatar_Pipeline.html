@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animatable Avatar Pipeline - From Photos to Animated 3D Humans</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- KaTeX for Math -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --slide-width: 1280px;
+            --slide-height: 720px;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .slide-container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .slide {
+            width: var(--slide-width);
+            height: var(--slide-height);
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
+            padding: 40px 50px;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .slide.active {
+            display: flex;
+        }
+        
+        .slide-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.2;
+            margin-bottom: 0.5rem;
+        }
+        
+        h2 {
+            font-size: 1.875rem;
+            font-weight: 300;
+            color: #1e293b;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        
+        h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 0.5rem;
+        }
+        
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: #be185d;
+        }
+        
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            background: #1e293b;
+            color: #94f87e;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+        
+        pre .comment { color: #64748b; }
+        pre .keyword { color: #c084fc; }
+        pre .string { color: #fbbf24; }
+        pre .number { color: #f97316; }
+        pre .function { color: #38bdf8; }
+        
+        .video-container {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .pipeline-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #ede9fe;
+            color: #6d28d9;
+        }
+        
+        .metric-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: #64748b;
+        }
+        
+        .stage-card {
+            border-radius: 10px;
+            padding: 12px 16px;
+            border-left: 4px solid;
+        }
+        
+        .callout {
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+        }
+        
+        .callout.info { background: #eff6ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+        .callout.success { background: #f0fdf4; border-left: 4px solid #22c55e; color: #166534; }
+        .callout.warning { background: #fffbeb; border-left: 4px solid #f59e0b; color: #92400e; }
+        .callout.danger { background: #fef2f2; border-left: 4px solid #ef4444; color: #991b1b; }
+        
+        /* Navigation */
+        .nav-controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 12px 24px;
+            border-radius: 50px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        
+        .nav-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #334155;
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .nav-btn:hover {
+            background: #475569;
+            transform: scale(1.1);
+        }
+        
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: #334155;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: width 0.3s ease;
+        }
+        
+        .slide-indicator {
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 500;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        /* Scrollable content */
+        .scroll-content {
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 8px;
+        }
+        
+        .scroll-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .scroll-content::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+        
+        .scroll-content::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        
+        /* Video grid */
+        .video-grid {
+            display: grid;
+            gap: 16px;
+        }
+        
+        .video-grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .video-grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .video-grid-4 { grid-template-columns: repeat(4, 1fr); }
+        
+        .video-item {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .video-item video, .video-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .video-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.75);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .video-fullscreen-btn {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.2s;
+            z-index: 10;
+        }
+        
+        .video-item:hover .video-fullscreen-btn,
+        .video-container:hover .video-fullscreen-btn,
+        .comparison-card:hover .video-fullscreen-btn {
+            opacity: 1;
+        }
+        
+        .video-fullscreen-btn:hover {
+            background: rgba(59, 130, 246, 0.9);
+        }
+        
+        .video-item {
+            cursor: pointer;
+        }
+        
+        /* Fullscreen video styles */
+        video:fullscreen,
+        .video-container:fullscreen video,
+        .video-item:fullscreen video,
+        .card-video:fullscreen video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            background: #000;
+        }
+        
+        .video-container:fullscreen,
+        .video-item:fullscreen,
+        .card-video:fullscreen {
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Video modal overlay */
+        .video-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .video-modal.active {
+            display: flex;
+        }
+        
+        .video-modal video {
+            max-width: 95vw;
+            max-height: 85vh;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        
+        .video-modal-close {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            font-size: 32px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .video-modal-close:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .video-modal-title {
+            color: white;
+            font-size: 14px;
+            margin-top: 16px;
+            opacity: 0.8;
+        }
+        
+        .video-modal-hint {
+            color: rgba(255,255,255,0.5);
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        
+        /* Comparison cards */
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        
+        .comparison-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .comparison-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-4px);
+        }
+        
+        .comparison-card .card-video {
+            height: 200px;
+            background: #000;
+            position: relative;
+        }
+        
+        .comparison-card .card-info {
+            padding: 16px;
+        }
+        
+        .comparison-card .card-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .comparison-card .card-desc {
+            font-size: 12px;
+            color: #64748b;
+        }
+        
+        /* Math styling */
+        .math-block {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            text-align: center;
+            margin: 8px 0;
+        }
+        
+        /* Feature list */
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        
+        .feature-item {
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .feature-item .icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        
+        .feature-item .title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .feature-item .desc {
+            font-size: 11px;
+            opacity: 0.9;
+        }
+        
+        /* Timeline */
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 16px 0;
+            flex-wrap: wrap;
+        }
+        
+        .pipeline-flow .step {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .pipeline-flow .arrow {
+            color: #94a3b8;
+        }
+        
+        /* Table styling */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        th {
+            background: #f1f5f9;
+            font-weight: 600;
+            color: #475569;
+        }
+        
+        tr:hover {
+            background: #f8fafc;
+        }
+        
+        /* Animation for transitions */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .slide.active {
+            animation: fadeIn 0.4s ease-out;
+        }
+        
+        /* Speaker notes toggle */
+        .notes-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.9);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            z-index: 1000;
+            border: none;
+            transition: all 0.2s;
+        }
+        
+        .notes-toggle:hover {
+            background: rgba(51, 65, 85, 0.9);
+        }
+        
+        .speaker-notes {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            max-height: 200px;
+            background: rgba(15, 23, 42, 0.95);
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+            overflow-y: auto;
+            display: none;
+            z-index: 999;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+        
+        .speaker-notes.visible {
+            display: block;
+        }
+        
+        .speaker-notes h4 {
+            color: #60a5fa;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Notes Toggle -->
+    <button class="notes-toggle" onclick="toggleNotes()">📝 Notes</button>
+    
+    <!-- Speaker Notes Panel -->
+    <div class="speaker-notes" id="speakerNotes"></div>
+    
+    <div class="slide-container">
+        <!-- ============================================ -->
+        <!-- SLIDE 1: Hero -->
+        <!-- ============================================ -->
+        <div class="slide active" data-notes="Opening hook: What you're seeing is the end result—a photorealistic avatar performing yoga, rendered in real-time in a web browser. Today we'll build this from scratch, starting with photographs.
+
+Frame the problem: This is fundamentally an inverse problem. We observe 2D projections—pixels—and want to recover the underlying 3D structure. But there are infinitely many 3D configurations that could produce the same images. Our job is to find the most plausible one.
+
+Duration: 1-2 minutes">
+            <div class="flex gap-8 h-full">
+                <div class="flex-1 flex flex-col justify-center">
+                    <p class="text-sm font-mono text-gray-500 mb-2 tracking-wider">STUDENT TUTORIAL</p>
+                    <h1>Animatable Avatar Pipeline</h1>
+                    <p class="text-xl text-gray-600 mb-6 leading-relaxed">
+                        Transform multi-view photographs into animated 3D human avatars with motion transfer.
+                    </p>
+                    
+                    <div class="callout info mb-6">
+                        <p class="font-semibold text-sm mb-1">The Core Problem</p>
+                        <p class="text-sm">
+                            Given <code>N images</code> of a person, recover the 3D body model parameters 
+                            <code>Θ = (β, θ, τ)</code> that explain the observations.
+                        </p>
+                    </div>
+                    
+                    <div class="pipeline-flow">
+                        <span class="step bg-purple-100 text-purple-800">COLMAP</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">Preprocess</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">SMPL-X Fit</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">Texture</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">Motion</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">Retarget</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">VAT</span>
+                        <span class="arrow">→</span>
+                        <span class="step bg-purple-100 text-purple-800">Viewer</span>
+                    </div>
+                </div>
+                
+                <div class="w-[400px] flex flex-col justify-center">
+                    <div class="video-container mb-4" style="aspect-ratio: 1;">
+                        <video autoplay loop muted playsinline>
+                            <source src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/full_moyo.webm" type="video/webm">
+                        </video>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="metric-card">
+                            <div class="metric-value">10,475</div>
+                            <div class="metric-label">vertices</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">60</div>
+                            <div class="metric-label">fps playback</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value">83×</div>
+                            <div class="metric-label">faster texturing</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">1 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 2: Pipeline Overview -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Walk through each stage: COLMAP uses SfM/MVS to turn photos into colored point clouds. Preprocessing cleans the mesh. SMPL-X fitting is the key step—we take unstructured points and find the parametric model that explains them. Color transfer maps COLMAP colors to SMPL-X vertices. Motion retargeting applies any sequence to our shape.
+
+NEW: Retarget to COLMAP stage transfers SMPL-X skinning weights back to the original COLMAP mesh via barycentric interpolation. This lets us animate millions of vertices with full geometric detail—true photorealism.
+
+VAT export is optional for web playback.
+
+The dimensionality story: We go from millions of pixels to just 119 parameters. That's not lossy compression—it's leveraging the strong prior that this is a human body. The retarget path then expands back to millions of vertices while keeping animatability.
+
+Duration: 2-3 minutes">
+            <h2>Pipeline Overview</h2>
+            <p class="text-gray-600 mb-4 text-sm">
+                Each stage transforms data representation, progressively constraining the solution space.
+            </p>
+            
+            <div class="scroll-content">
+                <div class="space-y-3 mb-4">
+                    <!-- Stage 1 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
+                        <div class="flex-1 stage-card bg-blue-50 border-blue-300" style="border-left-color: #3b82f6;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-blue-800 m-0">COLMAP</h3>
+                                    <p class="text-xs text-gray-600 italic">Multi-view stereo recovers 3D geometry with vertex colors</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">N × H×W×3 images</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">~1.5M vertices + colors</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 2 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
+                        <div class="flex-1 stage-card bg-green-50" style="border-left-color: #22c55e;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-green-800 m-0">Preprocess</h3>
+                                    <p class="text-xs text-gray-600 italic">Remove artifacts, fix topology, normalize scale</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">1.5M noisy vertices</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">300-500K clean vertices</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 3 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
+                        <div class="flex-1 stage-card bg-purple-50" style="border-left-color: #9333ea;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-purple-800 m-0">SMPL-X Fit</h3>
+                                    <p class="text-xs text-gray-600 italic">Constrain to anatomically plausible body; gain skeleton</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">300-500K target points</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">10,475 rigged vertices</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 4 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">4</div>
+                        <div class="flex-1 stage-card bg-orange-50" style="border-left-color: #ea580c;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-orange-800 m-0">Color Transfer</h3>
+                                    <p class="text-xs text-gray-600 italic">k-NN maps scan colors to SMPL-X vertices once; persistent</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">COLMAP colors + SMPL-X</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">10,475 vertex colors</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 5 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-pink-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">5</div>
+                        <div class="flex-1 stage-card bg-pink-50" style="border-left-color: #db2777;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-pink-800 m-0">Motion Retarget</h3>
+                                    <p class="text-xs text-gray-600 italic">Transfer any motion to our body shape; colors follow via LBS</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">SMPL-X + MOYO sequence</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">T frames × (xyz + rgb)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 6 - Retarget to COLMAP -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">6</div>
+                        <div class="flex-1 stage-card bg-violet-50 border-2 border-dashed border-violet-400" style="border-left: 4px solid #7c3aed;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-violet-800 m-0">Retarget to COLMAP <span class="text-xs font-normal opacity-60">(optional)</span></h3>
+                                    <p class="text-xs text-gray-600 italic">Transfer SMPL-X skinning weights to original mesh; animate full-detail geometry</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">SMPL-X weights + COLMAP</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">~1M rigged vertices</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stage 7 -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">7</div>
+                        <div class="flex-1 stage-card bg-teal-50 border-2 border-dashed border-teal-400" style="border-left: 4px solid #14b8a6;">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-teal-800 m-0">VAT Export <span class="text-xs font-normal opacity-60">(optional)</span></h3>
+                                    <p class="text-xs text-gray-600 italic">GPU-friendly format for real-time playback</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="bg-white/70 px-2 py-1 rounded">T × 10,475 × (xyz+rgb)</span>
+                                    <span class="text-gray-500">→</span>
+                                    <span class="bg-white/70 px-2 py-1 rounded">3 PNGs + JSON</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dimensionality box -->
+                <div class="bg-slate-800 text-white rounded-lg p-4">
+                    <div class="flex items-start gap-4">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-sm mb-1">The Dimensionality Story</h4>
+                            <p class="text-xs text-slate-300">
+                                We start with millions of pixels, reconstruct ~1.5M colored 3D points, 
+                                then collapse geometry to 119 parameters: <span class="font-mono text-yellow-300">β</span> (10 shape), 
+                                <span class="font-mono text-yellow-300">θ</span> (75 pose), 
+                                <span class="font-mono text-yellow-300">hands</span> (24 PCA),
+                                <span class="font-mono text-yellow-300">ψ</span> (10 expression).
+                                SMPL-X acts as a <em>strong prior</em>. Optional: retarget weights back to COLMAP for <span class="text-violet-300">full-detail animation</span>.
+                            </p>
+                        </div>
+                        <div class="text-right text-xs font-mono text-slate-400">
+                            <div>N×H×W×3 pixels</div>
+                            <div class="text-slate-500">↓</div>
+                            <div>1.5M pts + rgb</div>
+                            <div class="text-slate-500">↓</div>
+                            <div class="text-yellow-300">119 params + rgb</div>
+                            <div class="text-slate-500">↓</div>
+                            <div class="text-violet-300">1M+ retarget (opt)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">2 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 3: Image Capture -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Video capture method: For students, the easiest approach is smartphone video. Walk slowly around your subject in a complete circle, then repeat at different heights.
+
+Why T-pose: This is critical for two reasons. First, SMPL-X's default pose is T-pose. Second—color transfer. If arms are down, the underarms, inner arms, and sides of the torso are occluded. COLMAP can't reconstruct colors for surfaces it can't see.
+
+Duration: 3 minutes">
+            <h2>Stage 1: Image Capture</h2>
+            
+            <div class="grid grid-cols-3 gap-4 flex-1 overflow-hidden">
+                <div class="col-span-2 scroll-content">
+                    <div class="callout info mb-4">
+                        <h3 class="text-blue-800 mb-2">Video Capture Workflow (Recommended)</h3>
+                        <div class="grid grid-cols-3 gap-3 text-sm">
+                            <div class="bg-white rounded p-3 text-center">
+                                <div class="text-2xl mb-1">📱</div>
+                                <div class="font-medium">1. Record Video</div>
+                                <div class="text-xs text-gray-600 mt-1">3 orbits, 3 angles</div>
+                            </div>
+                            <div class="bg-white rounded p-3 text-center">
+                                <div class="text-2xl mb-1">🎬</div>
+                                <div class="font-medium">2. Extract Frames</div>
+                                <div class="text-xs text-gray-600 mt-1">FFmpeg (adjust fps)</div>
+                            </div>
+                            <div class="bg-white rounded p-3 text-center">
+                                <div class="text-2xl mb-1">📁</div>
+                                <div class="font-medium">3. Feed to COLMAP</div>
+                                <div class="text-xs text-gray-600 mt-1">Ordered sequence</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-50 border rounded-lg p-4 mb-4">
+                        <h3 class="text-gray-800 mb-2">Coverage: 3 Orbits × 3 Camera Angles</h3>
+                        <div class="flex items-start gap-4">
+                            <div class="flex-1">
+                                <ul class="text-sm text-gray-700 space-y-1">
+                                    <li>1. <span class="text-green-600 font-medium">Crouching ↑</span> — capture under chin</li>
+                                    <li>2. <span class="text-blue-600 font-medium">Standing →</span> — eye level</li>
+                                    <li>3. <span class="text-orange-600 font-medium">Arms up, aim ↓</span> — top of head</li>
+                                </ul>
+                                <p class="mt-2 text-gray-500 italic text-sm">Walk slowly! Adjacent frames need 70% shared content.</p>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 text-xs">
+                                <div class="bg-gray-100 p-2 rounded text-center">
+                                    <div class="font-bold text-lg text-blue-600">100+</div>
+                                    <div class="text-gray-600">frames min</div>
+                                </div>
+                                <div class="bg-gray-100 p-2 rounded text-center">
+                                    <div class="font-bold text-lg text-green-600">1080p+</div>
+                                    <div class="text-gray-600">resolution</div>
+                                </div>
+                                <div class="bg-gray-100 p-2 rounded text-center">
+                                    <div class="font-bold text-lg text-purple-600">3</div>
+                                    <div class="text-gray-600">angles</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="callout success">
+                        <h4 class="font-semibold text-sm mb-1">What is "overlap"?</h4>
+                        <p class="text-xs">
+                            Adjacent frames must share ~70% of visible content. This means walking <strong>slowly</strong>—if 
+                            you turn too fast, consecutive frames have no common features and COLMAP can't triangulate.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="space-y-3">
+                    <div class="bg-white border-2 border-purple-300 rounded-lg overflow-hidden">
+                        <div class="bg-purple-100 px-3 py-1.5 text-center">
+                            <span class="font-semibold text-purple-800 text-sm">Subject Pose: T-Pose</span>
+                        </div>
+                        <img src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/T-pose.png" 
+                             alt="T-pose reference" class="w-full h-auto">
+                    </div>
+                    
+                    <div class="callout warning">
+                        <h4 class="font-semibold text-sm mb-2">Why T-Pose?</h4>
+                        <ul class="text-xs space-y-1">
+                            <li>• <strong>Color coverage:</strong> Exposes underarms, inner arms, sides</li>
+                            <li>• Matches SMPL-X default pose</li>
+                            <li>• Minimizes self-occlusion</li>
+                            <li>• Best for motion retargeting</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="callout danger">
+                        <h4 class="font-semibold text-sm mb-2">Avoid These Mistakes</h4>
+                        <ul class="text-xs space-y-1">
+                            <li>✗ Subject moving during capture</li>
+                            <li>✗ Arms at sides / hands in pockets</li>
+                            <li>✗ Harsh shadows / mixed lighting</li>
+                            <li>✗ Gaps in coverage</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">3 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 4: COLMAP Reconstruction -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="COLMAP runs a 7-step pipeline: feature extraction, matching, sparse SfM, undistortion, patch-match stereo, fusion, and Poisson meshing.
+
+Don't remove backgrounds—provide masks via --ImageReader.mask_path. Validation is critical: check features (2K-10K per image), matches (100+ per pair), registration (70-90%).
+
+Duration: 4 minutes">
+            <h2>Stage 2: COLMAP Reconstruction</h2>
+            
+            <div class="grid grid-cols-5 gap-3 flex-1 overflow-hidden">
+                <div class="col-span-3 scroll-content">
+                    <!-- Pipeline steps -->
+                    <div class="flex gap-1 mb-3 items-center flex-wrap">
+                        <div class="px-2 py-1 rounded border bg-blue-50 border-blue-300 text-center">
+                            <div class="text-xs font-bold">1</div>
+                            <div class="text-xs font-medium">Features</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-blue-50 border-blue-300 text-center">
+                            <div class="text-xs font-bold">2</div>
+                            <div class="text-xs font-medium">Match</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-green-50 border-green-300 text-center">
+                            <div class="text-xs font-bold">3</div>
+                            <div class="text-xs font-medium">Sparse</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-purple-50 border-purple-300 text-center">
+                            <div class="text-xs font-bold">4</div>
+                            <div class="text-xs font-medium">Undistort</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-purple-50 border-purple-300 text-center">
+                            <div class="text-xs font-bold">5</div>
+                            <div class="text-xs font-medium">Stereo</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-orange-50 border-orange-300 text-center">
+                            <div class="text-xs font-bold">6</div>
+                            <div class="text-xs font-medium">Fusion</div>
+                        </div>
+                        <span class="text-gray-400 text-xs">→</span>
+                        <div class="px-2 py-1 rounded border bg-orange-50 border-orange-300 text-center">
+                            <div class="text-xs font-bold">7</div>
+                            <div class="text-xs font-medium">Mesh</div>
+                        </div>
+                    </div>
+                    
+                    <pre><span class="comment"># Feature extraction (with optional mask path)</span>
+colmap feature_extractor --database_path db.db --image_path ./images \
+    --ImageReader.camera_model SIMPLE_RADIAL --ImageReader.single_camera 1 \
+    <span class="string">--ImageReader.mask_path ./masks/</span>  <span class="comment"># optional</span>
+
+<span class="comment"># Matching: try sequential first (video), fallback to exhaustive</span>
+colmap <span class="string">sequential_matcher</span> --database_path db.db --SequentialMatching.overlap 10
+
+<span class="comment"># Sparse → Dense → Mesh</span>
+colmap mapper --database_path db.db --image_path ./images --output_path sparse
+colmap image_undistorter --input_path sparse/0 --output_path dense
+colmap patch_match_stereo --workspace_path dense
+colmap stereo_fusion --workspace_path dense --output_path dense/fused.ply
+colmap poisson_mesher --input_path dense/fused.ply --output_path dense/mesh.ply \
+    --PoissonMeshing.depth <span class="number">12</span></pre>
+
+                    <!-- 5-item Media Grid -->
+                    <div class="grid grid-cols-5 gap-2 mt-3">
+                        <div class="video-item h-32">
+                            <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Tim.mp4" autoplay loop muted playsinline></video>
+                            <div class="video-label">1. Input Video</div>
+                        </div>
+                        <div class="video-item h-32">
+                            <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Tim_Segmented.mp4" autoplay loop muted playsinline></video>
+                            <div class="video-label">2. Segmented</div>
+                        </div>
+                        <div class="video-item h-32">
+                            <img src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/feature_matches_inliers_distant.png" alt="Feature matches">
+                            <div class="video-label">3. Feature Matches</div>
+                        </div>
+                        <div class="video-item h-32">
+                            <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/3D%20PointCloud.webm" autoplay loop muted playsinline></video>
+                            <div class="video-label">4. Point Cloud</div>
+                        </div>
+                        <div class="video-item h-32">
+                            <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/tim_3D.webm" autoplay loop muted playsinline></video>
+                            <div class="video-label">5. 3D Mesh</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-span-2 space-y-2 scroll-content">
+                    <div class="callout warning">
+                        <h4 class="font-semibold text-sm mb-1">Optional: Provide Masks</h4>
+                        <p class="text-xs">Don't remove backgrounds—black/green bleeds into reconstruction! Provide binary masks via <code>--ImageReader.mask_path</code></p>
+                    </div>
+                    
+                    <div class="callout info">
+                        <h4 class="font-semibold text-sm mb-1">Validation Checklist</h4>
+                        <div class="text-xs space-y-1">
+                            <div><span class="font-medium text-blue-700">After features:</span> 2,000-10,000 per image</div>
+                            <div><span class="font-medium text-blue-700">After matching:</span> 100-1,000+ matches/pair</div>
+                            <div><span class="font-medium text-blue-700">After sparse:</span> 70-90% images registered</div>
+                            <div><span class="font-medium text-blue-700">After fusion:</span> millions of points</div>
+                        </div>
+                    </div>
+                    
+                    <div class="callout danger">
+                        <h4 class="font-semibold text-sm mb-1">Common Failures</h4>
+                        <div class="text-xs space-y-1">
+                            <div><span class="font-medium text-red-700">&lt;500 features:</span> blurry or textureless</div>
+                            <div><span class="font-medium text-red-700">&lt;50% registered:</span> insufficient overlap</div>
+                            <div><span class="font-medium text-red-700">Sequential fails:</span> try exhaustive_matcher</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-50 rounded p-3 border text-xs">
+                        <div class="font-semibold text-gray-700 mb-1">Poisson Depth → Vertex Count</div>
+                        <div class="font-mono text-gray-600 space-y-0.5">
+                            <div>depth 8  → ~2K verts (preview)</div>
+                            <div>depth 10 → ~42K verts</div>
+                            <div>depth 11 → ~256K verts</div>
+                            <div class="text-green-700 font-medium">depth 12+ → ~1.4M+ verts ⭐</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-50 rounded p-3 border text-xs">
+                        <div class="font-semibold text-gray-700 mb-1">Key Outputs</div>
+                        <div class="font-mono text-gray-600">
+                            <div>sparse/0/ <span class="text-green-500">← camera poses</span></div>
+                            <div>dense/fused.ply <span class="text-orange-500">← point cloud</span></div>
+                            <div>dense/mesh.ply <span class="text-orange-500">← final mesh</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">4 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 5: Mesh Preprocessing -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Preprocessing has three steps: Clean (remove degenerate triangles, keep largest component, Poisson reconstruction for watertight), Simplify (quadric decimation to ~50K verts with k-NN color transfer), Transform (Y-flip for COLMAP→SMPL-X coords, scale to 1.7m).
+
+Duration: 5 minutes">
+            <h2>Stage 3: Mesh Preprocessing</h2>
+            
+            <div class="pipeline-flow mb-4">
+                <div class="bg-orange-100 border border-orange-300 rounded px-3 py-2 text-center">
+                    <div class="text-xs font-medium text-orange-800">COLMAP mesh</div>
+                    <div class="text-xs text-orange-600">~1-2M verts, Y-down</div>
+                </div>
+                <span class="text-xl text-gray-400">→</span>
+                <span class="step bg-blue-100 text-blue-800">1. Clean</span>
+                <span class="arrow">→</span>
+                <span class="step bg-purple-100 text-purple-800">2. Simplify</span>
+                <span class="arrow">→</span>
+                <span class="step bg-green-100 text-green-800">3. Transform</span>
+                <span class="text-xl text-gray-400">→</span>
+                <div class="bg-green-100 border border-green-300 rounded px-3 py-2 text-center">
+                    <div class="text-xs font-medium text-green-800">Ready for fitting</div>
+                    <div class="text-xs text-green-600">~50k verts, Y-up, meters</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 flex-1 overflow-hidden">
+                <!-- Clean -->
+                <div class="rounded-lg border bg-blue-50 border-blue-300 overflow-hidden flex flex-col">
+                    <div class="px-3 py-2 bg-blue-100 text-blue-800 font-semibold text-sm">1. Clean</div>
+                    <div class="p-3 flex-1 overflow-auto">
+                        <pre class="text-[10px]"><span class="comment"># Remove degenerate geometry</span>
+mesh.remove_degenerate_triangles()
+mesh.remove_duplicated_vertices()
+mesh.remove_non_manifold_edges()
+
+<span class="comment"># Keep largest connected component</span>
+tri_clusters = mesh.cluster_connected_triangles()
+largest = np.argmax(cluster_n)
+mesh.remove_triangles_by_mask(mask)
+
+<span class="comment"># Poisson → watertight</span>
+pcd.estimate_normals()
+mesh = o3d.geometry.TriangleMesh\
+    .create_from_point_cloud_poisson(pcd, depth=9)</pre>
+                    </div>
+                </div>
+                
+                <!-- Simplify -->
+                <div class="rounded-lg border bg-purple-50 border-purple-300 overflow-hidden flex flex-col">
+                    <div class="px-3 py-2 bg-purple-100 text-purple-800 font-semibold text-sm">2. Simplify</div>
+                    <div class="p-3 flex-1 overflow-auto">
+                        <pre class="text-[10px]"><span class="comment"># Save colors before (may be lost)</span>
+old_colors = np.asarray(mesh.vertex_colors)
+
+<span class="comment"># Quadric decimation</span>
+mesh = mesh.simplify_quadric_decimation(
+    target_number_of_triangles=<span class="number">100000</span>)
+
+<span class="comment"># Transfer colors via k-NN</span>
+tree = cKDTree(old_verts)
+_, idx = tree.query(np.asarray(mesh.vertices))
+mesh.vertex_colors = old_colors[idx]
+
+<span class="comment"># Recompute normals</span>
+mesh.compute_vertex_normals()</pre>
+                    </div>
+                </div>
+                
+                <!-- Transform -->
+                <div class="rounded-lg border bg-green-50 border-green-300 overflow-hidden flex flex-col">
+                    <div class="px-3 py-2 bg-green-100 text-green-800 font-semibold text-sm">3. Transform</div>
+                    <div class="p-3 flex-1 overflow-auto">
+                        <pre class="text-[10px]"><span class="comment"># Scale to target height (meters)</span>
+h = verts[:,1].max() - verts[:,1].min()
+verts *= (<span class="number">1.7</span> / h)
+
+<span class="comment"># Flip Y: COLMAP Y-down → SMPL-X Y-up</span>
+verts[:,1] *= -1
+
+<span class="comment"># Center: pelvis at origin (~0.9m up)</span>
+verts[:,1] -= verts[:,1].min() + <span class="number">0.9</span>
+verts[:,0] -= verts[:,0].mean()
+verts[:,2] -= verts[:,2].mean()</pre>
+                        
+                        <div class="mt-3 p-2 bg-white rounded border">
+                            <div class="text-xs font-semibold text-gray-700 mb-1">Coordinate Systems</div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="text-orange-700">COLMAP: Y-down ↓</div>
+                                <div class="text-green-700">SMPL-X: Y-up ↑</div>
+                            </div>
+                            <div class="text-xs text-center mt-1 font-mono bg-gray-100 rounded px-1 py-0.5">
+                                verts[:,1] *= -1
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3 mt-3">
+                <div class="callout info">
+                    <h4 class="font-semibold text-sm mb-1">Why Poisson Reconstruction?</h4>
+                    <p class="text-xs">COLMAP meshes have holes and non-manifold edges. Poisson creates a <strong>watertight</strong> surface required for skinning.</p>
+                </div>
+                <div class="callout warning">
+                    <h4 class="font-semibold text-sm mb-1">Why Simplify to 50k?</h4>
+                    <p class="text-xs">SMPL-X fitting computes distances from <strong>every vertex</strong>. 1M+ vertices → GPU OOM errors.</p>
+                </div>
+            </div>
+            <div class="slide-number">5 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 6: SMPL-X Fitting -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="SMPL-X (SMPL eXpressive) is a parametric body model combining SMPL body, FLAME head, and MANO hands. 10,475 vertices, 54 joints, 119 parameters total.
+
+Chamfer distance measures how far apart two point clouds are—average nearest-neighbor distance in both directions. Multi-stage optimization: Global→Shape→Coarse pose→Fine pose→Joint.
+
+Duration: 5 minutes">
+            <h2>Stage 4: SMPL-X Model Fitting</h2>
+            
+            <div class="pipeline-flow mb-3">
+                <span class="text-gray-400 text-sm">Photos</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">COLMAP</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Clean</span>
+                <span class="arrow">→</span>
+                <span class="step bg-orange-500 text-white">SMPL-X Fit</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Texture</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Motion</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 flex-1 overflow-hidden">
+                <div class="scroll-content space-y-3">
+                    <!-- What is SMPL-X -->
+                    <div class="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                        <h3 class="text-orange-700 mb-2">What is SMPL-X?</h3>
+                        <p class="text-sm text-gray-700 mb-2"><strong>SMPL eXpressive</strong> — unified body model combining SMPL body, FLAME face, MANO hands.</p>
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs border-t border-orange-200 pt-2">
+                            <div class="flex justify-between"><span class="text-gray-600">Vertices:</span><span class="font-mono text-orange-700">10,475</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Joints:</span><span class="font-mono text-orange-700">54</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Shape (β):</span><span class="font-mono text-orange-700">10 params</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Body pose:</span><span class="font-mono text-orange-700">63 params</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Hands (PCA):</span><span class="font-mono text-orange-700">24 params</span></div>
+                            <div class="flex justify-between"><span class="text-gray-600">Expression (ψ):</span><span class="font-mono text-orange-700">10 params</span></div>
+                        </div>
+                    </div>
+                    
+                    <!-- SMPL-X GIF -->
+                    <div class="bg-black rounded-lg overflow-hidden">
+                        <img src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/SMPLModel.gif" 
+                             alt="SMPL-X Model" class="w-full h-40 object-contain">
+                    </div>
+                    
+                    <!-- Chamfer Loss -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <h3 class="text-gray-700 mb-2">Chamfer Distance Loss</h3>
+                        <div class="math-block text-sm">
+                            L<sub>chamfer</sub> = <sup>1</sup>/<sub>|A|</sub> Σ min‖a-b‖₂ + <sup>1</sup>/<sub>|B|</sub> Σ min‖b-a‖₂
+                        </div>
+                        <pre class="text-[10px] mt-2"><span class="comment"># Pairwise distances</span>
+dist = torch.cdist(smplx_v, scan_v)
+loss_s2t = dist.min(dim=1)[0].mean()
+loss_t2s = dist.min(dim=0)[0].mean()
+chamfer = (loss_s2t + loss_t2s) / 2</pre>
+                    </div>
+                </div>
+                
+                <div class="scroll-content space-y-3">
+                    <!-- Forward Pass -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <h3 class="text-gray-700 mb-2">SMPL-X Forward Pass</h3>
+                        <pre class="text-[10px]"><span class="keyword">import</span> <span class="function">smplx</span>
+model = smplx.create(
+    model_path=<span class="string">'models/'</span>,
+    model_type=<span class="string">'smplx'</span>,
+    gender=<span class="string">'neutral'</span>,
+    num_betas=<span class="number">10</span>
+).to(device)
+
+output = model(
+    betas=betas,        <span class="comment"># (1,10)</span>
+    body_pose=pose,     <span class="comment"># (1,63)</span>
+    global_orient=orient,<span class="comment"># (1,3)</span>
+    transl=transl       <span class="comment"># (1,3)</span>
+)
+vertices = output.vertices  <span class="comment"># (1,10475,3)</span></pre>
+                    </div>
+                    
+                    <!-- Multi-Stage Optimization -->
+                    <div class="callout info">
+                        <h3 class="text-blue-700 mb-2">Multi-Stage Optimization</h3>
+                        <div class="space-y-1 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">1</span>
+                                <span><strong>Global</strong>: orient, transl, scale</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">2</span>
+                                <span><strong>Shape</strong>: β (body proportions)</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">3</span>
+                                <span><strong>Coarse pose</strong>: HIGH regularization</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">4</span>
+                                <span><strong>Fine pose</strong>: lower regularization</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">5</span>
+                                <span><strong>Joint</strong>: all params together</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pose Presets -->
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <h3 class="text-purple-700 mb-2">Pose Presets</h3>
+                        <table class="text-xs">
+                            <thead>
+                                <tr class="border-b border-purple-200">
+                                    <th class="py-1 text-purple-700">Preset</th>
+                                    <th class="py-1 text-purple-700">Shoulder Z</th>
+                                    <th class="py-1 text-purple-700">Use When</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="bg-green-50">
+                                    <td class="py-1 font-mono font-semibold text-green-700">t-pose ✓</td>
+                                    <td>0°</td>
+                                    <td>Arms horizontal (recommended)</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-1 font-mono">a-pose</td>
+                                    <td>±45°</td>
+                                    <td>Arms diagonal</td>
+                                </tr>
+                                <tr>
+                                    <td class="py-1 font-mono">relaxed</td>
+                                    <td>±72°</td>
+                                    <td>Natural standing</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">6 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 7: Pose Initialization -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Wrong initialization → optimizer must rotate joints through large angles → twisted limbs and incorrect color transfer. Match the preset to the actual scan pose, or better yet: capture in T-pose!
+
+Duration: 2 minutes">
+            <h2>⚠️ Pose Initialization Matters!</h2>
+            
+            <p class="text-sm text-gray-600 mb-3">
+                Wrong initialization → optimizer must rotate joints through large angles → <strong class="text-red-600">twisted limbs</strong> and <strong class="text-red-600">incorrect color transfer</strong>.
+            </p>
+
+            <div class="flex items-center gap-4 mb-4 text-xs">
+                <span class="font-semibold text-gray-700">Shoulder Z-rotation:</span>
+                <span class="bg-gray-100 px-2 py-1 rounded font-mono">t-pose: 0°</span>
+                <span class="bg-gray-100 px-2 py-1 rounded font-mono">a-pose: ±45°</span>
+                <span class="bg-green-100 border border-green-400 px-2 py-1 rounded font-mono text-green-700 font-semibold">relaxed: ±72° ✓</span>
+                <span class="bg-gray-100 px-2 py-1 rounded font-mono">arms-at-side: ±90°</span>
+            </div>
+            
+            <div class="video-grid video-grid-2 mb-4" style="height: 280px;">
+                <div class="video-item">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/smplx_fitting_t-pose.webm" autoplay loop muted playsinline></video>
+                    <div class="video-label">❌ T-Pose Init (scan was relaxed)</div>
+                </div>
+                <div class="video-item">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/smplx_fitting_relaxed.webm" autoplay loop muted playsinline></video>
+                    <div class="video-label">✓ Relaxed Init (matches scan)</div>
+                </div>
+                <div class="video-item">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/smplx_fitting_a-pose.webm" autoplay loop muted playsinline></video>
+                    <div class="video-label">~ A-Pose Init (27° off)</div>
+                </div>
+                <div class="video-item">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/smplx_fitting_arms-above-head.webm" autoplay loop muted playsinline></video>
+                    <div class="video-label">❌ Arms Above Head (severe)</div>
+                </div>
+            </div>
+            
+            <div class="callout success">
+                <strong>💡 Best practice:</strong> Capture subject in T-pose → default init (zeros) works perfectly.
+            </div>
+            <div class="slide-number">7 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 8: Texture Transfer -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="The key insight: LBS transforms positions, not indices. Vertex i is always vertex i. Compute colors ONCE in the fitted pose, then reuse for all subsequent poses. Per-frame k-NN fails because the COLMAP mesh is static—arm raises → finds torso colors.
+
+Duration: 3 minutes">
+            <h2>Stage 5: Persistent Color Mapping</h2>
+            
+            <div class="pipeline-flow mb-3">
+                <span class="text-gray-400 text-sm">COLMAP</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Clean</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">SMPL-X Fit</span>
+                <span class="arrow">→</span>
+                <span class="step bg-pink-500 text-white">Color Map</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Motion</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">VAT</span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 flex-1 overflow-hidden">
+                <div class="scroll-content space-y-3">
+                    <div class="callout danger">
+                        <h3 class="text-red-700 mb-2">❌ Naive Approach: Per-Frame k-NN</h3>
+                        <pre class="text-[10px]"><span class="comment"># For EVERY frame...</span>
+<span class="keyword">for</span> frame <span class="keyword">in</span> frames:
+    posed_smplx = apply_pose(smplx, pose)
+    colors = knn(posed_smplx, colmap_mesh)
+    <span class="comment"># But COLMAP is in original pose!</span></pre>
+                        <p class="text-xs mt-2"><strong>Problem:</strong> COLMAP mesh is static. When SMPL-X pose changes, k-NN finds wrong neighbors from the frozen scan.</p>
+                    </div>
+                    
+                    <div class="callout info">
+                        <h3 class="text-blue-700 mb-2">🔑 Key Insight: LBS Preserves Vertex Indices</h3>
+                        <p class="text-sm mb-2">Linear Blend Skinning transforms vertex <em>positions</em>, not <em>identities</em>:</p>
+                        <div class="math-block text-xs">
+                            v<sub>i</sub>(θ) = Σ<sub>j</sub> w<sub>ij</sub> · G<sub>j</sub>(θ) · v<sub>i</sub><sup>rest</sup>
+                        </div>
+                        <ul class="text-xs mt-2 space-y-1">
+                            <li>✓ Vertex 5432 is <strong>always</strong> vertex 5432 (e.g., tip of nose)</li>
+                            <li>✓ Colors assigned to index persist through motion</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="callout success">
+                        <h3 class="text-green-700 mb-2">✅ The Solution: Compute Once, Reuse Forever</h3>
+                        <pre class="text-[10px]"><span class="comment"># Compute ONCE in fitted pose</span>
+colors = knn_interpolate(fitted_smplx, colmap_mesh)
+np.savez(<span class="string">'vertex_colors.npz'</span>, colors=colors)
+
+<span class="comment"># For ALL frames - just load!</span>
+colors = np.load(<span class="string">'vertex_colors.npz'</span>)[<span class="string">'colors'</span>]
+mesh.visual.vertex_colors = colors
+<span class="comment"># Colors "travel" with vertices via LBS</span></pre>
+                    </div>
+                </div>
+                
+                <div class="scroll-content space-y-3">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <h3 class="text-gray-700 mb-2">k-NN with Distance Weighting</h3>
+                        <pre class="text-[10px]"><span class="keyword">from</span> scipy.spatial <span class="keyword">import</span> cKDTree
+
+<span class="comment"># Build tree from COLMAP vertices</span>
+tree = cKDTree(colmap_verts)
+
+<span class="comment"># Query k=8 nearest for each SMPL-X vertex</span>
+dists, idxs = tree.query(smplx_verts, k=<span class="number">8</span>)
+
+<span class="comment"># Distance-weighted interpolation</span>
+weights = <span class="number">1.0</span> / (dists + <span class="number">1e-8</span>)
+weights /= weights.sum(axis=<span class="number">1</span>, keepdims=<span class="keyword">True</span>)
+
+<span class="comment"># Weighted average of neighbor colors</span>
+colors = np.einsum(<span class="string">'nk,nkc->nc'</span>,
+    weights, colmap_colors[idxs])</pre>
+                    </div>
+                    
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <h3 class="text-purple-700 mb-2">Why This Works</h3>
+                        <p class="text-sm text-gray-700">
+                            <strong>The key realization:</strong> Color is a property of the <em>vertex</em>, not the <em>position</em>.
+                        </p>
+                        <p class="text-sm text-gray-700 mt-2">
+                            Once you assign "red" to vertex 5432 (the nose), it stays red whether the nose is at (0,0,1) or (0.5, 0.2, 1.1).
+                        </p>
+                    </div>
+                    
+                    <div class="callout warning">
+                        <h3 class="text-amber-700 mb-2">Why Per-Frame Fails</h3>
+                        <div class="text-sm space-y-2">
+                            <div class="flex items-start gap-2">
+                                <span class="text-red-500">❌</span>
+                                <div><strong>Per-frame:</strong> Arm raises → arm vertices near COLMAP torso → k-NN returns torso colors</div>
+                            </div>
+                            <div class="flex items-start gap-2">
+                                <span class="text-green-500">✅</span>
+                                <div><strong>Persistent:</strong> Colors computed when aligned → locked to vertex index → correct colors travel with arm</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">8 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 9: Motion Retargeting -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Shape β stays constant (your body proportions). Pose θ varies per frame (the motion). CENTER TRANSLATION for seamless loops—raw MoCap has absolute coords that would cause teleporting.
+
+Duration: 5-6 minutes">
+            <h2>Stage 6: Motion Application</h2>
+            
+            <div class="pipeline-flow mb-3">
+                <span class="text-gray-400 text-sm">SMPL-X Fit</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Color Map</span>
+                <span class="arrow">→</span>
+                <span class="step bg-teal-500 text-white">Motion</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Retarget</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">VAT</span>
+            </div>
+
+            <div class="grid grid-cols-12 gap-3 flex-1 overflow-hidden">
+                <!-- MoCap Datasets -->
+                <div class="col-span-3 scroll-content space-y-2">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                        <h3 class="text-xs font-semibold text-blue-700 mb-2">📦 MoCap Datasets</h3>
+                        <div class="space-y-1 text-[10px]">
+                            <a href="https://amass.is.tue.mpg.de/" target="_blank" class="block bg-white rounded px-2 py-1 border border-blue-100 hover:border-blue-300">
+                                <span class="font-semibold text-blue-600">AMASS</span> — 40h+ unified archive
+                            </a>
+                            <a href="https://moyo.is.tue.mpg.de/" target="_blank" class="block bg-white rounded px-2 py-1 border border-blue-100 hover:border-blue-300">
+                                <span class="font-semibold text-blue-600">MOYO</span> — 200 yoga poses
+                            </a>
+                            <a href="https://motion-x-dataset.github.io/" target="_blank" class="block bg-white rounded px-2 py-1 border border-blue-100 hover:border-blue-300">
+                                <span class="font-semibold text-blue-600">Motion-X</span> — 15.6M frames
+                            </a>
+                            <a href="https://grab.is.tue.mpg.de/" target="_blank" class="block bg-white rounded px-2 py-1 border border-blue-100 hover:border-blue-300">
+                                <span class="font-semibold text-blue-600">GRAB</span> — Hand grasping
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-2">
+                        <h3 class="text-xs font-semibold text-purple-700 mb-2">🎥 Video → SMPL</h3>
+                        <div class="space-y-1 text-[10px]">
+                            <a href="https://github.com/yohanshin/WHAM" target="_blank" class="block bg-white rounded px-2 py-1 border border-purple-100 hover:border-purple-300">
+                                <span class="font-semibold text-purple-600">WHAM ⭐</span> — CVPR'24 SOTA
+                            </a>
+                            <a href="https://github.com/caizhongang/SMPLer-X" target="_blank" class="block bg-white rounded px-2 py-1 border border-purple-100 hover:border-purple-300">
+                                <span class="font-semibold text-purple-600">SMPLer-X</span> — Whole-body
+                            </a>
+                            <a href="https://shubham-goel.github.io/4dhumans/" target="_blank" class="block bg-white rounded px-2 py-1 border border-purple-100 hover:border-purple-300">
+                                <span class="font-semibold text-purple-600">4DHumans</span> — HMR 2.0
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="callout info text-xs">
+                        <strong>Core Insight:</strong> Shape β stays constant (your body). Pose θ varies per frame (the motion).
+                    </div>
+                </div>
+
+                <!-- Pipeline + Code -->
+                <div class="col-span-4 scroll-content space-y-2">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-2">
+                        <h3 class="text-sm font-semibold text-green-700 mb-2">🔄 Motion Transfer Pipeline</h3>
+                        <div class="space-y-1 text-xs">
+                            <div class="flex items-center gap-2 bg-white rounded px-2 py-1 border border-green-100">
+                                <span class="bg-green-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">1</span>
+                                <span>Load Fitted β + Scale</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white rounded px-2 py-1 border border-green-100">
+                                <span class="bg-green-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">2</span>
+                                <span>Load Persistent Colors</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white rounded px-2 py-1 border border-green-100">
+                                <span class="bg-green-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">3</span>
+                                <span>Load Motion Sequence</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-amber-100 rounded px-2 py-1 border border-amber-300">
+                                <span class="bg-amber-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">4</span>
+                                <span class="text-amber-800 font-medium">Center Translation ⚠️</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white rounded px-2 py-1 border border-green-100">
+                                <span class="bg-green-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">5</span>
+                                <span>Generate Per-Frame Mesh</span>
+                            </div>
+                            <div class="flex items-center gap-2 bg-white rounded px-2 py-1 border border-green-100">
+                                <span class="bg-green-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold">6</span>
+                                <span>Apply Colors & Export</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="callout warning">
+                        <strong>⚠️ Translation:</strong> Raw MoCap = absolute coords. Center to avoid teleporting on loop!
+                        <code class="block mt-1 text-xs">transl -= transl[0:1]</code>
+                    </div>
+                </div>
+
+                <!-- Code -->
+                <div class="col-span-5 scroll-content">
+                    <div class="bg-gray-900 rounded-lg p-3 h-full">
+                        <pre class="text-[9px] h-full overflow-auto"><span class="keyword">import</span> torch
+<span class="keyword">import</span> trimesh
+<span class="keyword">import</span> smplx
+
+<span class="comment"># 1. Load YOUR fitted parameters</span>
+params = torch.load(<span class="string">'fitted/smplx_parameters.pt'</span>)
+betas = params[<span class="string">'betas'</span>]      <span class="comment"># Shape: your proportions</span>
+scale = params.get(<span class="string">'scale'</span>, torch.tensor([<span class="number">1.0</span>]))
+
+<span class="comment"># 2. Load persistent vertex colors</span>
+fitted = trimesh.load(<span class="string">'fitted/fitted_smplx_colored.ply'</span>)
+colors = fitted.visual.vertex_colors[:, :<span class="number">3</span>]
+
+<span class="comment"># 3. Load motion sequence</span>
+data = pickle.load(<span class="keyword">open</span>(<span class="string">'motion.pkl'</span>, <span class="string">'rb'</span>))
+
+<span class="comment"># 4. CENTER TRANSLATION (critical for loops!)</span>
+transl = data[<span class="string">'transl'</span>] - data[<span class="string">'transl'</span>][<span class="number">0</span>:<span class="number">1</span>]
+
+<span class="comment"># 5. Initialize SMPL-X model</span>
+body_model = smplx.create(
+    model_path=<span class="string">'models/smplx'</span>,
+    model_type=<span class="string">'smplx'</span>,
+    gender=<span class="string">'neutral'</span>
+)
+
+<span class="comment"># 6. Generate each frame</span>
+<span class="keyword">for</span> i <span class="keyword">in</span> range(num_frames):
+    output = body_model(
+        betas=betas,                    <span class="comment"># YOUR shape</span>
+        global_orient=data[<span class="string">'global_orient'</span>][i:i+<span class="number">1</span>],
+        body_pose=data[<span class="string">'body_pose'</span>][i:i+<span class="number">1</span>],
+        transl=transl[i:i+<span class="number">1</span>]
+    )
+    
+    verts = output.vertices[<span class="number">0</span>].numpy() * scale.item()
+    mesh = trimesh.Trimesh(verts, body_model.faces)
+    mesh.visual.vertex_colors = colors
+    mesh.export(<span class="string">f'frames/frame_{i:05d}.ply'</span>)</pre>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">9 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 10: VAT Conversion -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="VAT encodes positions in textures: R=X, G=Y, B=Z. 16-bit precision via high/low texture split. Mobile GPUs limit textures to 4096×4096, so we auto-chunk long motions.
+
+Performance: 75× faster loading, 50× smaller size, 60fps GPU playback.
+
+Duration: 4-5 minutes">
+            <h2>Stage 7: VAT Conversion <span class="text-lg text-gray-400 font-normal">(Optional)</span></h2>
+            
+            <div class="pipeline-flow mb-3">
+                <span class="text-gray-400 text-sm">Color Map</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Motion</span>
+                <span class="arrow">→</span>
+                <span class="text-gray-400 text-sm">Retarget</span>
+                <span class="arrow">→</span>
+                <span class="step bg-indigo-500 text-white">VAT</span>
+            </div>
+
+            <div class="grid grid-cols-12 gap-3 flex-1 overflow-hidden">
+                <!-- What is VAT -->
+                <div class="col-span-4 scroll-content space-y-2">
+                    <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                        <h3 class="text-sm font-semibold text-indigo-700 mb-2">🎬 What is VAT?</h3>
+                        <p class="text-xs text-gray-700 leading-relaxed mb-2">
+                            <strong>Vertex Animation Textures</strong> encode mesh animation directly into image textures, 
+                            shifting computation from CPU to GPU.
+                        </p>
+                        <div class="bg-white rounded p-2 border border-indigo-100 text-[10px] font-mono">
+                            <div class="flex justify-between"><span>Each pixel</span><span>= 1 vertex at 1 frame</span></div>
+                            <div class="flex justify-between"><span>R channel</span><span>= X position</span></div>
+                            <div class="flex justify-between"><span>G channel</span><span>= Y position</span></div>
+                            <div class="flex justify-between"><span>B channel</span><span>= Z position</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <h3 class="text-xs font-semibold text-green-700 mb-2">📈 PLY vs VAT</h3>
+                        <table class="text-[10px] w-full">
+                            <thead>
+                                <tr class="border-b border-green-200">
+                                    <th class="text-left pb-1">Metric</th>
+                                    <th class="text-right pb-1 text-red-600">PLY</th>
+                                    <th class="text-right pb-1 text-green-600">VAT</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Load</td><td class="text-right text-red-600">30s–3min</td><td class="text-right text-green-600 font-medium">&lt;1s</td></tr>
+                                <tr><td>Size</td><td class="text-right text-red-600">0.7–2.5GB</td><td class="text-right text-green-600 font-medium">15–50MB</td></tr>
+                                <tr><td>FPS</td><td class="text-right text-red-600">~15</td><td class="text-right text-green-600 font-medium">60+</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="grid grid-cols-4 gap-1 mt-2 text-[9px]">
+                            <div class="bg-white rounded p-1 text-center border border-green-100">
+                                <div class="text-sm font-bold text-green-600">75×</div>
+                                <div class="text-gray-500">load</div>
+                            </div>
+                            <div class="bg-white rounded p-1 text-center border border-green-100">
+                                <div class="text-sm font-bold text-green-600">50×</div>
+                                <div class="text-gray-500">size</div>
+                            </div>
+                            <div class="bg-white rounded p-1 text-center border border-green-100">
+                                <div class="text-sm font-bold text-green-600">4×</div>
+                                <div class="text-gray-500">fps</div>
+                            </div>
+                            <div class="bg-white rounded p-1 text-center border border-green-100">
+                                <div class="text-sm font-bold text-green-600">GPU</div>
+                                <div class="text-gray-500">native</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 16-bit Encoding -->
+                <div class="col-span-4 scroll-content space-y-2">
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <h3 class="text-sm font-semibold text-purple-700 mb-2">🔢 16-bit Precision</h3>
+                        <p class="text-xs text-gray-600 mb-2">8-bit PNG (0-255) lacks precision. Split 16-bit into high/low textures:</p>
+                        <pre class="text-[9px]"><span class="comment"># Python encode</span>
+norm = (pos - min) / (max - min)
+enc16 = (norm * <span class="number">65535</span>).astype(np.uint16)
+high_8 = (enc16 >> <span class="number">8</span>).astype(np.uint8)
+low_8 = (enc16 & <span class="number">0xFF</span>).astype(np.uint8)</pre>
+                        <pre class="text-[9px] mt-2"><span class="comment">// GLSL vertex shader decode</span>
+vec3 hi = texture2D(highTex, uv).rgb * <span class="number">255.0</span>;
+vec3 lo = texture2D(lowTex, uv).rgb * <span class="number">255.0</span>;
+vec3 n = (hi * <span class="number">256.0</span> + lo) / <span class="number">65535.0</span>;
+<span class="keyword">return</span> mix(minBounds, maxBounds, n);</pre>
+                    </div>
+                    
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <h3 class="text-xs font-semibold text-gray-700 mb-1">📁 Output Files</h3>
+                        <div class="font-mono text-[9px] bg-gray-100 rounded p-2">
+                            <div class="text-gray-700">motion_name/</div>
+                            <div class="text-gray-500 pl-3">├── position_high.png</div>
+                            <div class="text-gray-500 pl-3">├── position_low.png</div>
+                            <div class="text-gray-500 pl-3">├── color_texture.png</div>
+                            <div class="text-gray-500 pl-3">└── metadata.json</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chunking + Video -->
+                <div class="col-span-4 scroll-content space-y-2">
+                    <div class="callout warning">
+                        <h3 class="text-amber-700 text-sm mb-1">⚡ Automatic Chunking</h3>
+                        <p class="text-xs text-gray-600">
+                            Mobile GPUs limit textures to 4096×4096. With 10,475 vertices → max <strong>1,365 frames</strong> per texture.
+                            Long motions auto-split into seamless chunks.
+                        </p>
+                    </div>
+                    
+                    <div class="video-item h-48">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/vat_recording_1762109836781.webm" autoplay loop muted playsinline></video>
+                        <div class="video-label">VAT Playback Demo</div>
+                    </div>
+                    
+                    <pre class="text-[9px]"><span class="comment"># Convert with auto-chunking</span>
+python convert_vat_chunked.py \\
+    moyo_frames/ \\
+    -o vat_universal/ \\
+    -j <span class="number">8</span>  <span class="comment"># 8 parallel workers</span></pre>
+                </div>
+            </div>
+            <div class="slide-number">10 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 11: Final Demo -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="This is our final result—an SMPL-X avatar with colors transferred from the original COLMAP reconstruction. It's not photorealistic in the traditional sense—we've traded geometric detail for animation capability.
+
+Duration: 2 minutes">
+            <h2>🎉 Final Result: Animated SMPL-X Avatar</h2>
+            
+            <div class="flex gap-6 flex-1 overflow-hidden">
+                <div class="w-1/2 flex flex-col">
+                    <div class="video-container flex-1 mb-4">
+                        <video autoplay loop muted playsinline class="w-full h-full object-contain">
+                            <source src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/full_moyo.webm" type="video/webm">
+                        </video>
+                    </div>
+                </div>
+                
+                <div class="w-1/2 flex flex-col">
+                    <div class="feature-list mb-4">
+                        <div class="feature-item">
+                            <div class="icon">📷→🧍</div>
+                            <div class="title">Photos to Avatar</div>
+                            <div class="desc">Multi-view reconstruction</div>
+                        </div>
+                        <div class="feature-item" style="background: linear-gradient(135deg, #8b5cf6, #a855f7);">
+                            <div class="icon">🎨</div>
+                            <div class="title">Color Transfer</div>
+                            <div class="desc">COLMAP → SMPL-X vertices</div>
+                        </div>
+                        <div class="feature-item" style="background: linear-gradient(135deg, #f59e0b, #ea580c);">
+                            <div class="icon">💃</div>
+                            <div class="title">Motion Ready</div>
+                            <div class="desc">Any MoCap dataset</div>
+                        </div>
+                        <div class="feature-item" style="background: linear-gradient(135deg, #14b8a6, #0d9488);">
+                            <div class="icon">🌐</div>
+                            <div class="title">Web Playback</div>
+                            <div class="desc">60fps via VAT</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 flex-1">
+                        <div class="callout success">
+                            <h3 class="text-sm font-semibold text-green-700 mb-2">✅ What This Pipeline Produces</h3>
+                            <ul class="text-xs text-gray-700 space-y-1">
+                                <li>• SMPL-X parametric mesh (10,475 vertices)</li>
+                                <li>• Vertex colors from COLMAP reconstruction</li>
+                                <li>• Fully rigged and animatable body model</li>
+                                <li>• Compatible with any SMPL-X motion data</li>
+                            </ul>
+                        </div>
+                        <div class="callout info">
+                            <h3 class="text-sm font-semibold text-blue-700 mb-2">🔮 Next Step: True Photorealism</h3>
+                            <ul class="text-xs text-gray-700 space-y-1">
+                                <li>• Transfer skinning weights to COLMAP mesh</li>
+                                <li>• Preserve full geometric detail (millions of verts)</li>
+                                <li>• UV-mapped texture instead of vertex colors</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">11 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 12: ADVANCEMENT - Hybrid Models -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="After the initial pipeline, we developed the ability to map SMPL-X skinning weights directly to the original COLMAP mesh. This creates 'hybrid' models that preserve millions of vertices of geometric detail while being fully animatable.
+
+The key innovation is barycentric interpolation of LBS weights from the 10K SMPL-X vertices to potentially millions of COLMAP vertices.
+
+Duration: 3-4 minutes">
+            <h2>🚀 Advancement: Hybrid Mesh Animation</h2>
+            
+            <p class="text-gray-600 mb-4 text-sm">
+                Transfer SMPL-X skinning weights to original COLMAP meshes — <strong>millions of vertices</strong> with full geometric detail, now animatable!
+            </p>
+
+            <div class="grid grid-cols-3 gap-4 flex-1 overflow-hidden">
+                <!-- SMPL-X Only -->
+                <div class="comparison-card">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/SMPLX_Reese.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">SMPL-X Only</div>
+                        <div class="card-desc">10,475 vertices • Vertex colors • Fast rendering</div>
+                        <div class="mt-2 flex gap-2">
+                            <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Parametric</span>
+                            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">83× faster</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hybrid -->
+                <div class="comparison-card" style="border-color: #8b5cf6;">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Hybrid_Reese.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">🌟 Hybrid Model</div>
+                        <div class="card-desc">COLMAP mesh + SMPL-X skeleton • Full detail</div>
+                        <div class="mt-2 flex gap-2">
+                            <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">High-res</span>
+                            <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">Animatable</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Both -->
+                <div class="comparison-card">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Both_Reese.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">Side-by-Side Comparison</div>
+                        <div class="card-desc">SMPL-X (blue) vs Hybrid (original colors)</div>
+                        <div class="mt-2 flex gap-2">
+                            <span class="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">Validation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 mt-4">
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                    <h3 class="text-purple-700 text-sm font-semibold mb-2">Key Innovation: Weight Transfer</h3>
+                    <ul class="text-xs text-gray-700 space-y-1">
+                        <li>• <strong>Barycentric interpolation</strong> of LBS weights from SMPL-X to COLMAP vertices</li>
+                        <li>• Local coordinate frame transformation preserves geometric detail</li>
+                        <li>• Distance thresholds handle background geometry</li>
+                        <li>• GPU acceleration via PyTorch3D for 1M+ vertices</li>
+                    </ul>
+                </div>
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <h3 class="text-gray-700 text-sm font-semibold mb-2">Technical Approach</h3>
+                    <pre class="text-[10px]"><span class="comment"># For each COLMAP vertex:</span>
+<span class="comment"># 1. Find nearest SMPL-X triangle</span>
+<span class="comment"># 2. Compute barycentric coordinates</span>
+<span class="comment"># 3. Interpolate blend weights</span>
+weights_colmap = bary_interp(smplx_weights, 
+                              smplx_faces, 
+                              colmap_verts)</pre>
+                </div>
+            </div>
+            <div class="slide-number">12 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 13: More Hybrid Examples -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Additional examples showing the hybrid approach works across different subjects and body types. The key is that once weights are transferred, any SMPL-X motion can be applied to the high-resolution mesh.
+
+Duration: 2 minutes">
+            <h2>Hybrid Models: Additional Examples</h2>
+            
+            <div class="grid grid-cols-3 gap-4 flex-1 overflow-hidden">
+                <!-- Subject 2 - SMPL-X -->
+                <div class="comparison-card">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/SMPLX_Zhu.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">SMPL-X Only (Subject 2)</div>
+                        <div class="card-desc">10,475 vertices • Fast but low detail</div>
+                    </div>
+                </div>
+                
+                <!-- Subject 2 - Hybrid -->
+                <div class="comparison-card" style="border-color: #8b5cf6;">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Hybrid_Zhu.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">🌟 Hybrid Model (Subject 2)</div>
+                        <div class="card-desc">Full COLMAP detail preserved</div>
+                    </div>
+                </div>
+                
+                <!-- Subject 2 - Both -->
+                <div class="comparison-card">
+                    <div class="card-video">
+                        <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/Both_Zhu.webm" autoplay loop muted playsinline class="w-full h-full object-contain"></video>
+                    </div>
+                    <div class="card-info">
+                        <div class="card-title">Comparison (Subject 2)</div>
+                        <div class="card-desc">Notice clothing detail preservation</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-4 gap-3 mt-4">
+                <div class="video-item h-32">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/avatar_motions_converted/media46.mp4" autoplay loop muted playsinline></video>
+                </div>
+                <div class="video-item h-32">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/avatar_motions_converted/media48.mp4" autoplay loop muted playsinline></video>
+                </div>
+                <div class="video-item h-32">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/avatar_motions_converted/media50.mp4" autoplay loop muted playsinline></video>
+                </div>
+                <div class="video-item h-32">
+                    <video src="https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/3D%20Motion%20and%20Avatars/avatar_motions_converted/media52.mp4" autoplay loop muted playsinline></video>
+                </div>
+            </div>
+            
+            <div class="callout success mt-4">
+                <strong>Result:</strong> True photorealistic avatars with millions of vertices, fully animatable with any SMPL-X motion sequence.
+            </div>
+            <div class="slide-number">13 / 14</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- SLIDE 14: Conclusion -->
+        <!-- ============================================ -->
+        <div class="slide" data-notes="Summary: 7-stage pipeline from photos to animated avatars. Key insights: pose initialization matters, persistent color mapping (compute once), coordinate transforms, translation centering.
+
+Future: Real-time LBS could achieve 500-800× storage reduction. Questions?
+
+Duration: 3 minutes">
+            <h2>Pipeline Summary & Next Steps</h2>
+
+            <div class="grid grid-cols-12 gap-4 flex-1 overflow-hidden">
+                <!-- Pipeline -->
+                <div class="col-span-4 scroll-content">
+                    <div class="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">📋 Complete Pipeline</h3>
+                        
+                        <div class="space-y-2">
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-bold">1</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-blue-200 text-xs">
+                                    <span class="font-medium">📷 Capture</span> — 50-200 photos, T-pose
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-bold">2</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-blue-200 text-xs">
+                                    <span class="font-medium">🏗️ COLMAP</span> — SfM → Dense → Mesh
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center font-bold">3</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-purple-200 text-xs">
+                                    <span class="font-medium">🧹 Preprocess</span> — Clean, simplify, scale
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-purple-500 text-white text-xs flex items-center justify-center font-bold">4</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-purple-200 text-xs">
+                                    <span class="font-medium">🎯 SMPL-X Fit</span> — Chamfer optimization
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center font-bold">5</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-amber-200 text-xs">
+                                    <span class="font-medium">🎨 Color Map</span> — Persistent k-NN
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center font-bold">6</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-amber-200 text-xs">
+                                    <span class="font-medium">💃 Motion</span> — MOYO/AMASS retargeting
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-teal-500 text-white text-xs flex items-center justify-center font-bold">7</div>
+                                <div class="flex-1 bg-white rounded px-2 py-1 border border-teal-200 text-xs">
+                                    <span class="font-medium">🌐 VAT</span> — Web-ready (optional)
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 pt-3 border-t border-slate-200">
+                            <div class="bg-gradient-to-r from-green-100 to-emerald-100 rounded p-2 border border-green-300">
+                                <div class="text-xs font-semibold text-green-800">✅ Output: Animated Avatar</div>
+                                <div class="text-[10px] text-green-700">10,475 vertices • vertex colors • 60fps</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Common Issues -->
+                <div class="col-span-4 scroll-content">
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 h-full">
+                        <h3 class="text-sm font-semibold text-red-700 mb-3">⚠️ Common Issues & Solutions</h3>
+                        
+                        <div class="space-y-2">
+                            <div class="bg-white rounded p-2 border-l-4 border-red-400 text-xs">
+                                <p class="font-semibold text-red-800">❌ SMPL-X arms twisted</p>
+                                <p class="text-green-700">✅ Match preset to scan pose</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border-l-4 border-red-400 text-xs">
+                                <p class="font-semibold text-red-800">❌ Wrong colors on posed mesh</p>
+                                <p class="text-green-700">✅ Use persistent color map from fitted pose</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border-l-4 border-red-400 text-xs">
+                                <p class="font-semibold text-red-800">❌ Avatar teleports in animation</p>
+                                <p class="text-green-700">✅ Subtract first frame translation</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border-l-4 border-red-400 text-xs">
+                                <p class="font-semibold text-red-800">❌ Mesh upside down / rotated</p>
+                                <p class="text-green-700">✅ Apply Y-flip for COLMAP→SMPL-X</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border-l-4 border-red-400 text-xs">
+                                <p class="font-semibold text-red-800">❌ COLMAP reconstruction sparse</p>
+                                <p class="text-green-700">✅ More photos, 70%+ overlap</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Key Insights + Questions -->
+                <div class="col-span-4 scroll-content space-y-3">
+                    <div class="bg-gradient-to-br from-amber-50 to-yellow-50 border border-amber-200 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-amber-700 mb-2">💡 Key Insights</h3>
+                        <div class="space-y-2 text-xs">
+                            <div class="bg-white rounded p-2 border border-amber-100">
+                                <span class="font-medium text-amber-800">Pose initialization matters</span>
+                                <p class="text-gray-600">Match preset to actual scan pose</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border border-amber-100">
+                                <span class="font-medium text-amber-800">Persistent color mapping</span>
+                                <p class="text-gray-600">Establish once, reuse for all poses</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border border-amber-100">
+                                <span class="font-medium text-amber-800">Coordinate systems</span>
+                                <p class="text-gray-600">COLMAP Y-down ↔ SMPL-X Y-up</p>
+                            </div>
+                            <div class="bg-white rounded p-2 border border-amber-100">
+                                <span class="font-medium text-amber-800">Translation centering</span>
+                                <p class="text-gray-600">Relative motion for seamless loops</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-indigo-700 mb-2">🔮 Future Directions</h3>
+                        <ul class="text-xs text-gray-700 space-y-1">
+                            <li>• Real-time LBS (500-800× storage reduction)</li>
+                            <li>• Neural rendering (NeRF, Gaussian Splatting)</li>
+                            <li>• Multi-camera professional capture</li>
+                            <li>• Physics-based cloth simulation</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-green-100 to-emerald-100 border border-green-300 rounded-lg p-4 text-center">
+                        <p class="text-3xl mb-2">🙋</p>
+                        <p class="text-lg font-semibold text-green-800">Questions?</p>
+                    </div>
+                </div>
+            </div>
+            <div class="slide-number">14 / 14</div>
+        </div>
+    </div>
+
+    <!-- Video Modal -->
+    <div class="video-modal" id="videoModal">
+        <button class="video-modal-close" onclick="closeVideoModal()">×</button>
+        <video id="modalVideo" autoplay loop muted playsinline controls></video>
+        <div class="video-modal-title" id="modalTitle"></div>
+        <div class="video-modal-hint">Press ESC or click outside to close • Click video for controls</div>
+    </div>
+
+    <!-- Navigation Controls -->
+    <div class="nav-controls">
+        <button class="nav-btn" id="prevBtn" onclick="prevSlide()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6"/>
+            </svg>
+        </button>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+        
+        <div class="slide-indicator" id="slideIndicator">1 / 14</div>
+        
+        <button class="nav-btn" id="nextBtn" onclick="nextSlide()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18l6-6-6-6"/>
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        let notesVisible = false;
+        
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.toggle('active', index === currentSlide);
+            });
+            
+            // Update navigation
+            document.getElementById('prevBtn').disabled = currentSlide === 0;
+            document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+            document.getElementById('slideIndicator').textContent = `${currentSlide + 1} / ${totalSlides}`;
+            document.getElementById('progressFill').style.width = `${((currentSlide + 1) / totalSlides) * 100}%`;
+            
+            // Update speaker notes
+            const notes = slides[currentSlide].dataset.notes || 'No notes for this slide.';
+            document.getElementById('speakerNotes').innerHTML = `<h4>Speaker Notes</h4><p>${notes.replace(/\n/g, '</p><p>')}</p>`;
+        }
+        
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+        
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+        
+        function toggleNotes() {
+            notesVisible = !notesVisible;
+            document.getElementById('speakerNotes').classList.toggle('visible', notesVisible);
+        }
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            // Close modal on ESC
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('videoModal');
+                if (modal.classList.contains('active')) {
+                    closeVideoModal();
+                    return;
+                }
+            }
+            
+            // Don't navigate if modal is open
+            if (document.getElementById('videoModal').classList.contains('active')) {
+                return;
+            }
+            
+            switch(e.key) {
+                case 'ArrowRight':
+                case 'ArrowDown':
+                case ' ':
+                case 'PageDown':
+                    e.preventDefault();
+                    nextSlide();
+                    break;
+                case 'ArrowLeft':
+                case 'ArrowUp':
+                case 'PageUp':
+                    e.preventDefault();
+                    prevSlide();
+                    break;
+                case 'n':
+                case 'N':
+                    toggleNotes();
+                    break;
+                case 'Home':
+                    currentSlide = 0;
+                    updateSlide();
+                    break;
+                case 'End':
+                    currentSlide = totalSlides - 1;
+                    updateSlide();
+                    break;
+            }
+        });
+        
+        // Initialize
+        updateSlide();
+        
+        // Video Modal Functions
+        function openVideoModal(videoSrc, title) {
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            const modalTitle = document.getElementById('modalTitle');
+            
+            modalVideo.src = videoSrc;
+            modalTitle.textContent = title || '';
+            modal.classList.add('active');
+            modalVideo.play();
+        }
+        
+        function closeVideoModal() {
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modal.classList.remove('active');
+            modalVideo.pause();
+            modalVideo.src = '';
+        }
+        
+        // Close modal on ESC or click outside
+        document.getElementById('videoModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeVideoModal();
+            }
+        });
+        
+        // Add click handlers to all videos after DOM loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add fullscreen buttons and click handlers to video items
+            document.querySelectorAll('.video-item, .video-container, .card-video').forEach(function(container) {
+                const video = container.querySelector('video');
+                if (video) {
+                    // Add fullscreen button
+                    const btn = document.createElement('button');
+                    btn.className = 'video-fullscreen-btn';
+                    btn.innerHTML = '⛶ Fullscreen';
+                    btn.onclick = function(e) {
+                        e.stopPropagation();
+                        const label = container.querySelector('.video-label');
+                        const title = label ? label.textContent : '';
+                        openVideoModal(video.src || video.querySelector('source')?.src, title);
+                    };
+                    container.appendChild(btn);
+                    
+                    // Also allow clicking the video itself
+                    video.style.cursor = 'pointer';
+                    video.addEventListener('click', function(e) {
+                        const label = container.querySelector('.video-label');
+                        const cardTitle = container.closest('.comparison-card')?.querySelector('.card-title');
+                        const title = label?.textContent || cardTitle?.textContent || '';
+                        openVideoModal(this.src || this.querySelector('source')?.src, title);
+                    });
+                }
+            });
+            
+            // Handle comparison card videos separately
+            document.querySelectorAll('.comparison-card').forEach(function(card) {
+                const cardVideo = card.querySelector('.card-video');
+                const video = cardVideo?.querySelector('video');
+                if (video && cardVideo) {
+                    // Check if button already added
+                    if (!cardVideo.querySelector('.video-fullscreen-btn')) {
+                        const btn = document.createElement('button');
+                        btn.className = 'video-fullscreen-btn';
+                        btn.innerHTML = '⛶ Fullscreen';
+                        btn.onclick = function(e) {
+                            e.stopPropagation();
+                            const title = card.querySelector('.card-title')?.textContent || '';
+                            openVideoModal(video.src || video.querySelector('source')?.src, title);
+                        };
+                        cardVideo.style.position = 'relative';
+                        cardVideo.appendChild(btn);
+                    }
+                }
+            });
+        });
+        
+        // KaTeX auto-render
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof renderMathInElement !== 'undefined') {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ]
+                });
+            }
+        });
+    </script>
+</body>
+</html>
