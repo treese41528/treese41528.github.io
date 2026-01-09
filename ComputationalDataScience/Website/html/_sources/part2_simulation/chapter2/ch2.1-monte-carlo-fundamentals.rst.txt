@@ -1,0 +1,1203 @@
+.. _ch2.1-monte-carlo-fundamentals:
+
+=============================
+Monte Carlo Fundamentals
+=============================
+
+In the spring of 1946, the mathematician Stanislaw Ulam was recovering from a near-fatal case of viral encephalitis at his home in Los Angeles. To pass the time during his convalescence, he played countless games of solitaire—and found himself wondering: what is the probability of winning a game of Canfield solitaire? The combinatorics were hopelessly complex. There were too many possible configurations, too many branching paths through a game, to enumerate them all. But Ulam realized something profound: he didn't need to enumerate every possibility. He could simply *play* a hundred games and count how many he won.
+
+This insight—that we can estimate probabilities by running experiments rather than computing them analytically—was not new. The Comte de Buffon had used a similar approach in 1777 to estimate π by dropping needles onto a lined floor. But Ulam saw something that Buffon could not have imagined: the recently completed ENIAC computer could "play" millions of such games, transforming a parlor trick into a serious computational method. Within weeks, Ulam had discussed the idea with his colleague John von Neumann, and the two began developing what would become one of the most powerful computational frameworks in all of science.
+
+They needed a code name for this method, which they were applying to classified problems in nuclear weapons design at Los Alamos. Nicholas Metropolis suggested "Monte Carlo," after the famous casino in Monaco where Ulam's uncle had a gambling habit. The name stuck, and with it, a new era in computational science began.
+
+This chapter introduces Monte Carlo methods—a family of algorithms that use random sampling to solve problems that would otherwise be intractable. We will see how randomness, properly harnessed, becomes a precision instrument for computing integrals, estimating probabilities, and approximating quantities that resist analytical attack. The ideas are simple, but their power is immense: Monte Carlo methods now pervade physics, finance, machine learning, and statistics, anywhere that high-dimensional integration or complex probability calculations arise.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand**: The fundamental principle that Monte Carlo integration estimates integrals as expectations of random samples, and why this works via the Law of Large Numbers and Central Limit Theorem
+   • **Develop**: Deep intuition for the :math:`O(n^{-1/2})` convergence rate—what it means, why it arises, and its remarkable dimension-independence
+   • **Implement**: Complete Python code for Monte Carlo estimation with variance quantification, confidence intervals, and convergence diagnostics
+   • **Evaluate**: When Monte Carlo methods outperform deterministic alternatives, and how to assess estimation quality in practice
+   • **Connect**: How Monte Carlo integration motivates the random variable generation techniques of subsequent sections
+
+The Historical Development of Monte Carlo Methods
+-------------------------------------------------
+
+Before diving into the mathematics, it is worth understanding how Monte Carlo methods emerged and evolved. This history illuminates why the methods work, what problems motivated their development, and why they remain central to computational science today.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide003_img002_8c3660db.png
+   :alt: Timeline showing evolution of Monte Carlo methods from Buffon's Needle (1777) to modern neural-enhanced methods (2020s)
+   :align: center
+   :width: 100%
+
+   **Historical Evolution of Monte Carlo Methods.** This timeline traces 250 years of algorithmic innovation, from Buffon's needle experiment in 1777 through the founding contributions of Ulam and von Neumann in the 1940s, the development of MCMC methods, resampling techniques, and modern neural-enhanced approaches. Each innovation opened new classes of problems to computational attack.
+
+Buffon's Needle: The First Monte Carlo Experiment
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In 1777, Georges-Louis Leclerc, Comte de Buffon, posed a deceptively simple question: suppose we have a floor made of parallel wooden planks, each of width :math:`d`, and we drop a needle of length :math:`\ell \leq d` onto this floor. What is the probability that the needle crosses one of the cracks between planks?
+
+To answer this, Buffon introduced what we would now recognize as a probabilistic model. Let :math:`\theta` denote the angle between the needle and the direction of the planks, uniformly distributed on :math:`[0, \pi)`. Let :math:`y` denote the distance from the needle's center to the nearest crack, uniformly distributed on :math:`[0, d/2]`. The needle crosses a crack if and only if the vertical projection of half the needle exceeds the distance to the crack—that is, if :math:`y \leq \frac{\ell}{2} \sin\theta`.
+
+The probability of crossing is therefore:
+
+.. math::
+
+   P(\text{crossing}) = \frac{1}{\pi} \cdot \frac{2}{d} \int_0^{\pi} \int_0^{(\ell/2)\sin\theta} dy \, d\theta
+
+Evaluating the inner integral yields :math:`\frac{\ell}{2}\sin\theta`, and the outer integral gives :math:`\int_0^{\pi} \sin\theta \, d\theta = 2`. Thus:
+
+.. math::
+
+   P(\text{crossing}) = \frac{1}{\pi} \cdot \frac{2}{d} \cdot \frac{\ell}{2} \cdot 2 = \frac{2\ell}{\pi d}
+
+This elegant result has a remarkable consequence. If we drop :math:`n` needles and observe that :math:`k` of them cross a crack, then our estimate of the crossing probability is :math:`\hat{p} = k/n`. Rearranging Buffon's formula:
+
+.. math::
+
+   \pi = \frac{2\ell}{d \cdot P(\text{crossing})} \approx \frac{2\ell n}{d k}
+
+We can estimate :math:`\pi` by throwing needles!
+
+This is a Monte Carlo method avant la lettre: we use random experiments to estimate a deterministic quantity. Of course, Buffon lacked computers, and actually throwing thousands of needles by hand is tedious. In 1901, the Italian mathematician Mario Lazzarini claimed to have obtained :math:`\pi \approx 3.1415929` by throwing a needle 3,408 times—suspiciously close to the correct value of :math:`355/113`. Most historians believe Lazzarini fudged his data, but the underlying principle was sound.
+
+.. admonition:: Try It Yourself 🖥️ Buffon's Needle Simulation
+   :class: tip
+
+   Experience Buffon's experiment interactively:
+
+   **Interactive Simulation**: https://treese41528.github.io/ComputationalDataScience/Simulations/MonteCarloSimulation/buffons_needle_simulation.html
+
+   Watch how the :math:`\pi` estimate fluctuates wildly with few needles, then gradually stabilizes as you accumulate thousands of throws. This is the Law of Large Numbers in action—a theme we will return to throughout this chapter.
+
+Fermi's Envelope Calculations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The physicist Enrico Fermi was famous for his ability to estimate quantities that seemed impossibly difficult to calculate. How many piano tuners are there in Chicago? How much energy is released in a nuclear explosion? Fermi would break these problems into pieces, estimate each piece roughly, and multiply—often achieving answers accurate to within an order of magnitude.
+
+Less well known is that Fermi also pioneered proto-Monte Carlo methods. In the 1930s, working on neutron diffusion problems in Rome, Fermi developed a mechanical device—essentially a specialized slide rule—that could generate random numbers to simulate neutron paths through matter. He used these simulations to estimate quantities like neutron absorption cross-sections, which were too complex to compute analytically.
+
+This work remained largely unpublished, but it anticipated the key insight of Monte Carlo: when a deterministic calculation is intractable, a stochastic simulation may succeed. Fermi's physical random number generator was crude, but the principle was the same one that Ulam and von Neumann would later implement on electronic computers.
+
+The Manhattan Project and ENIAC
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The development of nuclear weapons during World War II created an urgent need for computational methods. The behavior of neutrons in a nuclear reaction—how they scatter, slow down, and trigger fission—depends on complex integrals over energy and angle that resist analytical solution. The physicists at Los Alamos needed numbers, not theorems.
+
+It was in this context that Ulam's solitaire insight proved transformative. Ulam and von Neumann realized that the same principle—estimate a complicated quantity by averaging over random samples—could be applied to neutron transport. Instead of integrating over all possible neutron paths analytically (impossible), they could simulate thousands of individual neutrons, tracking each one as it scattered and absorbed through the weapon's core.
+
+Von Neumann took the lead in implementing these ideas on ENIAC, one of the first general-purpose electronic computers. ENIAC could perform about 5,000 operations per second—glacially slow by modern standards, but revolutionary in 1946. Von Neumann and his team programmed ENIAC to simulate neutron histories, and the results helped validate the design of thermonuclear weapons.
+
+The "Monte Carlo method" was formally introduced to the broader scientific community in a 1949 paper by Metropolis and Ulam, though much of the early work remained classified for decades. The name, coined by Metropolis, captured both the element of chance central to the method and the slightly disreputable excitement of gambling—a fitting tribute to Ulam's card-playing origins.
+
+Why "Monte Carlo" Changed Everything
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Monte Carlo revolution was not merely about having faster computers. It represented a conceptual breakthrough: *randomness is a computational resource*. By embracing uncertainty rather than fighting it, Monte Carlo methods could attack problems that deterministic methods could not touch.
+
+Consider the challenge of computing a 100-dimensional integral. Deterministic quadrature methods—the trapezoidal rule, Simpson's rule, Gaussian quadrature—all suffer from the "curse of dimensionality." If we use :math:`n` points per dimension, we need :math:`n^{100}` total evaluations. Even with :math:`n = 2`, this exceeds :math:`10^{30}`—more function evaluations than atoms in a human body.
+
+Monte Carlo methods sidestep this curse entirely. As we will see, the error in a Monte Carlo estimate depends only on the number of samples and the variance of the integrand, not on the dimension of the space. A 100-dimensional integral is no harder than a one-dimensional integral, at least in terms of convergence rate. This dimension-independence is the source of Monte Carlo's power.
+
+The Core Principle: Expectation as Integration
+----------------------------------------------
+
+We now turn to the mathematical foundations of Monte Carlo integration. The key insight is simple but profound: any integral can be rewritten as an expected value, and expected values can be estimated by averaging samples.
+
+From Integrals to Expectations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider a general integral of the form:
+
+.. math::
+   :label: general-integral
+
+   I = \int_{\mathcal{X}} h(x) \, dx
+
+where :math:`\mathcal{X} \subseteq \mathbb{R}^d` is the domain of integration and :math:`h: \mathcal{X} \to \mathbb{R}` is the function we wish to integrate. At first glance, this seems like a problem for calculus, not probability. But watch what happens when we introduce a probability density.
+
+Let :math:`f(x)` be any probability density function on :math:`\mathcal{X}`—that is, :math:`f(x) \geq 0` everywhere and :math:`\int_{\mathcal{X}} f(x) \, dx = 1`. We can rewrite our integral as:
+
+.. math::
+   :label: importance-rewrite
+
+   I = \int_{\mathcal{X}} h(x) \, dx = \int_{\mathcal{X}} \frac{h(x)}{f(x)} f(x) \, dx = \mathbb{E}_f\left[ \frac{h(X)}{f(X)} \right]
+
+where the expectation is taken over a random variable :math:`X` with density :math:`f`. We have transformed an integral into an expected value!
+
+The simplest choice is the uniform density on :math:`\mathcal{X}`. If :math:`\mathcal{X}` has finite volume :math:`V = \int_{\mathcal{X}} dx`, then :math:`f(x) = 1/V` is a valid density, and:
+
+.. math::
+
+   I = V \cdot \mathbb{E}_{\text{Uniform}(\mathcal{X})}[h(X)]
+
+For example, to compute :math:`\int_0^1 e^{-x^2} dx`, we write:
+
+.. math::
+
+   \int_0^1 e^{-x^2} dx = \mathbb{E}[e^{-U^2}] \quad \text{where } U \sim \text{Uniform}(0, 1)
+
+This rewriting is always possible. But why is it useful?
+
+The Monte Carlo Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The power of the expectation formulation becomes clear when we recall the Law of Large Numbers. If :math:`X_1, X_2, \ldots, X_n` are independent and identically distributed (iid) with :math:`\mathbb{E}[X_i] = \mu`, then the sample mean converges to the true mean:
+
+.. math::
+
+   \bar{X}_n = \frac{1}{n} \sum_{i=1}^{n} X_i \xrightarrow{\text{a.s.}} \mu \quad \text{as } n \to \infty
+
+Applied to our integral:
+
+.. admonition:: Definition: Monte Carlo Estimator
+   :class: definition
+
+   Let :math:`X_1, X_2, \ldots, X_n` be iid samples from a density :math:`f` on :math:`\mathcal{X}`. The **Monte Carlo estimator** of the integral :math:`I = \int_{\mathcal{X}} h(x) f(x) \, dx = \mathbb{E}_f[h(X)]` is:
+
+   .. math::
+      :label: mc-estimator-def
+
+      \hat{I}_n = \frac{1}{n} \sum_{i=1}^{n} h(X_i)
+
+   More generally, for :math:`I = \int_{\mathcal{X}} g(x) \, dx` where we sample from density :math:`f`:
+
+   .. math::
+
+      \hat{I}_n = \frac{1}{n} \sum_{i=1}^{n} \frac{g(X_i)}{f(X_i)}
+
+The Monte Carlo method is disarmingly simple: draw random samples, evaluate the function at each sample, and average the results. No derivatives, no quadrature weights, no mesh generation—just sampling and averaging.
+
+But this simplicity conceals depth. The choice of sampling density :math:`f` is entirely up to us, and different choices lead to dramatically different performance. We will explore this in the section on importance sampling; for now, we focus on the "naive" case where :math:`f` matches the density of the integrand or is uniform on the domain.
+
+A First Example: Estimating :math:`\pi`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Let us return to the problem of estimating :math:`\pi`, now with Monte Carlo machinery. Consider the integral:
+
+.. math::
+
+   \pi = \int_{-1}^{1} \int_{-1}^{1} \mathbf{1}_{x^2 + y^2 \leq 1} \, dx \, dy
+
+This is the area of the unit disk. Rewriting as an expectation:
+
+.. math::
+
+   \pi = 4 \cdot \mathbb{E}[\mathbf{1}_{X^2 + Y^2 \leq 1}] \quad \text{where } (X, Y) \sim \text{Uniform}([-1,1]^2)
+
+The factor of 4 accounts for the area of the square :math:`[-1,1]^2`. The Monte Carlo estimator is:
+
+.. math::
+
+   \hat{\pi}_n = \frac{4}{n} \sum_{i=1}^{n} \mathbf{1}_{X_i^2 + Y_i^2 \leq 1}
+
+That is: generate :math:`n` uniform points in the square, count how many fall inside the unit circle, and multiply by 4.
+
+.. code-block:: python
+
+   import numpy as np
+
+   def estimate_pi_monte_carlo(n_samples, seed=None):
+       """
+       Estimate π using Monte Carlo integration.
+
+       Parameters
+       ----------
+       n_samples : int
+           Number of random points to generate.
+       seed : int, optional
+           Random seed for reproducibility.
+
+       Returns
+       -------
+       dict
+           Contains estimate, standard_error, and confidence interval.
+       """
+       rng = np.random.default_rng(seed)
+
+       # Generate uniform points in [-1, 1]²
+       x = rng.uniform(-1, 1, n_samples)
+       y = rng.uniform(-1, 1, n_samples)
+
+       # Count points inside unit circle
+       inside = (x**2 + y**2) <= 1
+
+       # Monte Carlo estimate
+       p_hat = np.mean(inside)
+       pi_hat = 4 * p_hat
+
+       # Standard error (indicator has Bernoulli variance p(1-p))
+       se_p = np.sqrt(p_hat * (1 - p_hat) / n_samples)
+       se_pi = 4 * se_p
+
+       # 95% confidence interval
+       ci = (pi_hat - 1.96 * se_pi, pi_hat + 1.96 * se_pi)
+
+       return {
+           'estimate': pi_hat,
+           'standard_error': se_pi,
+           'ci_95': ci,
+           'n_samples': n_samples
+       }
+
+   # Run the estimation
+   result = estimate_pi_monte_carlo(100_000, seed=42)
+   print(f"π estimate: {result['estimate']:.6f}")
+   print(f"True π:     {np.pi:.6f}")
+   print(f"Error:      {abs(result['estimate'] - np.pi):.6f}")
+   print(f"Std Error:  {result['standard_error']:.6f}")
+   print(f"95% CI:     ({result['ci_95'][0]:.6f}, {result['ci_95'][1]:.6f})")
+
+Running this code with 100,000 samples yields an estimate around 3.143 with standard error about 0.005. The true value :math:`\pi \approx 3.14159` lies comfortably within the confidence interval. With a million samples, the error shrinks by a factor of :math:`\sqrt{10} \approx 3.16`, and with ten million, by another factor of :math:`\sqrt{10}`.
+
+This is Monte Carlo at its most basic: evaluate a simple function at random points and average. But even this toy example illustrates the key features of the method—ease of implementation, probabilistic error bounds, and graceful scaling with sample size.
+
+Theoretical Foundations
+-----------------------
+
+Why does the Monte Carlo method work? What determines the rate of convergence? These questions have precise mathematical answers rooted in classical probability theory.
+
+The Law of Large Numbers
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Law of Large Numbers (LLN) is the foundational result guaranteeing that Monte Carlo estimators converge to the true value. There are several versions; we state the strongest form.
+
+.. admonition:: Theorem: Strong Law of Large Numbers
+   :class: theorem
+
+   Let :math:`X_1, X_2, \ldots` be independent and identically distributed random variables with :math:`\mathbb{E}[|X_1|] < \infty`. Then:
+
+   .. math::
+
+      \bar{X}_n = \frac{1}{n} \sum_{i=1}^{n} X_i \xrightarrow{\text{a.s.}} \mathbb{E}[X_1] \quad \text{as } n \to \infty
+
+   The notation :math:`\xrightarrow{\text{a.s.}}` denotes *almost sure convergence*: the probability that the sequence converges is exactly 1.
+
+For Monte Carlo integration, we apply this theorem with :math:`X_i = h(X_i)` where the :math:`X_i` are iid from density :math:`f`. The condition :math:`\mathbb{E}[|h(X)|] < \infty` ensures that the integral we are estimating actually exists.
+
+The LLN tells us that :math:`\hat{I}_n \to I` with probability 1. No matter how complex the integrand, no matter how high the dimension, the Monte Carlo estimator will eventually get arbitrarily close to the true value. This is an extraordinarily powerful guarantee.
+
+But the LLN is silent on *how fast* convergence occurs. For that, we need the Central Limit Theorem.
+
+The Central Limit Theorem and the :math:`O(n^{-1/2})` Rate
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Central Limit Theorem (CLT) is the workhorse result for quantifying Monte Carlo error.
+
+.. admonition:: Theorem: Central Limit Theorem
+   :class: theorem
+
+   Let :math:`X_1, X_2, \ldots` be iid with mean :math:`\mu` and variance :math:`\sigma^2 < \infty`. Then:
+
+   .. math::
+
+      \sqrt{n} \left( \bar{X}_n - \mu \right) \xrightarrow{d} \mathcal{N}(0, \sigma^2)
+
+   where :math:`\xrightarrow{d}` denotes convergence in distribution. Equivalently, for large :math:`n`:
+
+   .. math::
+
+      \bar{X}_n \stackrel{\cdot}{\sim} \mathcal{N}\left( \mu, \frac{\sigma^2}{n} \right)
+
+Applied to Monte Carlo integration:
+
+.. math::
+
+   \hat{I}_n \stackrel{\cdot}{\sim} \mathcal{N}\left( I, \frac{\sigma^2}{n} \right)
+
+where :math:`\sigma^2 = \text{Var}_f[h(X)] = \mathbb{E}_f[(h(X) - I)^2]` is the variance of the integrand under the sampling distribution.
+
+The **standard error** of the Monte Carlo estimator is:
+
+.. math::
+   :label: mc-standard-error
+
+   \text{SE}(\hat{I}_n) = \frac{\sigma}{\sqrt{n}}
+
+This is the celebrated :math:`O(n^{-1/2})` convergence rate. To reduce the error by a factor of 10, we need 100 times as many samples. To gain one decimal place of accuracy, we need 100 times the computational effort.
+
+This rate may seem slow—and compared to some deterministic methods, it is. But the rate is *independent of dimension*. Whether we are integrating over :math:`\mathbb{R}` or :math:`\mathbb{R}^{1000}`, the error decreases as :math:`1/\sqrt{n}`. This dimension-independence is the source of Monte Carlo's power in high-dimensional problems.
+
+.. admonition:: Example 💡 Understanding the Square Root Law
+   :class: note
+
+   **Scenario**: You estimate an integral with 1,000 samples and get a standard error of 0.1. Your boss needs the error reduced to 0.01.
+
+   **Analysis**: The standard error scales as :math:`1/\sqrt{n}`. To reduce error by a factor of 10, you need :math:`n` to increase by a factor of :math:`10^2 = 100`.
+
+   **Conclusion**: You need :math:`1000 \times 100 = 100,000` samples.
+
+   This quadratic penalty is the price of Monte Carlo's simplicity. In low dimensions, deterministic methods often achieve polynomial convergence rates like :math:`O(n^{-2})` or better, making them far more efficient. But in high dimensions, Monte Carlo's dimension-independent :math:`O(n^{-1/2})` beats any polynomial rate that degrades with dimension.
+
+Why the Square Root?
+~~~~~~~~~~~~~~~~~~~~
+
+The :math:`1/\sqrt{n}` rate may seem mysterious, but it has a simple explanation rooted in the behavior of sums of random variables.
+
+Consider :math:`n` iid random variables :math:`X_1, \ldots, X_n`, each with variance :math:`\sigma^2`. Their sum has variance:
+
+.. math::
+
+   \text{Var}\left( \sum_{i=1}^n X_i \right) = \sum_{i=1}^n \text{Var}(X_i) = n\sigma^2
+
+The variance of the sum grows linearly with :math:`n`. But when we take the mean, we divide by :math:`n`:
+
+.. math::
+
+   \text{Var}\left( \frac{1}{n} \sum_{i=1}^n X_i \right) = \frac{1}{n^2} \cdot n\sigma^2 = \frac{\sigma^2}{n}
+
+The standard deviation is the square root of variance, giving :math:`\sigma/\sqrt{n}`.
+
+This behavior is fundamental to averages of random quantities. Each additional sample adds information, but with diminishing returns: the first sample reduces uncertainty enormously; the millionth sample contributes almost nothing. This is why the square root appears.
+
+Variance Estimation and Confidence Intervals
+--------------------------------------------
+
+The CLT tells us that :math:`\hat{I}_n` is approximately normal with known variance :math:`\sigma^2/n`. But we rarely know :math:`\sigma^2`—it depends on the integrand and the sampling distribution. We must estimate it from the same samples we use to estimate :math:`I`.
+
+The Sample Variance
+~~~~~~~~~~~~~~~~~~~
+
+The natural estimator of :math:`\sigma^2 = \text{Var}[h(X)]` is the sample variance:
+
+.. math::
+   :label: sample-var
+
+   \hat{\sigma}^2_n = \frac{1}{n-1} \sum_{i=1}^{n} \left( h(X_i) - \hat{I}_n \right)^2
+
+The divisor :math:`n-1` (rather than :math:`n`) makes this estimator unbiased: :math:`\mathbb{E}[\hat{\sigma}^2_n] = \sigma^2`. This is known as Bessel's correction.
+
+By the Law of Large Numbers, :math:`\hat{\sigma}^2_n \to \sigma^2` almost surely as :math:`n \to \infty`. Combined with the CLT, this gives us a practical way to construct confidence intervals.
+
+Constructing Confidence Intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+An asymptotic :math:`(1-\alpha)` confidence interval for :math:`I` is:
+
+.. math::
+   :label: mc-ci-full
+
+   \left[ \hat{I}_n - z_{\alpha/2} \frac{\hat{\sigma}_n}{\sqrt{n}}, \quad \hat{I}_n + z_{\alpha/2} \frac{\hat{\sigma}_n}{\sqrt{n}} \right]
+
+where :math:`z_{\alpha/2} = \Phi^{-1}(1 - \alpha/2)` is the standard normal quantile. For common confidence levels:
+
+- 90% CI: :math:`z_{0.05} \approx 1.645`
+- 95% CI: :math:`z_{0.025} \approx 1.960`
+- 99% CI: :math:`z_{0.005} \approx 2.576`
+
+The interval has the interpretation: in repeated sampling, approximately :math:`(1-\alpha) \times 100\%` of such intervals will contain the true value :math:`I`.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def monte_carlo_integrate(h, sampler, n_samples, confidence=0.95, seed=None):
+       """
+       Monte Carlo integration with uncertainty quantification.
+
+       Parameters
+       ----------
+       h : callable
+           Function to integrate. Must accept array input.
+       sampler : callable
+           Function that returns n samples from the target distribution.
+       n_samples : int
+           Number of Monte Carlo samples.
+       confidence : float
+           Confidence level for interval (default 0.95).
+       seed : int, optional
+           Random seed for reproducibility.
+
+       Returns
+       -------
+       dict
+           Contains estimate, std_error, confidence interval, and diagnostics.
+       """
+       if seed is not None:
+           np.random.seed(seed)
+
+       # Generate samples and evaluate function
+       samples = sampler(n_samples)
+       h_values = h(samples)
+
+       # Point estimate
+       estimate = np.mean(h_values)
+
+       # Variance estimation (Bessel's correction)
+       variance = np.var(h_values, ddof=1)
+       std_error = np.sqrt(variance / n_samples)
+
+       # Confidence interval
+       z = stats.norm.ppf(1 - (1 - confidence) / 2)
+       ci_lower = estimate - z * std_error
+       ci_upper = estimate + z * std_error
+
+       # Effective sample size (for future variance reduction comparisons)
+       ess = n_samples  # For standard MC, ESS = n
+
+       return {
+           'estimate': estimate,
+           'std_error': std_error,
+           'variance': variance,
+           'ci': (ci_lower, ci_upper),
+           'confidence': confidence,
+           'n_samples': n_samples,
+           'ess': ess,
+           'h_values': h_values
+       }
+
+Numerical Stability: Welford's Algorithm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Computing the sample variance naively using :math:`\frac{1}{n-1}(\sum h_i^2 - n\bar{h}^2)` can suffer catastrophic cancellation when the mean is large compared to the standard deviation. The two terms :math:`\sum h_i^2` and :math:`n\bar{h}^2` may be nearly equal, and their difference may lose many significant digits.
+
+Welford's algorithm computes the mean and variance in a single pass with guaranteed numerical stability:
+
+.. code-block:: python
+
+   def welford_online(values):
+       """
+       Compute mean and variance using Welford's online algorithm.
+
+       Parameters
+       ----------
+       values : iterable
+           Stream of values (can be a generator).
+
+       Returns
+       -------
+       mean : float
+           Sample mean.
+       variance : float
+           Sample variance (with Bessel's correction).
+       n : int
+           Number of values processed.
+       """
+       n = 0
+       mean = 0.0
+       M2 = 0.0  # Sum of squared deviations from current mean
+
+       for x in values:
+           n += 1
+           delta = x - mean
+           mean += delta / n
+           delta2 = x - mean  # Updated mean
+           M2 += delta * delta2
+
+       if n < 2:
+           return mean, float('nan'), n
+       else:
+           return mean, M2 / (n - 1), n
+
+   # Example: large mean, small variance
+   np.random.seed(42)
+   large_mean_data = 1e8 + np.random.normal(0, 1, 10000)
+
+   # Naive method (may have precision issues)
+   naive_mean = np.mean(large_mean_data)
+   naive_var = np.sum(large_mean_data**2) / 9999 - 10000 * naive_mean**2 / 9999
+
+   # Welford's method (stable)
+   welford_mean, welford_var, _ = welford_online(large_mean_data)
+
+   # NumPy's implementation (also stable)
+   numpy_var = np.var(large_mean_data, ddof=1)
+
+   print(f"Naive variance:   {naive_var:.6f}")
+   print(f"Welford variance: {welford_var:.6f}")
+   print(f"NumPy variance:   {numpy_var:.6f}")
+
+In practice, NumPy's ``np.var`` uses numerically stable algorithms, so you rarely need to implement Welford's algorithm yourself. But understanding why stability matters is important for debugging unexpected results.
+
+Worked Examples
+---------------
+
+We now work through several examples of increasing complexity, illustrating the breadth of Monte Carlo applications.
+
+Example 1: The Gaussian Integral
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The integral :math:`\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}` is famous for being impossible to evaluate in closed form using elementary antiderivatives, yet having a beautiful exact answer. Let us estimate it via Monte Carlo.
+
+**Challenge**: The domain is infinite, so we cannot sample uniformly.
+
+**Solution**: Recognize the integrand as proportional to a Gaussian density. If :math:`X \sim \mathcal{N}(0, 1/\sqrt{2})`, then:
+
+.. math::
+
+   f(x) = \sqrt{\frac{1}{\pi}} e^{-x^2}
+
+This is a valid probability density (it integrates to 1). We can write:
+
+.. math::
+
+   \int_{-\infty}^{\infty} e^{-x^2} dx = \int_{-\infty}^{\infty} \frac{e^{-x^2}}{f(x)} f(x) dx = \sqrt{\pi} \int_{-\infty}^{\infty} f(x) dx = \sqrt{\pi}
+
+This derivation shows the integral equals :math:`\sqrt{\pi}` exactly, but let's also verify by Monte Carlo.
+
+**Alternative approach**: Sample from a distribution that covers the domain and reweight:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def gaussian_integral_mc(n_samples, seed=42):
+       """
+       Estimate ∫ exp(-x²) dx via Monte Carlo.
+
+       We sample from N(0, 1) and use importance sampling:
+       ∫ exp(-x²) dx = ∫ [exp(-x²) / φ(x)] φ(x) dx
+       where φ(x) is the standard normal density.
+       """
+       rng = np.random.default_rng(seed)
+
+       # Sample from N(0, 1)
+       X = rng.standard_normal(n_samples)
+
+       # Integrand: exp(-x²)
+       # Sampling density: φ(x) = exp(-x²/2) / sqrt(2π)
+       # Ratio: exp(-x²) / φ(x) = sqrt(2π) * exp(-x²/2)
+
+       h_values = np.sqrt(2 * np.pi) * np.exp(-X**2 / 2)
+
+       estimate = np.mean(h_values)
+       std_error = np.std(h_values, ddof=1) / np.sqrt(n_samples)
+
+       return estimate, std_error
+
+   est, se = gaussian_integral_mc(100_000)
+   print(f"Estimate: {est:.6f} ± {se:.6f}")
+   print(f"True value: {np.sqrt(np.pi):.6f}")
+
+The estimate will be very close to :math:`\sqrt{\pi} \approx 1.7725`.
+
+Example 2: Probability of a Rare Event
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Suppose :math:`X \sim \mathcal{N}(0, 1)`. What is :math:`P(X > 4)`?
+
+From standard normal tables, :math:`P(X > 4) = 1 - \Phi(4) \approx 3.167 \times 10^{-5}`. This is a rare event—only about 3 in 100,000 standard normal draws exceed 4.
+
+**Naive Monte Carlo**:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   np.random.seed(42)
+   n = 100_000
+   X = np.random.standard_normal(n)
+   p_hat = np.mean(X > 4)
+   se = np.sqrt(p_hat * (1 - p_hat) / n)
+
+   print(f"Estimate: {p_hat:.6e}")
+   print(f"Std Error: {se:.6e}")
+   print(f"True value: {1 - stats.norm.cdf(4):.6e}")
+
+With 100,000 samples, we might observe only 3-4 exceedances, giving a highly variable estimate. The relative error (standard error divided by estimate) is enormous.
+
+**Problem**: To estimate a probability :math:`p`, the standard error is :math:`\sqrt{p(1-p)/n} \approx \sqrt{p/n}` for small :math:`p`. The relative error is :math:`\sqrt{(1-p)/(np)} \approx 1/\sqrt{np}`. To achieve 10% relative error for :math:`p = 10^{-5}`, we need :math:`n \approx 100/p = 10^7` samples.
+
+This motivates **importance sampling** (covered in a later section), which generates samples preferentially in the region of interest. For now, the lesson is that naive Monte Carlo struggles with rare events.
+
+Example 3: A High-Dimensional Integral
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider the integral:
+
+.. math::
+
+   I = \int_{[0,1]^d} \prod_{j=1}^{d} \left( 1 + \frac{x_j}{d} \right) dx_1 \cdots dx_d
+
+For large :math:`d`, this integral is analytically tractable:
+
+.. math::
+
+   I = \prod_{j=1}^{d} \int_0^1 \left( 1 + \frac{x_j}{d} \right) dx_j = \left( 1 + \frac{1}{2d} \right)^d \xrightarrow{d \to \infty} \sqrt{e}
+
+Let us estimate this integral in :math:`d = 100` dimensions:
+
+.. code-block:: python
+
+   import numpy as np
+
+   def high_dim_integrand(X):
+       """
+       Compute product integrand: ∏(1 + x_j/d).
+
+       Parameters
+       ----------
+       X : ndarray of shape (n_samples, d)
+           Sample points in [0,1]^d.
+
+       Returns
+       -------
+       ndarray of shape (n_samples,)
+           Function values.
+       """
+       d = X.shape[1]
+       return np.prod(1 + X / d, axis=1)
+
+   def mc_high_dim(d, n_samples, seed=42):
+       """Monte Carlo integration in d dimensions."""
+       rng = np.random.default_rng(seed)
+
+       # Uniform samples in [0,1]^d
+       X = rng.random((n_samples, d))
+
+       # Evaluate integrand
+       h_values = high_dim_integrand(X)
+
+       estimate = np.mean(h_values)
+       std_error = np.std(h_values, ddof=1) / np.sqrt(n_samples)
+
+       # True value (for comparison)
+       true_value = (1 + 0.5/d)**d
+
+       return estimate, std_error, true_value
+
+   # Estimate in 100 dimensions
+   d = 100
+   est, se, truth = mc_high_dim(d, 100_000)
+   print(f"d = {d}")
+   print(f"Estimate: {est:.6f} ± {se:.6f}")
+   print(f"True value: {truth:.6f}")
+   print(f"Error: {abs(est - truth):.6f}")
+
+The Monte Carlo estimate converges as :math:`O(n^{-1/2})` regardless of :math:`d`. Try increasing :math:`d` to 1000 or 10,000—the convergence rate remains unchanged.
+
+Example 4: Bayesian Posterior Mean
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Bayesian inference often requires computing posterior expectations:
+
+.. math::
+
+   \mathbb{E}[\theta | \text{data}] = \int \theta \cdot \pi(\theta | \text{data}) \, d\theta
+
+When the posterior :math:`\pi(\theta | \text{data})` is available (perhaps up to a normalizing constant), Monte Carlo integration applies directly—if we can sample from the posterior. This is the motivation for Markov chain Monte Carlo methods in Part 3.
+
+As a simple example, suppose we observe :math:`x = 7` successes in :math:`n = 10` Bernoulli trials with unknown success probability :math:`\theta`. With a :math:`\text{Beta}(1, 1)` (uniform) prior, the posterior is :math:`\text{Beta}(8, 4)`:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   # Posterior is Beta(8, 4)
+   alpha, beta = 8, 4
+   posterior = stats.beta(alpha, beta)
+
+   # True posterior mean
+   true_mean = alpha / (alpha + beta)
+
+   # Monte Carlo estimate
+   np.random.seed(42)
+   n_samples = 10_000
+   theta_samples = posterior.rvs(n_samples)
+
+   mc_mean = np.mean(theta_samples)
+   mc_se = np.std(theta_samples, ddof=1) / np.sqrt(n_samples)
+
+   print(f"True posterior mean: {true_mean:.6f}")
+   print(f"MC estimate: {mc_mean:.6f} ± {mc_se:.6f}")
+
+   # We can also estimate posterior quantiles, variance, etc.
+   print(f"Posterior median (MC): {np.median(theta_samples):.6f}")
+   print(f"Posterior median (exact): {posterior.ppf(0.5):.6f}")
+
+Example 5: The Normal CDF
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The cumulative distribution function of the standard normal, :math:`\Phi(t) = P(Z \leq t)` for :math:`Z \sim \mathcal{N}(0, 1)`, has no closed-form expression. Yet it is one of the most important functions in statistics. Let us estimate :math:`\Phi(1.96)`:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def estimate_normal_cdf(t, n_samples, seed=42):
+       """Estimate Φ(t) = P(Z ≤ t) for Z ~ N(0,1)."""
+       rng = np.random.default_rng(seed)
+       Z = rng.standard_normal(n_samples)
+
+       # Indicator function: 1 if Z ≤ t, else 0
+       indicators = Z <= t
+
+       p_hat = np.mean(indicators)
+       se = np.sqrt(p_hat * (1 - p_hat) / n_samples)
+
+       return p_hat, se
+
+   t = 1.96
+   est, se = estimate_normal_cdf(t, 1_000_000)
+   true_val = stats.norm.cdf(t)
+
+   print(f"Φ({t}) estimate: {est:.6f} ± {se:.6f}")
+   print(f"Φ({t}) true:     {true_val:.6f}")
+
+With one million samples, the estimate is accurate to about four decimal places. For extreme quantiles (e.g., :math:`t = 5`), the probability is so small that accurate estimation requires importance sampling.
+
+Comparison with Deterministic Methods
+-------------------------------------
+
+Monte Carlo integration is not the only way to compute integrals numerically. Deterministic quadrature methods—the trapezoidal rule, Simpson's rule, Gaussian quadrature—have been studied for centuries and, in low dimensions, often outperform Monte Carlo. Understanding when to use which approach is essential for the computational practitioner.
+
+One-Dimensional Quadrature
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a one-dimensional integral :math:`\int_a^b f(x) dx`, deterministic methods exploit the smoothness of :math:`f` to achieve rapid convergence.
+
+**Trapezoidal Rule**: Approximate the integrand by piecewise linear functions. With :math:`n` equally spaced points, the error is :math:`O(n^{-2})` for twice-differentiable :math:`f`.
+
+**Simpson's Rule**: Approximate by piecewise quadratics. Error is :math:`O(n^{-4})` for sufficiently smooth :math:`f`.
+
+**Gaussian Quadrature**: Choose evaluation points and weights optimally. With :math:`n` points, Gaussian quadrature integrates polynomials of degree :math:`2n-1` exactly. For analytic functions, convergence can be exponentially fast.
+
+Compare these to Monte Carlo's :math:`O(n^{-1/2})`. In one dimension, Monte Carlo loses badly:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import integrate
+
+   # Integrand: exp(-x²) on [0, 2]
+   def f(x):
+       return np.exp(-x**2)
+
+   # True value (via error function)
+   from scipy.special import erf
+   true_value = np.sqrt(np.pi) / 2 * erf(2)
+
+   # Monte Carlo
+   def mc_estimate(n, seed=42):
+       rng = np.random.default_rng(seed)
+       x = rng.uniform(0, 2, n)
+       return 2 * np.mean(f(x))  # Multiply by interval length
+
+   # Trapezoidal rule
+   def trap_estimate(n):
+       x = np.linspace(0, 2, n)
+       return np.trapz(f(x), x)
+
+   # Simpson's rule
+   def simp_estimate(n):
+       x = np.linspace(0, 2, n)
+       return integrate.simpson(f(x), x=x)
+
+   print(f"True value: {true_value:.10f}\n")
+
+   for n in [10, 100, 1000]:
+       mc = mc_estimate(n)
+       tr = trap_estimate(n)
+       si = simp_estimate(n)
+       print(f"n = {n}")
+       print(f"  Monte Carlo: {mc:.10f}  (error {abs(mc - true_value):.2e})")
+       print(f"  Trapezoidal: {tr:.10f}  (error {abs(tr - true_value):.2e})")
+       print(f"  Simpson:     {si:.10f}  (error {abs(si - true_value):.2e})")
+       print()
+
+With :math:`n = 1000` points, Simpson's rule achieves machine precision while Monte Carlo's error is around :math:`10^{-2}`. There is no contest.
+
+The Curse of Dimensionality
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The situation reverses dramatically in high dimensions. Consider integrating over :math:`[0, 1]^d`. A deterministic method using a grid with :math:`m` points per dimension requires :math:`m^d` total evaluations.
+
+For Simpson's rule with error :math:`O(h^4) = O(m^{-4})`, the total error is :math:`O(m^{-4})` but the cost is :math:`m^d`. If we want error :math:`\epsilon`, we need :math:`m \sim \epsilon^{-1/4}`, giving cost :math:`\sim \epsilon^{-d/4}`.
+
+For Monte Carlo with error :math:`O(n^{-1/2})`, achieving error :math:`\epsilon` requires :math:`n \sim \epsilon^{-2}` samples, independent of :math:`d`.
+
+The crossover occurs when :math:`\epsilon^{-d/4} = \epsilon^{-2}`, i.e., :math:`d = 8`. For :math:`d > 8`, Monte Carlo requires fewer function evaluations than Simpson's rule to achieve the same accuracy—and the advantage grows exponentially with dimension.
+
+This analysis ignores constants, which can favor either method in specific cases. But the fundamental message is robust: **in high dimensions, Monte Carlo wins**.
+
+.. list-table:: Comparison of Integration Methods
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Method
+     - 1D Convergence
+     - :math:`d`-D Convergence
+     - Best For
+   * - Monte Carlo
+     - :math:`O(n^{-1/2})`
+     - :math:`O(n^{-1/2})`
+     - High dimensions, complex domains
+   * - Trapezoidal
+     - :math:`O(n^{-2})`
+     - :math:`O(n^{-2/d})`
+     - Low-dim smooth functions
+   * - Simpson
+     - :math:`O(n^{-4})`
+     - :math:`O(n^{-4/d})`
+     - Low-dim very smooth functions
+   * - Gaussian
+     - :math:`O(e^{-cn})`
+     - :math:`O(e^{-cn^{1/d}})`
+     - Low-dim analytic functions
+   * - Quasi-Monte Carlo
+     - :math:`O(n^{-1}(\log n)^d)`
+     - :math:`O(n^{-1}(\log n)^d)`
+     - Moderate dimensions, smooth functions
+
+Quasi-Monte Carlo Methods
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A middle ground between deterministic quadrature and Monte Carlo is provided by **quasi-Monte Carlo** (QMC) methods. Instead of random samples, QMC uses carefully constructed **low-discrepancy sequences**—deterministic sequences that fill space more uniformly than random points.
+
+Famous examples include Halton sequences, Sobol sequences, and lattice rules. Under smoothness conditions on the integrand, QMC achieves convergence rates of :math:`O(n^{-1} (\log n)^d)`, faster than Monte Carlo's :math:`O(n^{-1/2})` but with a dependence on dimension.
+
+QMC is increasingly popular in computational finance and computer graphics. However, it requires more care: the sequences must match the problem structure, variance estimation is trickier, and the smoothness assumptions may fail. For general-purpose integration, especially with non-smooth or high-variance integrands, standard Monte Carlo remains the most robust choice.
+
+Sample Size Determination
+-------------------------
+
+A critical practical question is: **how many samples do I need?** The answer depends on the desired precision, the variance of the integrand, and the acceptable probability of error.
+
+The Sample Size Formula
+~~~~~~~~~~~~~~~~~~~~~~~
+
+From the CLT, the Monte Carlo estimator is approximately:
+
+.. math::
+
+   \hat{I}_n \sim \mathcal{N}\left( I, \frac{\sigma^2}{n} \right)
+
+To achieve a standard error of :math:`\epsilon`, we need:
+
+.. math::
+
+   \frac{\sigma}{\sqrt{n}} \leq \epsilon \implies n \geq \frac{\sigma^2}{\epsilon^2}
+
+For a 95% confidence interval of half-width :math:`\epsilon`, we need:
+
+.. math::
+
+   1.96 \cdot \frac{\sigma}{\sqrt{n}} \leq \epsilon \implies n \geq \left( \frac{1.96 \cdot \sigma}{\epsilon} \right)^2 \approx \frac{4\sigma^2}{\epsilon^2}
+
+The factor of 4 (approximately :math:`1.96^2`) accounts for the confidence level.
+
+Practical Sample Size Determination
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In practice, :math:`\sigma` is unknown. A common approach is:
+
+1. **Pilot study**: Run a small simulation (e.g., 1,000 samples) to estimate :math:`\hat{\sigma}`.
+2. **Compute required :math:`n`**: Use :math:`n = 4\hat{\sigma}^2 / \epsilon^2` for 95% confidence.
+3. **Run full simulation**: Generate :math:`n` samples (possibly in addition to the pilot).
+4. **Verify**: Check that the final standard error meets requirements.
+
+.. code-block:: python
+
+   import numpy as np
+
+   def determine_sample_size(h, sampler, target_se, pilot_n=1000,
+                              confidence=0.95, seed=42):
+       """
+       Determine required sample size for target standard error.
+
+       Parameters
+       ----------
+       h : callable
+           Function to integrate.
+       sampler : callable
+           Function returning samples from target distribution.
+       target_se : float
+           Desired standard error.
+       pilot_n : int
+           Pilot sample size for variance estimation.
+       confidence : float
+           Confidence level for interval.
+       seed : int
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains required_n, estimated_variance, pilot results.
+       """
+       from scipy import stats
+
+       np.random.seed(seed)
+
+       # Pilot study
+       pilot_samples = sampler(pilot_n)
+       pilot_h = h(pilot_samples)
+       sigma_hat = np.std(pilot_h, ddof=1)
+
+       # Required sample size
+       z = stats.norm.ppf(1 - (1 - confidence) / 2)
+       required_n = int(np.ceil((z * sigma_hat / target_se)**2))
+
+       return {
+           'required_n': required_n,
+           'estimated_sigma': sigma_hat,
+           'pilot_n': pilot_n,
+           'pilot_estimate': np.mean(pilot_h),
+           'pilot_se': sigma_hat / np.sqrt(pilot_n)
+       }
+
+   # Example: Estimate E[X²] for X ~ N(0,1) with SE ≤ 0.01
+   result = determine_sample_size(
+       h=lambda x: x**2,
+       sampler=lambda n: np.random.standard_normal(n),
+       target_se=0.01
+   )
+   print(f"Estimated σ: {result['estimated_sigma']:.4f}")
+   print(f"Required n for SE ≤ 0.01: {result['required_n']:,}")
+
+For estimating :math:`\mathbb{E}[X^2]` where :math:`X \sim \mathcal{N}(0,1)`, the variance is :math:`\text{Var}(X^2) = \mathbb{E}[X^4] - (\mathbb{E}[X^2])^2 = 3 - 1 = 2`. To achieve standard error 0.01, we need :math:`n \geq (1.96)^2 \times 2 / (0.01)^2 \approx 77,000` samples.
+
+Convergence Diagnostics and Monitoring
+--------------------------------------
+
+Beyond computing point estimates and confidence intervals, it is important to monitor the convergence of Monte Carlo simulations. Visual diagnostics can reveal problems—heavy tails, multimodality, slow mixing—that summary statistics might miss.
+
+Running Mean Plots
+~~~~~~~~~~~~~~~~~~
+
+The most basic diagnostic is a plot of the running mean:
+
+.. math::
+
+   \hat{I}_k = \frac{1}{k} \sum_{i=1}^{k} h(X_i) \quad \text{for } k = 1, 2, \ldots, n
+
+If the simulation is converging properly, this plot should:
+
+1. Fluctuate widely for small :math:`k`
+2. Stabilize and approach a horizontal asymptote as :math:`k` grows
+3. Have diminishing fluctuations proportional to :math:`1/\sqrt{k}`
+
+Standard Error Decay
+~~~~~~~~~~~~~~~~~~~~
+
+The standard error should decrease as :math:`1/\sqrt{n}`. A log-log plot of standard error versus sample size should have slope :math:`-1/2`. Deviations suggest:
+
+- **Steeper slope**: Variance is decreasing (possibly a problem with the estimator)
+- **Shallower slope**: Correlation in samples, infinite variance, or other issues
+
+.. code-block:: python
+
+   import numpy as np
+   import matplotlib.pyplot as plt
+
+   def convergence_diagnostics(h_values, true_value=None):
+       """
+       Create comprehensive convergence diagnostics.
+
+       Parameters
+       ----------
+       h_values : array
+           Sequence of h(X_i) values.
+       true_value : float, optional
+           True integral value (if known).
+
+       Returns
+       -------
+       fig : matplotlib Figure
+           Diagnostic plots.
+       """
+       n = len(h_values)
+       indices = np.arange(1, n + 1)
+
+       # Running statistics
+       cumsum = np.cumsum(h_values)
+       running_mean = cumsum / indices
+
+       # Running variance (using parallel algorithm for stability)
+       running_var = np.zeros(n)
+       running_var[0] = 0
+       M2 = 0
+       mean = h_values[0]
+       for k in range(1, n):
+           delta = h_values[k] - mean
+           mean += delta / (k + 1)
+           delta2 = h_values[k] - mean
+           M2 += delta * delta2
+           running_var[k] = M2 / k if k > 0 else 0
+
+       running_se = np.sqrt(running_var / indices)
+
+       # Create figure
+       fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+       # Plot 1: Running mean
+       ax = axes[0, 0]
+       ax.plot(indices, running_mean, 'b-', linewidth=0.5, alpha=0.8)
+       ax.fill_between(indices[100:],
+                       running_mean[100:] - 1.96*running_se[100:],
+                       running_mean[100:] + 1.96*running_se[100:],
+                       alpha=0.3, color='blue')
+       if true_value is not None:
+           ax.axhline(true_value, color='red', linestyle='--',
+                      linewidth=2, label=f'True value = {true_value:.4f}')
+       ax.set_xlabel('Sample size')
+       ax.set_ylabel('Running mean')
+       ax.set_title('Running Mean with 95% Confidence Band')
+       ax.legend()
+       ax.set_xscale('log')
+
+       # Plot 2: Standard error decay
+       ax = axes[0, 1]
+       se_plot_idx = indices[99:]  # Start after 100 samples
+       ax.loglog(se_plot_idx, running_se[99:], 'b-', linewidth=1,
+                 label='Observed SE')
+       # Reference line with slope -1/2
+       ref_se = running_se[99] * np.sqrt(100 / se_plot_idx)
+       ax.loglog(se_plot_idx, ref_se, 'r--', linewidth=2,
+                 label=r'$O(n^{-1/2})$ reference')
+       ax.set_xlabel('Sample size')
+       ax.set_ylabel('Standard Error')
+       ax.set_title('Standard Error Decay')
+       ax.legend()
+
+       # Plot 3: Histogram of h-values
+       ax = axes[1, 0]
+       ax.hist(h_values, bins=50, density=True, alpha=0.7, edgecolor='black')
+       ax.axvline(np.mean(h_values), color='red', linewidth=2,
+                  label=f'Mean = {np.mean(h_values):.4f}')
+       ax.set_xlabel('h(X)')
+       ax.set_ylabel('Density')
+       ax.set_title('Distribution of h(X) Values')
+       ax.legend()
+
+       # Plot 4: Autocorrelation (to detect dependence)
+       ax = axes[1, 1]
+       max_lag = min(50, n // 10)
+       autocorr = [np.corrcoef(h_values[:-k], h_values[k:])[0, 1]
+                   for k in range(1, max_lag + 1)]
+       ax.bar(range(1, max_lag + 1), autocorr, color='steelblue')
+       ax.axhline(1.96/np.sqrt(n), color='red', linestyle='--')
+       ax.axhline(-1.96/np.sqrt(n), color='red', linestyle='--')
+       ax.set_xlabel('Lag')
+       ax.set_ylabel('Autocorrelation')
+       ax.set_title('Autocorrelation (should be ~0 for iid samples)')
+
+       plt.tight_layout()
+       return fig
+
+   # Example usage
+   np.random.seed(42)
+   X = np.random.standard_normal(50000)
+   h_values = X**2  # E[X²] = 1
+   fig = convergence_diagnostics(h_values, true_value=1.0)
+   plt.show()
+
+Pathological Cases
+~~~~~~~~~~~~~~~~~~
+
+Several situations can cause Monte Carlo to behave unexpectedly:
+
+**Heavy tails**: If :math:`\text{Var}[h(X)] = \infty`, the CLT does not apply. The estimator still converges (by LLN, if :math:`\mathbb{E}[|h(X)|] < \infty`), but standard error estimates are meaningless. Example: estimating :math:`\mathbb{E}[1/U]` where :math:`U \sim \text{Uniform}(0,1)`.
+
+**Multimodality**: If the integrand has isolated peaks that the sampling distribution rarely visits, estimates may be biased until enough samples hit every mode. This is particularly problematic in high dimensions.
+
+**Rare events**: Estimating :math:`P(A)` for rare events :math:`A` requires approximately :math:`10/P(A)` samples just to see the event happen a few times. The relative error is enormous unless importance sampling is used.
+
+**Dependent samples**: If samples are correlated (as in MCMC), the effective sample size is smaller than the nominal sample size, and standard error formulas underestimate uncertainty.
+
+Practical Considerations
+------------------------
+
+Before concluding, we collect several practical points for implementing Monte Carlo methods effectively.
+
+When to Use Monte Carlo
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Monte Carlo integration is the method of choice when:
+
+1. **Dimension is high** (:math:`d \gtrsim 5`): The curse of dimensionality kills deterministic methods.
+2. **Domain is complex**: Irregular regions, constraints, and complex boundaries are natural for Monte Carlo but problematic for quadrature.
+3. **Integrand is non-smooth**: Monte Carlo doesn't require derivatives or smoothness.
+4. **Sampling is easy**: If we can easily generate samples from the target distribution, Monte Carlo is straightforward to implement.
+
+Monte Carlo is a poor choice when:
+
+1. **Dimension is very low** (:math:`d \leq 3`) and the integrand is smooth: Use Gaussian quadrature.
+2. **High precision is required** with smooth integrands: Deterministic methods converge faster.
+3. **Sampling is expensive**: Each Monte Carlo sample requires a new function evaluation; quadrature methods can achieve more with fewer evaluations for smooth functions.
+
+Reproducibility
+~~~~~~~~~~~~~~~
+
+Always set random seeds and document them. Monte Carlo results should be reproducible.
+
+.. code-block:: python
+
+   # Good practice
+   import numpy as np
+
+   def my_monte_carlo_analysis(n_samples, seed):
+       """Document the seed in the function signature."""
+       rng = np.random.default_rng(seed)
+       # ... analysis ...
+       return results
+
+   # Call with explicit seed
+   results = my_monte_carlo_analysis(100_000, seed=42)
+
+Computational Efficiency
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Vectorize**: Use NumPy operations on arrays, not Python loops.
+- **Generate samples in batches**: ``rng.random(100_000)`` is faster than 100,000 calls to ``rng.random()``.
+- **Parallelize when possible**: For embarrassingly parallel problems, distribute samples across cores.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Reporting estimates without uncertainty**: A Monte Carlo estimate without a standard error or confidence interval is nearly meaningless. Always report :math:`\hat{I}_n \pm z_{\alpha/2} \cdot \hat{\sigma}_n / \sqrt{n}`.
+
+   **Bad**: "The integral is 3.14159."
+
+   **Good**: "The integral is 3.142 ± 0.005 (95% CI: [3.132, 3.152]) based on 100,000 samples."
+
+Bringing It All Together
+------------------------
+
+Monte Carlo integration transforms the ancient problem of computing integrals into the modern practice of sampling and averaging. The method's power derives from three pillars:
+
+1. **Universality**: Any integral can be written as an expected value, and expected values can be estimated by sample means.
+
+2. **The Law of Large Numbers**: Sample means converge to population means, guaranteeing that Monte Carlo estimators approach the true value.
+
+3. **The Central Limit Theorem**: The error decreases as :math:`O(n^{-1/2})`, providing both a convergence rate and a framework for uncertainty quantification via confidence intervals.
+
+The :math:`O(n^{-1/2})` rate is simultaneously the method's weakness and its strength. In low dimensions, deterministic quadrature methods converge faster. But in high dimensions, where deterministic methods suffer the curse of dimensionality, Monte Carlo's dimension-independent rate makes it the only viable option.
+
+The examples in this section—estimating :math:`\pi`, computing Gaussian integrals, evaluating posterior means, tackling high-dimensional problems—illustrate the breadth of Monte Carlo applications. The diagnostic tools—running mean plots, standard error decay, autocorrelation checks—equip you to assess whether your simulations are converging properly.
+
+Transition to What Follows
+--------------------------
+
+With the foundations of Monte Carlo integration in place, we face a critical question: *where do the random samples come from?*
+
+Throughout this section, we have assumed that generating samples from the target distribution—uniform on :math:`[0, 1]^d`, standard normal, a posterior distribution—is straightforward. But this assumption hides a mountain of computational machinery.
+
+The **next section** (:ref:`ch2.2-uniform-random-variates`) addresses the most fundamental case: generating uniform random numbers. We will see that computers, being deterministic machines, cannot produce "true" randomness—only pseudo-random sequences that pass stringent statistical tests. Understanding how these sequences are generated, what can go wrong, and how to ensure reproducibility is essential for any serious practitioner.
+
+Following that, the **inverse CDF method** (:ref:`ch2.3-inverse-cdf-method`) shows how to transform uniform random numbers into samples from other distributions. If we can compute the inverse cumulative distribution function :math:`F^{-1}(u)`, we can generate samples from :math:`F` by applying :math:`F^{-1}` to uniform random numbers. This elegant technique works for many important distributions—exponential, Weibull, Cauchy—but fails when :math:`F^{-1}` has no closed form.
+
+For distributions like the normal, where the inverse CDF is not available analytically, **specialized transformations** like Box-Muller offer efficient alternatives. And for truly complex distributions—posteriors in Bayesian inference, for instance—**rejection sampling** and eventually **Markov chain Monte Carlo** (Part 3) provide the tools to generate the samples that Monte Carlo integration requires.
+
+The story of Monte Carlo methods is thus a story of two interlocking challenges: using random samples to estimate integrals (this section), and generating the random samples in the first place (the sections to come). Master both, and you hold a computational toolkit of extraordinary power.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: Monte Carlo integration estimates integrals by rewriting them as expectations and averaging random samples. The Law of Large Numbers guarantees convergence; the Central Limit Theorem provides the :math:`O(n^{-1/2})` rate.
+
+   2. **Historical insight**: Monte Carlo emerged from the Manhattan Project, where Ulam and von Neumann needed to compute neutron transport integrals that resisted analytical attack. The method turned randomness from a nuisance into a computational tool.
+
+   3. **Dimension independence**: The :math:`O(n^{-1/2})` rate does not depend on the dimension of the integration domain. This is why Monte Carlo dominates in high-dimensional problems where deterministic methods fail.
+
+   4. **Practical application**: Always report standard errors and confidence intervals. Use pilot studies to estimate variance for sample size planning. Monitor convergence visually with running mean plots and standard error decay.
+
+   5. **Method selection**: In 1–3 dimensions with smooth integrands, use deterministic quadrature. In high dimensions or with complex domains, use Monte Carlo. Consider quasi-Monte Carlo for moderate dimensions with smooth functions.
+
+   6. **Outcome alignment**: This section directly addresses Learning Outcome 1 (apply simulation techniques for Monte Carlo integration) and provides the conceptual foundation for all subsequent simulation methods, including variance reduction, importance sampling, and MCMC.

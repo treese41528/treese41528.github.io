@@ -1,0 +1,1143 @@
+.. _ch2.3-inverse-cdf-method:
+
+====================
+Inverse CDF Method
+====================
+
+With a reliable supply of uniform random variates in hand—the fruit of Section 2.2's exploration of pseudo-random number generators—we now face the central question of random variable generation: *how do we transform these uniform numbers into samples from other distributions?*
+
+The answer lies in one of the most elegant results in probability theory: the Probability Integral Transform. This theorem, which we encountered briefly in our discussion of why uniform variates are "universal currency," now takes center stage. It tells us that any distribution can be sampled by computing the inverse of its cumulative distribution function applied to a uniform random number. The method is universal in principle: it works for continuous, discrete, and mixed distributions alike. When the inverse CDF has a closed-form expression—as it does for exponential, Weibull, Pareto, and Cauchy distributions—implementation is immediate and efficient.
+
+But the inverse CDF method is more than a theoretical curiosity. It is the workhorse of random number generation, the first algorithm any practitioner should consider when faced with a new distribution. Understanding when it applies, how to implement it efficiently, and when to seek alternatives is essential knowledge for computational statistics.
+
+This section develops the inverse CDF method in full generality. We begin with the mathematical foundations—proving why the method works and what the "generalized inverse" means for distributions that lack smooth inverses. We then work through continuous distributions with closed-form inverses, deriving and implementing samplers for several important cases. For discrete distributions, we develop increasingly sophisticated algorithms: linear search, binary search, and the remarkable alias method that achieves constant-time sampling. We address numerical issues that arise in practice and identify the method's limitations—setting the stage for rejection sampling and specialized transformations in subsequent sections.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand**: Why the inverse CDF method produces correctly distributed samples, with complete proofs for both continuous and discrete cases
+   • **Master**: Closed-form inverse CDFs for exponential, Weibull, Pareto, Cauchy, and logistic distributions
+   • **Develop**: Efficient algorithms for discrete distributions—from :math:`O(K)` linear search through :math:`O(\log K)` binary search to :math:`O(1)` alias method
+   • **Implement**: Complete Python code with attention to numerical precision and edge cases
+   • **Evaluate**: When the inverse CDF method excels and when alternatives (rejection sampling, specialized transforms) are preferable
+
+
+Mathematical Foundations
+------------------------
+
+The inverse CDF method rests on a deep connection between the uniform distribution and all other distributions. We now develop this connection rigorously.
+
+The Cumulative Distribution Function
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For any random variable :math:`X`, the **cumulative distribution function** (CDF) :math:`F_X: \mathbb{R} \to [0, 1]` is defined by:
+
+.. math::
+
+   F_X(x) = P(X \leq x)
+
+The CDF has several fundamental properties:
+
+1. **Monotonicity**: :math:`F_X` is non-decreasing. If :math:`x_1 < x_2`, then :math:`F_X(x_1) \leq F_X(x_2)`.
+
+2. **Right-continuity**: :math:`\lim_{h \to 0^+} F_X(x + h) = F_X(x)` for all :math:`x`.
+
+3. **Limits at infinity**: :math:`\lim_{x \to -\infty} F_X(x) = 0` and :math:`\lim_{x \to \infty} F_X(x) = 1`.
+
+For **continuous** random variables with density :math:`f_X`, the CDF is obtained by integration:
+
+.. math::
+
+   F_X(x) = \int_{-\infty}^{x} f_X(t) \, dt
+
+and the CDF is continuous everywhere.
+
+For **discrete** random variables taking values :math:`x_1 < x_2 < \cdots` with probabilities :math:`p_1, p_2, \ldots`, the CDF is a step function:
+
+.. math::
+
+   F_X(x) = \sum_{x_i \leq x} p_i
+
+The CDF jumps by :math:`p_i` at each value :math:`x_i`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide009_img003_8228ef1b.png
+   :alt: CDF for discrete distribution showing step function behavior
+   :align: center
+   :width: 55%
+
+   **CDF for Discrete Distributions.** The cumulative distribution function of a discrete random variable is a step function with jumps at each possible value. For the killdeer clutch size example shown, the CDF maps any :math:`u \in (0, 1)` to the smallest outcome :math:`x` where :math:`F(x) \geq u`—this is precisely the generalized inverse.
+
+The Generalized Inverse
+~~~~~~~~~~~~~~~~~~~~~~~
+
+When :math:`F_X` is continuous and strictly increasing, it has a unique inverse: :math:`F_X^{-1}(u)` is the unique :math:`x` such that :math:`F_X(x) = u`. But for discrete distributions (where :math:`F_X` is a step function) or mixed distributions, the ordinary inverse does not exist. We need a more general definition.
+
+.. admonition:: Definition: Generalized Inverse (Quantile Function)
+   :class: note
+
+   For any distribution function :math:`F: \mathbb{R} \to [0, 1]`, the **generalized inverse** (or **quantile function**) is:
+
+   .. math::
+      :label: gen-inverse-def
+
+      F^{-1}(u) = \inf\{x \in \mathbb{R} : F(x) \geq u\} \quad \text{for } u \in (0, 1)
+
+   This is the smallest :math:`x` for which the CDF reaches or exceeds :math:`u`.
+
+The generalized inverse has several important properties:
+
+**Property 1**: For continuous, strictly increasing :math:`F`, the generalized inverse coincides with the ordinary inverse.
+
+**Property 2**: For any :math:`F`, :math:`F^{-1}(u) \leq x` if and only if :math:`u \leq F(x)`. This equivalence is the key to proving the inverse CDF method works.
+
+**Property 3**: :math:`F^{-1}` is non-decreasing and left-continuous.
+
+**Proof of Property 2**: 
+
+(:math:`\Leftarrow`) Suppose :math:`u \leq F(x)`. Then :math:`x \in \{t : F(t) \geq u\}`, so :math:`F^{-1}(u) = \inf\{t : F(t) \geq u\} \leq x`.
+
+(:math:`\Rightarrow`) Suppose :math:`F^{-1}(u) \leq x`. By definition, :math:`F^{-1}(u) = \inf\{t : F(t) \geq u\}`. By right-continuity of :math:`F`, :math:`F(F^{-1}(u)) \geq u`. Since :math:`F` is non-decreasing and :math:`F^{-1}(u) \leq x`, we have :math:`F(x) \geq F(F^{-1}(u)) \geq u`. ∎
+
+The Probability Integral Transform
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With the generalized inverse defined, we can state and prove the fundamental result.
+
+.. admonition:: Theorem: Probability Integral Transform (Inverse Direction)
+   :class: note
+
+   If :math:`U \sim \text{Uniform}(0, 1)` and :math:`F` is any distribution function, then :math:`X = F^{-1}(U)` has distribution function :math:`F`.
+
+**Proof**: We must show that :math:`P(X \leq x) = F(x)` for all :math:`x \in \mathbb{R}`.
+
+.. math::
+
+   P(X \leq x) &= P(F^{-1}(U) \leq x) \\
+               &= P(U \leq F(x)) \quad \text{(by Property 2)} \\
+               &= F(x) \quad \text{(since } U \sim \text{Uniform}(0,1) \text{)}
+
+The final equality uses the fact that for :math:`U \sim \text{Uniform}(0,1)`, :math:`P(U \leq u) = u` for any :math:`u \in [0, 1]`. ∎
+
+This proof is remarkably general. It applies to:
+
+- Continuous distributions with smooth inverses
+- Discrete distributions with step-function CDFs  
+- Mixed distributions combining point masses and continuous components
+- Any distribution whatsoever, provided we use the generalized inverse
+
+The converse also holds under mild conditions:
+
+.. admonition:: Theorem: Probability Integral Transform (Forward Direction)
+   :class: note
+
+   If :math:`X` has a continuous CDF :math:`F`, then :math:`U = F(X) \sim \text{Uniform}(0, 1)`.
+
+**Proof**: For :math:`u \in (0, 1)`:
+
+.. math::
+
+   P(F(X) \leq u) = P(X \leq F^{-1}(u)) = F(F^{-1}(u)) = u
+
+where the last equality holds because :math:`F` is continuous and strictly increasing on its support. ∎
+
+Geometric Interpretation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The inverse CDF method has an intuitive geometric interpretation. Imagine the graph of the CDF :math:`F(x)`:
+
+1. Generate a uniform random number :math:`u \in (0, 1)` — a random height on the :math:`y`-axis.
+2. Draw a horizontal line at height :math:`u`.
+3. Find where this line first intersects the CDF curve (or, for step functions, where it first reaches the CDF from below).
+4. Project down to the :math:`x`-axis. This is your sample :math:`F^{-1}(u)`.
+
+For continuous distributions with strictly increasing CDFs, the intersection is unique. For discrete distributions, the horizontal line may intersect a "riser" of the step function; the generalized inverse picks the :math:`x`-value at the top of that riser.
+
+.. admonition:: Try It Yourself 🖥️ Interactive Inverse CDF Visualization
+   :class: tip
+
+   Experience the inverse CDF method interactively:
+
+   **General Inverse CDF Transform**: https://treese41528.github.io/ComputationalDataScience/Simulations/MonteCarloSimulation/inverse_cdf_transform_general.html
+
+   **Discrete Distribution Example**: https://treese41528.github.io/ComputationalDataScience/Simulations/MonteCarloSimulation/inverse_cdf_transform_discrete_example.html
+
+   Adjust the :math:`u` slider to see how different uniform values map to different outcomes. Notice how the discrete case "jumps" between values while the continuous case produces a smooth mapping.
+
+
+Continuous Distributions with Closed-Form Inverses
+--------------------------------------------------
+
+The inverse CDF method is most elegant when :math:`F^{-1}` has a closed-form expression. We can then generate samples with just a few arithmetic operations—typically faster than any alternative method.
+
+The Exponential Distribution
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The exponential distribution is the canonical example for the inverse CDF method. It models waiting times in Poisson processes and appears throughout reliability theory, queuing theory, and survival analysis.
+
+**Setup**: :math:`X \sim \text{Exponential}(\lambda)` with rate parameter :math:`\lambda > 0`.
+
+**CDF**: 
+
+.. math::
+
+   F(x) = 1 - e^{-\lambda x}, \quad x \geq 0
+
+**Deriving the Inverse**: Solve :math:`F(x) = u` for :math:`x`:
+
+.. math::
+
+   1 - e^{-\lambda x} &= u \\
+   e^{-\lambda x} &= 1 - u \\
+   -\lambda x &= \ln(1 - u) \\
+   x &= -\frac{\ln(1 - u)}{\lambda}
+
+**Simplification**: Since :math:`U` and :math:`1 - U` have the same distribution when :math:`U \sim \text{Uniform}(0, 1)`, we can use either:
+
+.. math::
+
+   F^{-1}(u) = -\frac{\ln(1 - u)}{\lambda} \quad \text{or} \quad F^{-1}(u) = -\frac{\ln(u)}{\lambda}
+
+The second form saves one subtraction but requires care when :math:`u = 0` (which occurs with probability zero but may arise from floating-point edge cases).
+
+.. admonition:: Example 💡 Generating Exponential Random Variables
+   :class: note
+
+   **Given**: Generate 10,000 samples from :math:`\text{Exponential}(\lambda = 2)`.
+
+   **Mathematical approach**:
+
+   For :math:`\lambda = 2`, :math:`F^{-1}(u) = -\ln(u)/2`.
+
+   **Theoretical properties**:
+   
+   - Mean: :math:`\mathbb{E}[X] = 1/\lambda = 0.5`
+   - Variance: :math:`\text{Var}(X) = 1/\lambda^2 = 0.25`
+   - Median: :math:`F^{-1}(0.5) = \ln(2)/\lambda \approx 0.347`
+
+   **Python implementation**:
+
+   .. code-block:: python
+
+      import numpy as np
+
+      def exponential_inverse_cdf(u, rate):
+          """Generate Exponential(rate) samples via inverse CDF."""
+          return -np.log(u) / rate
+
+      # Generate samples
+      rng = np.random.default_rng(42)
+      n_samples = 10_000
+      rate = 2.0
+
+      U = rng.random(n_samples)
+      X = exponential_inverse_cdf(U, rate)
+
+      # Verify
+      print(f"Sample mean: {np.mean(X):.4f} (theory: {1/rate:.4f})")
+      print(f"Sample variance: {np.var(X, ddof=1):.4f} (theory: {1/rate**2:.4f})")
+      print(f"Sample median: {np.median(X):.4f} (theory: {np.log(2)/rate:.4f})")
+
+   **Output**:
+
+   ::
+
+      Sample mean: 0.4976 (theory: 0.5000)
+      Sample variance: 0.2467 (theory: 0.2500)
+      Sample median: 0.3441 (theory: 0.3466)
+
+   The sample statistics closely match theoretical values, confirming the correctness of our sampler.
+
+The Weibull Distribution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Weibull distribution generalizes the exponential to allow for increasing or decreasing hazard rates, making it fundamental in reliability analysis.
+
+**Setup**: :math:`X \sim \text{Weibull}(k, \lambda)` with shape :math:`k > 0` and scale :math:`\lambda > 0`.
+
+**CDF**:
+
+.. math::
+
+   F(x) = 1 - \exp\left( -\left(\frac{x}{\lambda}\right)^k \right), \quad x \geq 0
+
+**Deriving the Inverse**: Solve :math:`F(x) = u`:
+
+.. math::
+
+   1 - e^{-(x/\lambda)^k} &= u \\
+   e^{-(x/\lambda)^k} &= 1 - u \\
+   -\left(\frac{x}{\lambda}\right)^k &= \ln(1 - u) \\
+   \left(\frac{x}{\lambda}\right)^k &= -\ln(1 - u) \\
+   x &= \lambda \left( -\ln(1 - u) \right)^{1/k}
+
+**Result**:
+
+.. math::
+   :label: weibull-inverse
+
+   F^{-1}(u) = \lambda \left( -\ln(1 - u) \right)^{1/k}
+
+Note that when :math:`k = 1`, the Weibull reduces to :math:`\text{Exponential}(1/\lambda)`.
+
+.. code-block:: python
+
+   def weibull_inverse_cdf(u, shape, scale):
+       """Generate Weibull(shape, scale) samples via inverse CDF."""
+       return scale * (-np.log(1 - u)) ** (1 / shape)
+
+   # Example: Weibull(k=2, λ=1) - the Rayleigh distribution
+   rng = np.random.default_rng(42)
+   U = rng.random(10_000)
+   X = weibull_inverse_cdf(U, shape=2, scale=1)
+
+   print(f"Sample mean: {np.mean(X):.4f}")
+   print(f"Sample std: {np.std(X, ddof=1):.4f}")
+
+The Pareto Distribution
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The Pareto distribution models phenomena with "heavy tails"—situations where extreme values are more likely than a normal or exponential distribution would suggest. It appears in economics (income distribution), insurance (claim sizes), and network science (degree distributions).
+
+**Setup**: :math:`X \sim \text{Pareto}(\alpha, x_m)` with shape :math:`\alpha > 0` and scale (minimum) :math:`x_m > 0`.
+
+**CDF**:
+
+.. math::
+
+   F(x) = 1 - \left( \frac{x_m}{x} \right)^\alpha, \quad x \geq x_m
+
+**Deriving the Inverse**:
+
+.. math::
+
+   1 - \left( \frac{x_m}{x} \right)^\alpha &= u \\
+   \left( \frac{x_m}{x} \right)^\alpha &= 1 - u \\
+   \frac{x_m}{x} &= (1 - u)^{1/\alpha} \\
+   x &= \frac{x_m}{(1 - u)^{1/\alpha}}
+
+**Result**:
+
+.. math::
+   :label: pareto-inverse
+
+   F^{-1}(u) = \frac{x_m}{(1 - u)^{1/\alpha}} = x_m (1 - u)^{-1/\alpha}
+
+.. code-block:: python
+
+   def pareto_inverse_cdf(u, alpha, x_min):
+       """Generate Pareto(alpha, x_min) samples via inverse CDF."""
+       return x_min / (1 - u) ** (1 / alpha)
+
+   # Example: Pareto(α=2.5, x_m=1)
+   rng = np.random.default_rng(42)
+   U = rng.random(10_000)
+   X = pareto_inverse_cdf(U, alpha=2.5, x_min=1.0)
+
+   # For α > 1, mean = α * x_m / (α - 1)
+   theoretical_mean = 2.5 * 1.0 / (2.5 - 1)
+   print(f"Sample mean: {np.mean(X):.4f} (theory: {theoretical_mean:.4f})")
+
+The Cauchy Distribution
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The Cauchy distribution is infamous for having no mean or variance—its tails are so heavy that these moments do not exist. It arises as the ratio of two independent standard normals and appears in physics as the Lorentzian distribution.
+
+**Setup**: :math:`X \sim \text{Cauchy}(\mu, \sigma)` with location :math:`\mu` and scale :math:`\sigma > 0`.
+
+**CDF**:
+
+.. math::
+
+   F(x) = \frac{1}{\pi} \arctan\left( \frac{x - \mu}{\sigma} \right) + \frac{1}{2}
+
+**Deriving the Inverse**:
+
+.. math::
+
+   \frac{1}{\pi} \arctan\left( \frac{x - \mu}{\sigma} \right) + \frac{1}{2} &= u \\
+   \arctan\left( \frac{x - \mu}{\sigma} \right) &= \pi \left( u - \frac{1}{2} \right) \\
+   \frac{x - \mu}{\sigma} &= \tan\left( \pi \left( u - \frac{1}{2} \right) \right) \\
+   x &= \mu + \sigma \tan\left( \pi \left( u - \frac{1}{2} \right) \right)
+
+**Result**:
+
+.. math::
+   :label: cauchy-inverse
+
+   F^{-1}(u) = \mu + \sigma \tan\left( \pi (u - 1/2) \right)
+
+.. code-block:: python
+
+   def cauchy_inverse_cdf(u, loc=0, scale=1):
+       """Generate Cauchy(loc, scale) samples via inverse CDF."""
+       return loc + scale * np.tan(np.pi * (u - 0.5))
+
+   # Standard Cauchy
+   rng = np.random.default_rng(42)
+   U = rng.random(10_000)
+   X = cauchy_inverse_cdf(U)
+
+   # The median is the location parameter
+   print(f"Sample median: {np.median(X):.4f} (theory: 0.0)")
+   # Mean doesn't exist, but sample mean will be highly variable
+   print(f"Sample mean: {np.mean(X):.4f} (undefined theoretically)")
+
+The Logistic Distribution
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The logistic distribution resembles the normal but has heavier tails. It appears in logistic regression and as a smooth approximation to the step function.
+
+**Setup**: :math:`X \sim \text{Logistic}(\mu, s)` with location :math:`\mu` and scale :math:`s > 0`.
+
+**CDF**:
+
+.. math::
+
+   F(x) = \frac{1}{1 + e^{-(x-\mu)/s}}
+
+**Deriving the Inverse**:
+
+.. math::
+
+   \frac{1}{1 + e^{-(x-\mu)/s}} &= u \\
+   1 + e^{-(x-\mu)/s} &= \frac{1}{u} \\
+   e^{-(x-\mu)/s} &= \frac{1-u}{u} \\
+   -(x-\mu)/s &= \ln\left( \frac{1-u}{u} \right) \\
+   x &= \mu - s \ln\left( \frac{1-u}{u} \right) = \mu + s \ln\left( \frac{u}{1-u} \right)
+
+**Result**:
+
+.. math::
+   :label: logistic-inverse
+
+   F^{-1}(u) = \mu + s \ln\left( \frac{u}{1-u} \right) = \mu + s \cdot \text{logit}(u)
+
+The function :math:`\text{logit}(u) = \ln(u/(1-u))` is the inverse of the logistic (sigmoid) function.
+
+.. code-block:: python
+
+   def logistic_inverse_cdf(u, loc=0, scale=1):
+       """Generate Logistic(loc, scale) samples via inverse CDF."""
+       return loc + scale * np.log(u / (1 - u))
+
+   # Standard logistic
+   rng = np.random.default_rng(42)
+   U = rng.random(10_000)
+   X = logistic_inverse_cdf(U)
+
+   # Mean = loc, Variance = (π * scale)² / 3
+   print(f"Sample mean: {np.mean(X):.4f} (theory: 0.0)")
+   print(f"Sample variance: {np.var(X, ddof=1):.4f} (theory: {np.pi**2 / 3:.4f})")
+
+Summary: Continuous Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following table summarizes the inverse CDF formulas for common distributions:
+
+.. list-table:: Inverse CDF Formulas for Continuous Distributions
+   :header-rows: 1
+   :widths: 20 35 45
+
+   * - Distribution
+     - CDF :math:`F(x)`
+     - Inverse :math:`F^{-1}(u)`
+   * - Exponential(:math:`\lambda`)
+     - :math:`1 - e^{-\lambda x}`
+     - :math:`-\ln(1-u)/\lambda`
+   * - Weibull(:math:`k, \lambda`)
+     - :math:`1 - e^{-(x/\lambda)^k}`
+     - :math:`\lambda(-\ln(1-u))^{1/k}`
+   * - Pareto(:math:`\alpha, x_m`)
+     - :math:`1 - (x_m/x)^\alpha`
+     - :math:`x_m (1-u)^{-1/\alpha}`
+   * - Cauchy(:math:`\mu, \sigma`)
+     - :math:`\frac{1}{\pi}\arctan(\frac{x-\mu}{\sigma}) + \frac{1}{2}`
+     - :math:`\mu + \sigma\tan(\pi(u-1/2))`
+   * - Logistic(:math:`\mu, s`)
+     - :math:`1/(1 + e^{-(x-\mu)/s})`
+     - :math:`\mu + s\ln(u/(1-u))`
+   * - Uniform(:math:`a, b`)
+     - :math:`(x-a)/(b-a)`
+     - :math:`a + (b-a)u`
+
+
+Numerical Inversion
+-------------------
+
+What about distributions whose inverse CDFs have no closed form? The normal distribution is the most important example: :math:`\Phi^{-1}(u)` cannot be expressed in terms of elementary functions. For such distributions, we have two options:
+
+1. **Numerical root-finding**: Solve :math:`F(x) = u` numerically for each sample.
+2. **Use specialized algorithms**: Box-Muller for normals, rejection sampling, etc.
+
+Numerical inversion is always possible but often slow. Let us examine when it is practical.
+
+Root-Finding Approach
+~~~~~~~~~~~~~~~~~~~~~
+
+To compute :math:`F^{-1}(u)`, we solve the equation :math:`F(x) - u = 0`. Since :math:`F` is monotonically increasing, standard root-finding methods are guaranteed to converge.
+
+**Brent's method** is particularly suitable: it combines bisection (guaranteed convergence) with faster interpolation methods (speed). SciPy provides this as ``scipy.optimize.brentq``.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import optimize, stats
+
+   def numerical_inverse_cdf(cdf_func, u, bracket=(-100, 100)):
+       """
+       Compute F⁻¹(u) numerically using Brent's method.
+
+       Parameters
+       ----------
+       cdf_func : callable
+           CDF function F(x).
+       u : float or array
+           Probability value(s) in (0, 1).
+       bracket : tuple
+           Interval [a, b] containing the root.
+
+       Returns
+       -------
+       float or array
+           Quantile value(s).
+       """
+       u = np.atleast_1d(u)
+       result = np.zeros_like(u)
+
+       for i, u_val in enumerate(u):
+           # Solve F(x) = u, i.e., F(x) - u = 0
+           result[i] = optimize.brentq(
+               lambda x: cdf_func(x) - u_val,
+               bracket[0], bracket[1]
+           )
+
+       return result[0] if len(result) == 1 else result
+
+   # Example: Normal distribution (for comparison with scipy.stats.norm.ppf)
+   normal_cdf = stats.norm.cdf
+
+   u_test = np.array([0.025, 0.5, 0.975])
+   numerical_quantiles = numerical_inverse_cdf(normal_cdf, u_test, bracket=(-10, 10))
+   exact_quantiles = stats.norm.ppf(u_test)
+
+   print("Comparison of numerical vs. exact normal quantiles:")
+   for u, num, exact in zip(u_test, numerical_quantiles, exact_quantiles):
+       print(f"  F⁻¹({u}) = {num:.6f} (numerical) vs {exact:.6f} (exact)")
+
+**Computational cost**: Brent's method typically requires :math:`O(\log(1/\epsilon))` iterations to achieve tolerance :math:`\epsilon`, with each iteration evaluating the CDF once. For normal samples, this is about 10-20 CDF evaluations per sample—much slower than the specialized methods we'll see later.
+
+When Numerical Inversion Makes Sense
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Numerical inversion is practical when:
+
+1. **You need only a few samples**: Setup costs of specialized methods may dominate.
+2. **The distribution is unusual**: Custom distributions without known fast samplers.
+3. **Accuracy is paramount**: Numerical inversion can achieve arbitrary precision.
+
+Numerical inversion is impractical when:
+
+1. **You need many samples**: The per-sample cost adds up.
+2. **A fast specialized method exists**: Box-Muller for normals, ratio-of-uniforms for gammas.
+3. **The CDF is expensive to evaluate**: Each sample requires multiple CDF calls.
+
+**Rule of thumb**: For standard distributions, use library implementations (``scipy.stats``, NumPy). These use the most efficient method known for each distribution. Reserve numerical inversion for custom or unusual distributions when other methods fail.
+
+
+Discrete Distributions
+----------------------
+
+For discrete distributions taking values :math:`x_1 < x_2 < \cdots < x_K` with probabilities :math:`p_1, p_2, \ldots, p_K`, the inverse CDF method still applies. The CDF is now a step function:
+
+.. math::
+
+   F(x) = \sum_{x_i \leq x} p_i
+
+and the generalized inverse sets :math:`X = x_k` when :math:`F(x_{k-1}) < U \leq F(x_k)`, where :math:`F(x_0) = 0`.
+
+The challenge is computational: **how do we efficiently find which "step" of the CDF our uniform value :math:`U` lands on?**
+
+Linear Search: The Baseline
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The simplest approach is **linear search**: scan through outcomes in order until the cumulative probability exceeds :math:`U`.
+
+**Algorithm: Linear Search**
+
+.. code-block:: text
+
+   Input: Probabilities (p₁, ..., pₖ), uniform value U
+   Output: Sample X
+
+   1. Set cumsum = 0
+   2. For k = 1, 2, ..., K:
+      a. cumsum = cumsum + pₖ
+      b. If U ≤ cumsum, return xₖ
+   3. Return xₖ (fallback for numerical edge cases)
+
+**Complexity**: :math:`O(K)` per sample in the worst case (uniform distribution), :math:`O(1)` in the best case (all mass on :math:`x_1`).
+
+.. code-block:: python
+
+   def linear_search_sample(pmf, values, u):
+       """
+       Sample from discrete distribution via linear search.
+
+       Parameters
+       ----------
+       pmf : array
+           Probability mass function (must sum to 1).
+       values : array
+           Possible outcomes.
+       u : float
+           Uniform random value.
+
+       Returns
+       -------
+       Sampled value.
+       """
+       cumsum = 0.0
+       for k, p in enumerate(pmf):
+           cumsum += p
+           if u <= cumsum:
+               return values[k]
+       return values[-1]  # Fallback
+
+   # Example: biased die
+   pmf = np.array([0.1, 0.1, 0.1, 0.2, 0.2, 0.3])  # Heavy on 5, 6
+   values = np.arange(1, 7)
+
+   rng = np.random.default_rng(42)
+   samples = [linear_search_sample(pmf, values, rng.random()) for _ in range(10000)]
+   print("Sample frequencies:", np.bincount(samples, minlength=7)[1:] / 10000)
+   print("True probabilities:", pmf)
+
+Binary Search: Logarithmic Time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When :math:`K` is large, linear search becomes slow. We can exploit the monotonicity of the CDF to use **binary search**, reducing complexity to :math:`O(\log K)`.
+
+The idea: precompute the cumulative probabilities :math:`F_k = \sum_{i=1}^k p_i`, then use binary search to find the smallest :math:`k` such that :math:`F_k \geq U`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide017_img003_e27cc2f5.png
+   :alt: Binary search tree for discrete distribution sampling
+   :align: center
+   :width: 80%
+
+   **Binary Search for Discrete Sampling.** For a distribution over :math:`K = 16` categories with U-shaped probability mass, binary search finds the correct category in at most :math:`\lceil \log_2 K \rceil = 4` comparisons. Each node shows the cumulative probability; we follow the left branch if :math:`U` is less than the node's value, right otherwise.
+
+**Algorithm: Binary Search**
+
+.. code-block:: text
+
+   Input: Cumulative probabilities (F₁, ..., Fₖ), uniform value U
+   Output: Sample index k
+
+   1. Set lo = 0, hi = K
+   2. While lo < hi:
+      a. mid = (lo + hi) / 2
+      b. If U ≤ F[mid], set hi = mid
+      c. Else set lo = mid + 1
+   3. Return lo
+
+**Complexity**: :math:`O(\log K)` per sample, :math:`O(K)` preprocessing to compute cumulative sums.
+
+.. code-block:: python
+
+   class DiscreteDistributionBinarySearch:
+       """Discrete distribution sampler using binary search."""
+
+       def __init__(self, pmf, values=None):
+           """
+           Initialize with probability mass function.
+
+           Parameters
+           ----------
+           pmf : array
+               Probabilities (will be normalized if needed).
+           values : array, optional
+               Outcome values. Defaults to 0, 1, ..., K-1.
+           """
+           self.pmf = np.asarray(pmf) / np.sum(pmf)
+           self.cdf = np.cumsum(self.pmf)
+           self.values = values if values is not None else np.arange(len(pmf))
+
+       def sample(self, n_samples=1, seed=None):
+           """Generate samples using binary search."""
+           rng = np.random.default_rng(seed)
+           U = rng.random(n_samples)
+
+           # np.searchsorted finds insertion point - exactly what we need
+           indices = np.searchsorted(self.cdf, U, side='left')
+
+           return self.values[indices]
+
+   # Example: Zipf distribution (heavy-tailed)
+   K = 1000
+   s = 2.0  # Zipf exponent
+   pmf = 1 / np.arange(1, K + 1) ** s
+   pmf /= pmf.sum()
+
+   dist = DiscreteDistributionBinarySearch(pmf)
+   samples = dist.sample(100_000, seed=42)
+
+   print(f"P(X = 1) = {pmf[0]:.4f}, sample frequency = {np.mean(samples == 0):.4f}")
+   print(f"P(X = 2) = {pmf[1]:.4f}, sample frequency = {np.mean(samples == 1):.4f}")
+
+NumPy's ``np.searchsorted`` implements binary search efficiently, making this approach practical for distributions with thousands or millions of outcomes.
+
+The Alias Method: Constant Time
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Binary search achieves :math:`O(\log K)` per sample—excellent, but can we do better? The remarkable **alias method**, developed by Walker (1977), achieves :math:`O(1)` sampling time after :math:`O(K)` preprocessing.
+
+The key insight is to restructure the probability distribution into :math:`K` "columns" of equal total probability :math:`1/K`, where each column contains probability mass from at most two original outcomes. Sampling then requires only:
+
+1. Choose a column uniformly at random: :math:`O(1)`
+2. Decide between the two outcomes in that column: :math:`O(1)`
+
+**The Setup Algorithm**
+
+Imagine :math:`K` cups, each of capacity :math:`1/K`. We pour the probability mass of each outcome into cups, filling some and leaving others partially empty. The alias method pairs each underfilled cup with an overfilled one, "topping up" the underfilled cup with probability mass from the overfilled outcome.
+
+.. code-block:: text
+
+   Input: Probabilities (p₁, ..., pₖ)
+   Output: Arrays prob[k] and alias[k]
+
+   1. Scale probabilities: q[k] = K * p[k]  (so Σq[k] = K)
+   2. Initialize:
+      - small = {k : q[k] < 1}  (underfilled)
+      - large = {k : q[k] ≥ 1}  (overfilled)
+      - prob[k] = q[k], alias[k] = k for all k
+   3. While small and large are both non-empty:
+      a. Remove j from small (underfilled)
+      b. Remove ℓ from large (overfilled)
+      c. Set alias[j] = ℓ  (top up j with mass from ℓ)
+      d. Set q[ℓ] = q[ℓ] - (1 - prob[j])  (reduce ℓ's excess)
+      e. If q[ℓ] < 1, move ℓ to small; else keep in large
+   4. For any remaining k in small or large, set prob[k] = 1
+
+**The Sampling Algorithm**
+
+.. code-block:: text
+
+   Input: Arrays prob[k] and alias[k], K
+   Output: Sample index
+
+   1. Generate U ~ Uniform(0, K)
+   2. Let i = floor(U), V = K * U - i  (so V ~ Uniform(0, 1))
+   3. If V < prob[i], return i
+   4. Else return alias[i]
+
+Both steps are :math:`O(1)`, making sampling constant-time regardless of :math:`K`.
+
+.. code-block:: python
+
+   class AliasMethod:
+       """
+       Alias method for O(1) discrete distribution sampling.
+
+       After O(K) setup, each sample takes O(1) time.
+       """
+
+       def __init__(self, pmf):
+           """
+           Initialize alias tables.
+
+           Parameters
+           ----------
+           pmf : array-like
+               Probability mass function (will be normalized).
+           """
+           pmf = np.asarray(pmf, dtype=float)
+           K = len(pmf)
+           pmf = pmf / pmf.sum()
+
+           # Scale probabilities
+           q = K * pmf
+
+           # Initialize
+           self.prob = np.zeros(K)
+           self.alias = np.zeros(K, dtype=int)
+
+           # Separate into small and large
+           small = []
+           large = []
+           for k in range(K):
+               if q[k] < 1.0:
+                   small.append(k)
+               else:
+                   large.append(k)
+
+           # Build tables
+           while small and large:
+               j = small.pop()  # Underfilled
+               ell = large.pop()  # Overfilled
+
+               self.prob[j] = q[j]
+               self.alias[j] = ell
+
+               # Transfer mass from ℓ to j
+               q[ell] = q[ell] - (1.0 - q[j])
+
+               if q[ell] < 1.0:
+                   small.append(ell)
+               else:
+                   large.append(ell)
+
+           # Remaining entries get probability 1
+           while large:
+               ell = large.pop()
+               self.prob[ell] = 1.0
+           while small:
+               j = small.pop()
+               self.prob[j] = 1.0
+
+           self.K = K
+
+       def sample(self, n_samples=1, seed=None):
+           """Generate samples in O(1) per sample."""
+           rng = np.random.default_rng(seed)
+
+           # Generate uniform values in [0, K)
+           U = rng.random(n_samples) * self.K
+
+           # Extract integer and fractional parts
+           i = U.astype(int)
+           V = U - i
+
+           # Handle edge case where i = K (due to floating point)
+           i = np.minimum(i, self.K - 1)
+
+           # Choose between original and alias
+           return np.where(V < self.prob[i], i, self.alias[i])
+
+   # Compare performance
+   import time
+
+   K = 10_000
+   pmf = np.random.dirichlet(np.ones(K))  # Random distribution
+
+   # Setup
+   start = time.perf_counter()
+   alias_dist = AliasMethod(pmf)
+   alias_setup = time.perf_counter() - start
+
+   start = time.perf_counter()
+   binary_dist = DiscreteDistributionBinarySearch(pmf)
+   binary_setup = time.perf_counter() - start
+
+   print(f"Setup time - Alias: {alias_setup*1000:.2f} ms, Binary: {binary_setup*1000:.2f} ms")
+
+   # Sampling
+   n_samples = 1_000_000
+
+   start = time.perf_counter()
+   _ = alias_dist.sample(n_samples, seed=42)
+   alias_sample = time.perf_counter() - start
+
+   start = time.perf_counter()
+   _ = binary_dist.sample(n_samples, seed=42)
+   binary_sample = time.perf_counter() - start
+
+   print(f"Sample time ({n_samples:,}) - Alias: {alias_sample*1000:.2f} ms, Binary: {binary_sample*1000:.2f} ms")
+
+Performance Comparison
+~~~~~~~~~~~~~~~~~~~~~~
+
+The following figures compare the three methods across different distribution shapes and sizes.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide020_img004_f6113b1d.png
+   :alt: Performance comparison for tail distribution
+   :align: center
+   :width: 100%
+
+   **Performance Comparison: Tail Distribution.** For a distribution with mass concentrated in the tail (later categories more likely), the alias method maintains :math:`O(1)` sampling regardless of :math:`K`, while binary search grows as :math:`O(\log K)` and linear search as :math:`O(K)`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide020_img005_f28deb1f.png
+   :alt: Performance comparison for head-heavy distribution
+   :align: center
+   :width: 100%
+
+   **Performance Comparison: Head-Heavy Distribution.** When probability mass concentrates in early categories, linear search often terminates quickly—but its worst-case remains :math:`O(K)`. The alias method's :math:`O(1)` guarantee provides consistent performance regardless of distribution shape.
+
+**When to use each method**:
+
+- **Linear search**: Small :math:`K` (say, :math:`K < 20`), or distributions heavily concentrated on early outcomes
+- **Binary search**: Moderate to large :math:`K`, especially if the distribution changes frequently (cheap setup)
+- **Alias method**: Large :math:`K` with many samples needed from a fixed distribution (setup cost amortized)
+
+
+Mixed Distributions
+-------------------
+
+Real-world data often follow **mixed distributions** combining discrete point masses and continuous components. The inverse CDF method handles these naturally.
+
+Zero-Inflated Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A common example is the **zero-inflated distribution**: with probability :math:`p_0`, the outcome is exactly zero; otherwise, it follows a continuous distribution :math:`F_{\text{cont}}`.
+
+The CDF of a zero-inflated distribution is:
+
+.. math::
+
+   F(x) = \begin{cases}
+   0 & x < 0 \\
+   p_0 + (1 - p_0) F_{\text{cont}}(x) & x \geq 0
+   \end{cases}
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide025_img002_fb46d81c.png
+   :alt: Zero-inflated exponential distribution
+   :align: center
+   :width: 95%
+
+   **Zero-Inflated Exponential Distribution.** Left: The distribution has a point mass at zero with probability :math:`p_0 = 0.3`, plus a continuous exponential component. Right: The CDF has a jump of size :math:`p_0` at zero, then grows continuously according to the exponential CDF.
+
+**Inverse CDF for Zero-Inflated Exponential**:
+
+For :math:`U \sim \text{Uniform}(0, 1)`:
+
+- If :math:`U \leq p_0`: return :math:`X = 0`
+- Else: transform :math:`U` to the continuous part and apply the exponential inverse
+
+The transformation for the continuous part rescales :math:`U` from :math:`[p_0, 1]` to :math:`[0, 1]`:
+
+.. math::
+
+   U_{\text{cont}} = \frac{U - p_0}{1 - p_0}
+
+Then :math:`X = F_{\text{cont}}^{-1}(U_{\text{cont}})`.
+
+.. code-block:: python
+
+   def zero_inflated_exponential(u, p_zero, rate):
+       """
+       Sample from zero-inflated exponential via inverse CDF.
+
+       Parameters
+       ----------
+       u : float or array
+           Uniform random value(s).
+       p_zero : float
+           Probability of structural zero.
+       rate : float
+           Rate of exponential component.
+
+       Returns
+       -------
+       float or array
+           Sample(s) from the zero-inflated distribution.
+       """
+       u = np.atleast_1d(u)
+       result = np.zeros_like(u)
+
+       # Points above p_zero come from the exponential
+       continuous_mask = u > p_zero
+
+       if np.any(continuous_mask):
+           # Rescale U from [p_zero, 1] to [0, 1]
+           u_scaled = (u[continuous_mask] - p_zero) / (1 - p_zero)
+           # Apply exponential inverse CDF
+           result[continuous_mask] = -np.log(1 - u_scaled) / rate
+
+       return result[0] if len(result) == 1 else result
+
+   # Verify
+   rng = np.random.default_rng(42)
+   U = rng.random(100_000)
+   samples = zero_inflated_exponential(U, p_zero=0.3, rate=0.5)
+
+   prop_zeros = np.mean(samples == 0)
+   mean_nonzero = np.mean(samples[samples > 0])
+
+   print(f"Proportion of zeros: {prop_zeros:.4f} (theory: 0.3000)")
+   print(f"Mean of non-zeros: {mean_nonzero:.4f} (theory: 2.0000)")
+
+
+General Mixed Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+More generally, a mixed distribution might have :math:`m` point masses at :math:`a_1, \ldots, a_m` with probabilities :math:`\pi_1, \ldots, \pi_m`, plus a continuous component :math:`F_{\text{cont}}` with weight :math:`\pi_{\text{cont}} = 1 - \sum_i \pi_i`.
+
+The inverse CDF method partitions :math:`[0, 1]` accordingly:
+
+.. code-block:: python
+
+   def mixed_distribution_sample(u, point_masses, point_probs, 
+                                  continuous_inverse_cdf):
+       """
+       Sample from a mixed discrete-continuous distribution.
+
+       Parameters
+       ----------
+       u : float
+           Uniform random value.
+       point_masses : array
+           Values with point mass.
+       point_probs : array
+           Probabilities of point masses.
+       continuous_inverse_cdf : callable
+           Inverse CDF of the continuous component.
+
+       Returns
+       -------
+       float
+           Sample from the mixed distribution.
+       """
+       cumprob = 0.0
+
+       # Check point masses
+       for mass, prob in zip(point_masses, point_probs):
+           cumprob += prob
+           if u <= cumprob:
+               return mass
+
+       # Continuous component
+       # Rescale U to [0, 1] for the continuous part
+       u_cont = (u - cumprob) / (1 - cumprob)
+       return continuous_inverse_cdf(u_cont)
+
+
+Practical Considerations
+------------------------
+
+Numerical Precision
+~~~~~~~~~~~~~~~~~~~
+
+Several numerical issues can arise with the inverse CDF method:
+
+**1. Boundary Handling**
+
+When :math:`U` is very close to 0 or 1, :math:`F^{-1}(U)` may produce extreme values or overflow. For instance, :math:`-\ln(U) \to \infty` as :math:`U \to 0`.
+
+**Mitigation**: Clamp :math:`U` to :math:`[\epsilon, 1-\epsilon]` where :math:`\epsilon` is a small positive number (e.g., :math:`10^{-10}`).
+
+.. code-block:: python
+
+   def safe_uniform(rng, size, eps=1e-10):
+       """Generate uniform values safely bounded away from 0 and 1."""
+       u = rng.random(size)
+       return np.clip(u, eps, 1 - eps)
+
+**2. Logarithm Precision Near 1**
+
+Computing :math:`\ln(1 - u)` for :math:`u` close to 1 loses precision due to catastrophic cancellation. When :math:`u = 1 - 10^{-15}`, the subtraction :math:`1 - u` returns exactly 0 in floating-point arithmetic.
+
+**Mitigation**: Use ``np.log1p(-u)`` which computes :math:`\ln(1 + x)` accurately for small :math:`x`:
+
+.. code-block:: python
+
+   u = 1 - 1e-15
+
+   # BAD: catastrophic cancellation
+   bad_result = np.log(1 - u)  # Returns -inf or 0
+
+   # GOOD: accurate computation
+   good_result = np.log1p(-u)  # Returns ≈ -34.5
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Log precision near 1**: Always use ``np.log1p(-u)`` rather than ``np.log(1 - u)`` when implementing inverse CDFs involving :math:`\ln(1 - u)`. This applies to exponential, Weibull, Pareto, and other distributions derived from the survival function.
+
+**3. CDF Evaluation Accuracy**
+
+For numerical inversion, the CDF must be evaluated accurately throughout its domain. In the tails, naive implementations may suffer from cancellation or underflow.
+
+**Example**: The normal CDF :math:`\Phi(x)` for :math:`x = 8` is about :math:`1 - 6 \times 10^{-16}`—indistinguishable from 1 in double precision. Libraries like SciPy use special functions and asymptotic expansions for accuracy in the tails.
+
+
+When Not to Use Inverse CDF
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The inverse CDF method is not always the best choice:
+
+**1. No Closed-Form Inverse**
+
+The normal distribution has no closed-form inverse CDF. While numerical inversion works, specialized methods like **Box-Muller** (Section 2.4) are faster:
+
+.. math::
+
+   Z_1 = \sqrt{-2 \ln U_1} \cos(2\pi U_2), \quad
+   Z_2 = \sqrt{-2 \ln U_1} \sin(2\pi U_2)
+
+produces two independent :math:`\mathcal{N}(0, 1)` samples from two uniform samples—with only logarithms and trigonometric functions, no root-finding.
+
+**2. Multivariate Distributions**
+
+The inverse CDF method extends awkwardly to multiple dimensions. For a random vector :math:`\mathbf{X} = (X_1, \ldots, X_d)`, we would need to:
+
+1. Sample :math:`X_1` from its marginal
+2. Sample :math:`X_2` from its conditional given :math:`X_1`
+3. Continue sequentially...
+
+This requires knowing all conditional distributions, which is often impractical. **Rejection sampling** and **MCMC** (Part 3) are better suited to multivariate problems.
+
+**3. Complex Dependencies**
+
+For distributions defined implicitly—such as the stationary distribution of a Markov chain or the posterior in Bayesian inference—we typically cannot even write down the CDF. **Markov chain Monte Carlo** methods are necessary.
+
+**Rule of Thumb**: Use inverse CDF when:
+
+- The inverse has a closed-form expression, OR
+- You need samples from a custom discrete distribution, OR
+- You need only a few samples from an unusual distribution
+
+Use other methods when:
+
+- Specialized algorithms exist (Box-Muller for normals, ratio-of-uniforms for gammas)
+- The distribution is multivariate
+- The distribution is defined implicitly
+
+
+Bringing It All Together
+------------------------
+
+The inverse CDF method is the theoretical foundation for random variable generation. Its power lies in universality: the same principle—transform uniform samples through the quantile function—applies to continuous, discrete, and mixed distributions alike.
+
+For **continuous distributions with tractable inverses**, the method is both elegant and efficient:
+
+- Exponential, Weibull, Pareto: one logarithm, a few arithmetic operations
+- Cauchy, logistic: trigonometric or logarithmic functions
+- All achieve :math:`O(1)` sampling with minimal code
+
+For **discrete distributions**, we developed a hierarchy of algorithms:
+
+- **Linear search**: Simple, :math:`O(K)` worst case, good for small :math:`K` or head-heavy distributions
+- **Binary search**: :math:`O(\log K)`, the workhorse for moderate :math:`K`
+- **Alias method**: :math:`O(1)` sampling after :math:`O(K)` setup, optimal for large :math:`K` with many samples
+
+For **mixed distributions**, the inverse CDF handles point masses and continuous components naturally by partitioning the uniform range.
+
+**Numerical precision** demands attention: use ``np.log1p`` for stability, clamp uniforms away from boundaries, and respect the limitations of floating-point arithmetic.
+
+Most importantly, we identified **when the method fails**: distributions without closed-form inverses (normals), multivariate distributions (need conditional decomposition), and implicitly defined distributions (need MCMC).
+
+Transition to What Follows
+--------------------------
+
+The inverse CDF method cannot efficiently handle all distributions. Two important classes require different approaches:
+
+**Box-Muller and Related Transformations** (next section): When the inverse CDF lacks a closed form but clever algebraic transformations exist, we can often find efficient alternatives. The Box-Muller transform generates normal samples from uniforms using polar coordinates—faster than numerical inversion, requiring only logarithms and trigonometric functions.
+
+**Rejection Sampling** (Section 2.5): When no transformation works, we can generate samples from a simpler "proposal" distribution and accept them with probability proportional to the target density. This powerful technique requires only that we can evaluate the target density up to a normalizing constant—precisely the situation in Bayesian computation.
+
+Together with the inverse CDF method, these techniques form a complete toolkit for random variable generation. Each has its domain of applicability; the skilled practitioner knows when to use which.
+
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: The inverse CDF method generates :math:`X \sim F` by computing :math:`X = F^{-1}(U)` where :math:`U \sim \text{Uniform}(0, 1)`. The generalized inverse :math:`F^{-1}(u) = \inf\{x : F(x) \geq u\}` handles all distributions—continuous, discrete, or mixed.
+
+   2. **Continuous distributions**: When :math:`F^{-1}` has closed form (exponential, Weibull, Pareto, Cauchy, logistic), sampling is :math:`O(1)` with a few arithmetic operations. Derive the inverse by solving :math:`F(x) = u` for :math:`x`.
+
+   3. **Discrete distributions**: Linear search is :math:`O(K)`, binary search is :math:`O(\log K)`, and the alias method achieves :math:`O(1)` sampling after :math:`O(K)` setup. Choose based on distribution size and number of samples needed.
+
+   4. **Numerical precision**: Use ``np.log1p(-u)`` not ``np.log(1-u)``. Clamp uniforms away from 0 and 1. Be aware of floating-point limitations in the tails.
+
+   5. **Method selection**: Use inverse CDF for tractable inverses and custom discrete distributions. Use Box-Muller for normals, rejection sampling for complex densities, MCMC for implicit distributions.
+
+   6. **Outcome alignment**: This section directly addresses Learning Outcome 1 (apply simulation techniques including inverse CDF transformation) and provides the foundational random variable generation methods used throughout Monte Carlo integration, resampling, and Bayesian computation.

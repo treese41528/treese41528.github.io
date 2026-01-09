@@ -1,0 +1,578 @@
+.. _rejection-sampling:
+
+Rejection Sampling
+==================
+
+When the inverse CDF method fails—either because the CDF lacks a closed form or its inverse is computationally intractable—rejection sampling offers a powerful alternative. This method, also known as the accept-reject algorithm, can generate samples from virtually any distribution by strategically accepting or rejecting candidate samples from a simpler proposal distribution.
+
+The elegance of rejection sampling lies in its geometric interpretation: we uniformly sample points under a scaled envelope function and keep only those that fall under the target density. This approach trades computational efficiency for universality, making it indispensable in modern computational statistics, particularly in Bayesian inference and statistical physics.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Master** the fundamental theorem of simulation and its geometric interpretation
+   • **Implement** the accept-reject algorithm for univariate and multivariate distributions
+   • **Optimize** the choice of proposal distribution and scaling constant
+   • **Analyze** acceptance rates and computational efficiency trade-offs
+
+Fundamental Theorem of Simulation
+----------------------------------
+
+The theoretical foundation of rejection sampling rests on a beautiful relationship between probability densities and uniform distributions over regions.
+
+Mathematical Foundation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For any probability density function f_X on an arbitrary space, we can express it as:
+
+.. math::
+
+   f_X(x) = \int_0^{f_X(x)} du
+
+This seemingly trivial identity has profound implications: f_X appears as the marginal density of the joint distribution:
+
+.. math::
+
+   (X, U) \sim \text{Uniform}\{(x, u) : 0 < u < f_X(x)\}
+
+**Key Insight**: If we can sample uniformly from the region under the density curve, the x-coordinates of these points follow the target distribution.
+
+Computational Perspective
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The challenge is sampling uniformly from the region {(x, u) : 0 < u < f_X(x)}. The accept-reject method accomplishes this by:
+
+1. Sampling from a larger, simpler region that encloses our target
+2. Rejecting points that fall outside the target region
+
+**Algorithm**: Basic Rejection Sampling
+
+.. code-block:: text
+
+   Input: Target density f(x), proposal density g(x), bound M where f(x) ≤ M·g(x)
+   Output: Sample from f(x)
+   
+   Repeat:
+      1. Generate Y ~ g(x)  [candidate sample]
+      2. Generate U ~ Uniform(0, 1)
+      3. If U ≤ f(Y)/(M·g(Y)):
+         Accept: return X = Y
+      4. Else:
+         Reject: go to step 1
+
+**Acceptance Probability**: P(accept) = 1/M
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   import matplotlib.pyplot as plt
+   from scipy import stats
+   
+   def rejection_sampling(target_pdf, proposal_sampler, proposal_pdf, M, size=1):
+       """
+       Generic rejection sampling implementation.
+       
+       Parameters
+       ----------
+       target_pdf : callable
+           Target probability density function f(x)
+       proposal_sampler : callable
+           Function that generates samples from proposal g(x)
+       proposal_pdf : callable
+           Proposal probability density function g(x)
+       M : float
+           Bound constant such that f(x) ≤ M·g(x) for all x
+       size : int
+           Number of samples to generate
+       
+       Returns
+       -------
+       samples : array
+           Accepted samples from target distribution
+       acceptance_rate : float
+           Empirical acceptance rate
+       """
+       samples = []
+       n_proposed = 0
+       
+       while len(samples) < size:
+           # Step 1: Generate candidate
+           y = proposal_sampler()
+           n_proposed += 1
+           
+           # Step 2: Generate uniform for acceptance test
+           u = np.random.uniform(0, 1)
+           
+           # Step 3: Accept/reject test
+           acceptance_prob = target_pdf(y) / (M * proposal_pdf(y))
+           
+           if u <= acceptance_prob:
+               samples.append(y)
+       
+       acceptance_rate = size / n_proposed
+       return np.array(samples), acceptance_rate
+
+Classic Example: Sampling from Beta Distribution
+-------------------------------------------------
+
+Let's implement rejection sampling for Beta(α, β) when α > 1 and β > 1, where the density has a unique mode.
+
+Beta Distribution via Rejection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Beta(α, β) distribution has PDF:
+
+.. math::
+
+   f_X(x) = \frac{x^{\alpha-1}(1-x)^{\beta-1}}{B(\alpha, \beta)}, \quad x \in (0, 1)
+
+where B(α, β) is the beta function. We'll use Uniform(0, 1) as our proposal distribution.
+
+.. admonition:: Example 💡: Beta(2.5, 2.5) Sampling
+   :class: note
+
+   **Given**: Target is Beta(2.5, 2.5), symmetric around 0.5
+   
+   **Find**: Generate samples using uniform proposal
+   
+   **Solution**:
+   
+   First, find the maximum of the target density:
+   
+   .. math::
+      
+      \text{Mode} = \frac{\alpha - 1}{\alpha + \beta - 2} = 0.5
+      
+      M = f_X(0.5) = \frac{0.5^{1.5} \cdot 0.5^{1.5}}{B(2.5, 2.5)} \approx 1.875
+   
+   Python implementation:
+   
+   .. code-block:: python
+   
+      from scipy.special import beta as beta_function
+      
+      def beta_rejection_sampling(alpha, beta_param, size=1000):
+          """Sample from Beta distribution using rejection sampling."""
+          
+          # Target PDF
+          def target_pdf(x):
+              if 0 < x < 1:
+                  return (x**(alpha-1) * (1-x)**(beta_param-1) / 
+                          beta_function(alpha, beta_param))
+              return 0
+          
+          # Proposal: Uniform(0,1)
+          proposal_sampler = lambda: np.random.uniform(0, 1)
+          proposal_pdf = lambda x: 1.0 if 0 < x < 1 else 0
+          
+          # Find bound M (use mode for symmetric case)
+          mode = (alpha - 1) / (alpha + beta_param - 2)
+          M = target_pdf(mode) / proposal_pdf(mode)
+          
+          # Generate samples
+          samples, rate = rejection_sampling(
+              target_pdf, proposal_sampler, proposal_pdf, M, size
+          )
+          
+          return samples, rate, M
+      
+      # Generate and visualize
+      np.random.seed(42)
+      samples, acceptance_rate, M = beta_rejection_sampling(2.5, 2.5, 5000)
+      
+      print(f"Bound M: {M:.3f}")
+      print(f"Acceptance rate: {acceptance_rate:.3f}")
+      print(f"Theoretical rate: {1/M:.3f}")
+   
+   **Result**: Acceptance rate ≈ 53.3%, meaning we reject about 47% of proposals.
+
+Visualizing the Accept-Reject Process
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def visualize_rejection_sampling(alpha, beta_param, n_points=1000):
+       """Visualize the rejection sampling process."""
+       
+       fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+       
+       # Left plot: Show envelope and target
+       x = np.linspace(0.001, 0.999, 1000)
+       mode = (alpha - 1) / (alpha + beta_param - 2)
+       beta_pdf = stats.beta(alpha, beta_param).pdf
+       M = beta_pdf(mode)
+       
+       axes[0].plot(x, beta_pdf(x), 'b-', label='Target: Beta(α,β)', lw=2)
+       axes[0].fill_between(x, 0, beta_pdf(x), alpha=0.3)
+       axes[0].axhline(y=M, color='r', linestyle='--', label=f'Envelope: M={M:.2f}')
+       axes[0].fill_between(x, 0, M, alpha=0.1, color='red')
+       axes[0].set_xlabel('x')
+       axes[0].set_ylabel('Density')
+       axes[0].set_title('Target Density and Envelope')
+       axes[0].legend()
+       axes[0].grid(True, alpha=0.3)
+       
+       # Right plot: Show accepted/rejected points
+       accepted_x, accepted_y = [], []
+       rejected_x, rejected_y = [], []
+       
+       for _ in range(n_points):
+           x_prop = np.random.uniform(0, 1)
+           y_prop = np.random.uniform(0, M)
+           
+           if y_prop <= beta_pdf(x_prop):
+               accepted_x.append(x_prop)
+               accepted_y.append(y_prop)
+           else:
+               rejected_x.append(x_prop)
+               rejected_y.append(y_prop)
+       
+       axes[1].scatter(rejected_x, rejected_y, c='red', alpha=0.3, s=1, label='Rejected')
+       axes[1].scatter(accepted_x, accepted_y, c='blue', alpha=0.5, s=1, label='Accepted')
+       axes[1].plot(np.linspace(0, 1, 1000), 
+                    beta_pdf(np.linspace(0, 1, 1000)), 
+                    'black', lw=2)
+       axes[1].set_xlabel('x')
+       axes[1].set_ylabel('u')
+       axes[1].set_title('Accept-Reject Visualization')
+       axes[1].legend()
+       axes[1].grid(True, alpha=0.3)
+       
+       plt.tight_layout()
+       plt.show()
+   
+   # Visualize Beta(4, 2) - asymmetric case
+   visualize_rejection_sampling(4, 2)
+
+Optimizing Proposal Distributions
+----------------------------------
+
+The efficiency of rejection sampling critically depends on the choice of proposal distribution and the tightness of the bound M.
+
+Choosing Good Proposals
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The ideal proposal distribution g(x) should:
+1. Be easy to sample from
+2. Have a similar shape to the target f(x)
+3. Have heavier tails than f(x) to ensure coverage
+
+**Efficiency Metric**: The acceptance rate 1/M directly measures efficiency. Smaller M means higher acceptance.
+
+Adaptive Rejection Sampling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For log-concave densities, we can construct piecewise linear envelopes that adapt during sampling:
+
+.. code-block:: python
+
+   class AdaptiveRejectionSampler:
+       """
+       Adaptive Rejection Sampling for log-concave densities.
+       """
+       
+       def __init__(self, log_pdf, initial_points):
+           """
+           Initialize with log-pdf and starting abscissae.
+           
+           Parameters
+           ----------
+           log_pdf : callable
+               Natural log of target density
+           initial_points : array
+               Initial support points for envelope
+           """
+           self.log_pdf = log_pdf
+           self.points = np.array(initial_points)
+           self.log_values = log_pdf(self.points)
+           self.build_envelope()
+       
+       def build_envelope(self):
+           """Construct piecewise linear upper envelope."""
+           # Compute slopes between adjacent points
+           self.slopes = np.diff(self.log_values) / np.diff(self.points)
+           
+           # Build piecewise exponential envelope
+           # (simplified implementation)
+           pass
+       
+       def sample(self, size=1):
+           """Generate samples with adaptive envelope."""
+           samples = []
+           
+           while len(samples) < size:
+               # Sample from current envelope
+               y = self.sample_from_envelope()
+               
+               # Accept/reject test
+               u = np.random.uniform()
+               if u <= np.exp(self.log_pdf(y) - self.envelope_log_pdf(y)):
+                   samples.append(y)
+                   
+                   # Adapt: add point to envelope
+                   self.add_point(y)
+                   self.build_envelope()
+           
+           return np.array(samples)
+
+Truncated Distributions
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For sampling from truncated distributions, rejection sampling is often the method of choice:
+
+.. code-block:: python
+
+   def truncated_normal(mu, sigma, a, b, size=1):
+       """
+       Sample from truncated normal distribution on [a, b].
+       
+       Uses rejection sampling with uniform proposal.
+       """
+       from scipy.stats import norm
+       
+       # Find maximum of truncated normal PDF
+       mode = np.clip(mu, a, b)  # Mode is at mu if in [a, b]
+       max_pdf = norm.pdf(mode, mu, sigma)
+       
+       # Normalizing constant for truncated distribution
+       Z = norm.cdf(b, mu, sigma) - norm.cdf(a, mu, sigma)
+       
+       samples = []
+       n_attempts = 0
+       
+       while len(samples) < size:
+           # Propose from Uniform(a, b)
+           x = np.random.uniform(a, b)
+           n_attempts += 1
+           
+           # Accept with probability proportional to PDF
+           u = np.random.uniform(0, max_pdf / Z)
+           
+           if u <= norm.pdf(x, mu, sigma) / Z:
+               samples.append(x)
+       
+       acceptance_rate = size / n_attempts
+       return np.array(samples), acceptance_rate
+
+Multivariate Rejection Sampling
+--------------------------------
+
+Rejection sampling extends naturally to multiple dimensions, though efficiency decreases with dimensionality.
+
+Sampling from Arbitrary 2D Densities
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def rejection_sampling_2d(target_pdf, x_bounds, y_bounds, M, size=1000):
+       """
+       Rejection sampling for 2D distributions.
+       
+       Parameters
+       ----------
+       target_pdf : callable
+           Target PDF f(x, y)
+       x_bounds, y_bounds : tuple
+           Bounds (min, max) for each dimension
+       M : float
+           Bound on target PDF
+       """
+       samples = []
+       
+       while len(samples) < size:
+           # Propose uniformly in rectangle
+           x = np.random.uniform(*x_bounds)
+           y = np.random.uniform(*y_bounds)
+           
+           # Height for acceptance
+           u = np.random.uniform(0, M)
+           
+           # Accept if under surface
+           if u <= target_pdf(x, y):
+               samples.append([x, y])
+       
+       return np.array(samples)
+   
+   # Example: Sample from 2D mixture of Gaussians
+   def mixture_2d_pdf(x, y):
+       """Bimodal 2D distribution."""
+       from scipy.stats import multivariate_normal
+       
+       # Two components
+       mv1 = multivariate_normal([-1, -1], [[0.5, 0.2], [0.2, 0.5]])
+       mv2 = multivariate_normal([1, 1], [[0.5, -0.2], [-0.2, 0.5]])
+       
+       return 0.5 * mv1.pdf([x, y]) + 0.5 * mv2.pdf([x, y])
+   
+   # Generate samples
+   samples_2d = rejection_sampling_2d(
+       mixture_2d_pdf, 
+       x_bounds=(-4, 4), 
+       y_bounds=(-4, 4),
+       M=0.2,  # Upper bound on density
+       size=2000
+   )
+
+Practical Considerations
+------------------------
+
+Implementing rejection sampling in production requires careful attention to numerical stability and efficiency.
+
+Numerical Stability Issues
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   Computing acceptance probabilities f(x)/(M·g(x)) can cause numerical overflow or underflow, especially with extreme parameter values.
+   
+   **Solution**: Work in log space when possible:
+   
+   .. code-block:: python
+   
+      log_accept_prob = log_f(x) - (log(M) + log_g(x))
+      if np.log(u) <= log_accept_prob:
+          accept
+
+Curse of Dimensionality
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Rejection sampling efficiency decreases exponentially with dimension. For a d-dimensional hypercube with acceptance region volume ε:
+
+.. math::
+
+   \text{Acceptance Rate} \approx \epsilon^d
+
+**Example**: Sampling from a d-dimensional sphere using a cube envelope:
+
+.. code-block:: python
+
+   def sphere_volume_ratio(d):
+       """Volume ratio of d-sphere to d-cube."""
+       from scipy.special import gamma
+       # Volume of unit d-sphere / Volume of [-1,1]^d cube
+       sphere_vol = np.pi**(d/2) / gamma(d/2 + 1)
+       cube_vol = 2**d
+       return sphere_vol / cube_vol
+   
+   # Show exponential decay
+   dimensions = range(1, 21)
+   ratios = [sphere_volume_ratio(d) for d in dimensions]
+   
+   plt.semilogy(dimensions, ratios, 'o-')
+   plt.xlabel('Dimension')
+   plt.ylabel('Acceptance Rate')
+   plt.title('Curse of Dimensionality in Rejection Sampling')
+   plt.grid(True)
+
+Monitoring and Diagnostics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   class RejectionSamplerWithDiagnostics:
+       """Rejection sampler with performance monitoring."""
+       
+       def __init__(self, target_pdf, proposal_sampler, proposal_pdf, M):
+           self.target_pdf = target_pdf
+           self.proposal_sampler = proposal_sampler
+           self.proposal_pdf = proposal_pdf
+           self.M = M
+           
+           # Diagnostics
+           self.n_proposed = 0
+           self.n_accepted = 0
+           self.acceptance_history = []
+       
+       def sample(self, size=1, batch_size=100):
+           """Sample with batch monitoring."""
+           samples = []
+           
+           while len(samples) < size:
+               batch_accepted = 0
+               
+               for _ in range(batch_size):
+                   y = self.proposal_sampler()
+                   self.n_proposed += 1
+                   
+                   u = np.random.uniform()
+                   accept_prob = self.target_pdf(y) / (self.M * self.proposal_pdf(y))
+                   
+                   if u <= accept_prob:
+                       samples.append(y)
+                       self.n_accepted += 1
+                       batch_accepted += 1
+                       
+                       if len(samples) >= size:
+                           break
+               
+               # Record batch acceptance rate
+               self.acceptance_history.append(batch_accepted / batch_size)
+           
+           return np.array(samples[:size])
+       
+       def get_diagnostics(self):
+           """Return sampling diagnostics."""
+           return {
+               'overall_acceptance_rate': self.n_accepted / self.n_proposed,
+               'theoretical_rate': 1 / self.M,
+               'efficiency': (self.n_accepted / self.n_proposed) * self.M,
+               'acceptance_history': self.acceptance_history
+           }
+
+Bringing It All Together
+-------------------------
+
+Rejection sampling transforms the problem of sampling from complex distributions into a geometric task of uniformly sampling regions. While less efficient than the inverse CDF method when available, its universality makes it essential for modern computational statistics.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: Sample uniformly under the density curve by accepting/rejecting points under an envelope
+   2. **Computational insight**: Trade efficiency (acceptance rate = 1/M) for universality
+   3. **Practical application**: Essential for truncated distributions and when inverse CDF is unavailable
+   4. **Connection**: Foundation for more sophisticated methods like importance sampling and MCMC
+
+Exercises
+~~~~~~~~~
+
+1. **Conceptual Understanding**: Prove that the accept-reject algorithm produces samples from the target distribution. Start with the conditional probability P(Y ∈ dy | Y accepted).
+
+2. **Implementation**: Implement rejection sampling for the truncated exponential distribution on [a, b]:
+   
+   .. code-block:: python
+   
+      def truncated_exponential(lam, a, b, size=1000):
+          """
+          Sample from exponential distribution truncated to [a, b].
+          Compare two proposal distributions:
+          1. Uniform(a, b)
+          2. Exponential(lam) with rejection of values outside [a, b]
+          """
+          # Your implementation here
+          pass
+   
+   Compare the efficiency of both approaches for different values of a and b.
+
+3. **Analysis**: The von Mises distribution (circular normal) has PDF:
+   
+   .. math::
+      
+      f(\theta) = \frac{e^{\kappa \cos(\theta - \mu)}}{2\pi I_0(\kappa)}, \quad \theta \in [0, 2\pi]
+   
+   where I_0 is the modified Bessel function. Implement rejection sampling using:
+   a) Uniform proposal on [0, 2π]
+   b) Wrapped Cauchy proposal
+   
+   Plot acceptance rates as a function of concentration parameter κ.
+
+4. **Extension**: Implement the "squeeze" technique that adds a lower bound to avoid evaluating the target PDF when possible:
+   
+   .. math::
+      
+      s(x) \leq f(x) \leq M \cdot g(x)
+   
+   Apply this to Beta(5, 2) sampling and measure the reduction in target PDF evaluations.

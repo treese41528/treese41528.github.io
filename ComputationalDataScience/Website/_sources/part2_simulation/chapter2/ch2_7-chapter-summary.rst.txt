@@ -1,0 +1,425 @@
+.. _ch2_7-chapter-summary:
+
+================
+Chapter Summary
+================
+
+This chapter developed a complete toolkit for Monte Carlo simulation, from the fundamental mathematics of pseudo-random number generation through sophisticated variance reduction techniques. The methods form a coherent pipeline that transforms deterministic computation into stochastic estimation—leveraging randomness as a computational resource rather than viewing it as noise to be eliminated.
+
+The Complete Monte Carlo Workflow
+---------------------------------
+
+Every Monte Carlo simulation follows a four-stage pipeline:
+
+.. code-block:: text
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                    THE MONTE CARLO PIPELINE                             │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   Stage 1: PRNG                Stage 2: Variate           Stage 3: MC
+   (Section 2.2)                Generation                 Estimation
+                                (Sections 2.3-2.5)         (Section 2.1)
+   ┌──────────────┐            ┌──────────────┐           ┌──────────────┐
+   │  Seed        │            │  Transform   │           │  Compute     │
+   │  ↓           │            │  U → X ~ F   │           │  h(X₁),...   │
+   │  LCG/MT/PCG  │ ──U[0,1]──→│              │ ──X~F───→ │  Average     │
+   │  ↓           │            │  • Inverse   │           │  ↓           │
+   │  U₁,U₂,...   │            │  • Box-Muller│           │  Î = Σh(Xᵢ)/n│
+   └──────────────┘            │  • Rejection │           └──────────────┘
+                               └──────────────┘                  │
+                                                                 ↓
+                                                    Stage 4: Variance Reduction
+                                                    (Section 2.6)
+                                                    ┌──────────────────────────┐
+                                                    │ • Importance Sampling    │
+                                                    │ • Control Variates       │
+                                                    │ • Antithetic Variates    │
+                                                    │ • Stratified / LHS       │
+                                                    │ • Common Random Numbers  │
+                                                    └──────────────────────────┘
+
+**Stage 1 — Pseudo-Random Number Generation**: Deterministic algorithms (LCG, Mersenne Twister, PCG) produce sequences that pass statistical tests for randomness. The choice of generator affects period length, speed, and statistical quality. Always use ``np.random.default_rng()`` with explicit seeds for reproducibility. For parallel jobs, use ``SeedSequence.spawn`` to create independent streams; counter-based bit-generators (Philox, Threefry) provide reproducible, splittable streams.
+
+**Stage 2 — Random Variate Generation**: Transform uniform samples into draws from target distributions. The inverse CDF method works when :math:`F^{-1}` is tractable; Box-Muller (or the faster polar method) handles normals—prefer ``rng.standard_normal()`` or ``scipy.stats`` for production performance; rejection sampling covers arbitrary densities at the cost of wasted proposals. For large discrete supports, use the Walker/Vose alias method for :math:`O(1)` sampling after :math:`O(K)` preprocessing.
+
+**Stage 3 — Monte Carlo Estimation**: Estimate integrals :math:`I = \mathbb{E}_f[h(X)]` by sample averages :math:`\hat{I}_n = n^{-1}\sum_{i=1}^n h(X_i)`. The LLN guarantees convergence; the CLT provides the :math:`O(n^{-1/2})` rate and confidence intervals.
+
+**Stage 4 — Variance Reduction**: Reduce the constant :math:`\sigma^2` in :math:`\text{Var}(\hat{I}) = \sigma^2/n` through clever sampling strategies. Methods are multiplicative—combining importance sampling with control variates can achieve variance reductions exceeding 100×.
+
+*Note: Section numbers reflect chapter order (2.1 introduces Monte Carlo estimation conceptually); the pipeline diagram reflects computational flow.*
+
+
+Method Selection Guide
+----------------------
+
+Use this decision framework to choose appropriate methods for your problem:
+
+**Random Variate Generation**
+
+.. code-block:: text
+
+   Need samples from distribution F?
+   │
+   ├─► Is F⁻¹(u) available in closed form?
+   │   YES → INVERSE CDF METHOD (Section 2.3)
+   │         Fast, exact, simple
+   │
+   ├─► Is F the normal distribution?
+   │   YES → BOX-MULLER (Section 2.4)
+   │         Or use scipy.stats / numpy
+   │
+   ├─► Is F a standard distribution?
+   │   YES → Use scipy.stats.distribution.rvs()
+   │         Optimized implementations
+   │
+   └─► None of the above?
+       → REJECTION SAMPLING (Section 2.5)
+         Find proposal g ≥ f/M everywhere
+         Accept with probability f(x)/(M·g(x))
+
+**Variance Reduction Selection**
+
+.. code-block:: text
+
+   What are you estimating?
+   │
+   ├─► Rare event or tail probability?
+   │   → IMPORTANCE SAMPLING
+   │     Shift proposal to important region
+   │     Target ESS ≥ 0.1n; check weight CV ≤ 1
+   │
+   ├─► Have auxiliary variable with known E[C]?
+   │   → CONTROL VARIATES
+   │     Requires |ρ(H,C)| > 0.5 for good gains
+   │
+   ├─► Integrand monotone in inputs?
+   │   → ANTITHETIC VARIATES
+   │     Free variance reduction
+   │     Verify ρ < 0 from pilot sample
+   │
+   ├─► Domain naturally partitioned?
+   │   → STRATIFIED SAMPLING (low-d) or LATIN HYPERCUBE (high-d)
+   │     Eliminates between-stratum variance
+   │
+   └─► Comparing two systems/parameters?
+       → COMMON RANDOM NUMBERS (CRN)
+         Use paired-t CI, not two-sample
+
+
+Quick Reference Tables
+----------------------
+
+**Core Formulas**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Concept
+     - Formula
+   * - Monte Carlo estimator
+     - :math:`\hat{I}_n = \frac{1}{n}\sum_{i=1}^n h(X_i)`
+   * - Standard error
+     - :math:`\text{SE} = \frac{s}{\sqrt{n}}` where :math:`s^2 = \frac{1}{n-1}\sum(h_i - \bar{h})^2`
+   * - 95% Confidence interval
+     - :math:`\hat{I}_n \pm 1.96 \cdot \text{SE}` (use :math:`t_{n-1,0.025}` for small :math:`n`; batch means for dependence)
+   * - Inverse CDF method
+     - :math:`X = F^{-1}(U)` where :math:`U \sim \text{Uniform}(0,1)`
+   * - Box-Muller
+     - :math:`Z_1 = \sqrt{-2\ln U_1}\cos(2\pi U_2)`
+   * - Rejection sampling acceptance
+     - Accept :math:`X` with probability :math:`\frac{f(X)}{M \cdot g(X)}`
+   * - Importance weight
+     - :math:`w(x) = \frac{f(x)}{g(x)}`
+   * - Effective Sample Size
+     - :math:`\text{ESS} = \frac{1}{\sum_i \bar{w}_i^2} = \frac{(\sum w_i)^2}{\sum w_i^2}`
+   * - Control variate (optimal β)
+     - :math:`\beta^* = \frac{\text{Cov}(H, C)}{\text{Var}(C)}`
+   * - CV variance reduction
+     - :math:`\text{VRF} = \frac{1}{1 - \rho^2}`
+   * - Antithetic VRF
+     - :math:`\text{VRF} = \frac{1}{1 + \rho}` per evaluation; :math:`\frac{2}{1+\rho}` per draw (need :math:`\rho < 0`)
+   * - Neyman allocation
+     - :math:`n_k^* \propto p_k \sigma_k`
+
+**Method Comparison**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 20 20 22 20
+
+   * - Method
+     - Variance Effect
+     - Overhead
+     - Best For
+     - Watch Out For
+   * - Importance Sampling
+     - Orders of magnitude if :math:`g \approx g^*`
+     - Proposal design; density evaluation
+     - Rare events, tails
+     - Weight degeneracy; light-tailed :math:`g`
+   * - Control Variates
+     - Factor :math:`1/(1-\rho^2)`
+     - Evaluate control; estimate :math:`\beta`
+     - Known moments available
+     - Must know :math:`\mathbb{E}[C]` exactly
+   * - Antithetic Variates
+     - Factor :math:`1/(1+\rho)`
+     - Pairing only (free)
+     - Monotone integrands
+     - Non-monotone → variance *increases*
+   * - Stratified / Latin Hypercube
+     - Eliminates between-strata variance
+     - Partition design; conditional sampling
+     - Heterogeneous integrands
+     - Curse of dimensionality (full stratification)
+   * - Common Random Numbers (CRN)
+     - Large for similar systems
+     - Synchronization
+     - A/B comparisons
+     - Helps differences only
+
+
+Common Pitfalls Checklist
+-------------------------
+
+Before running a Monte Carlo simulation, verify:
+
+**PRNG and Reproducibility**
+
+- ☐ Using ``np.random.default_rng(seed)`` with explicit seed
+- ☐ Not using legacy ``np.random.seed()`` API
+- ☐ Separate RNG instances for parallel streams (use ``SeedSequence.spawn``; counter-based generators like Philox provide splittable streams)
+
+**Variate Generation**
+
+- ☐ Inverse CDF: Using ``np.log1p(-u)`` not ``np.log(1-u)`` for stability
+- ☐ Rejection sampling: Proposal :math:`g` covers target :math:`f` support entirely
+- ☐ Rejection sampling: Bound :math:`M` is tight (acceptance rate reasonable)
+
+**Monte Carlo Estimation**
+
+- ☐ Reporting SE and CI, not just point estimate
+- ☐ Sample size adequate: :math:`n \geq (z_{\alpha/2} \cdot s / \epsilon)^2` for desired precision :math:`\epsilon`
+- ☐ Checked convergence visually (running mean plot)
+- ☐ For sequential stopping: increase :math:`n` until CI half-width :math:`\leq \epsilon`, re-checking :math:`s` with updated sample
+
+**Importance Sampling**
+
+- ☐ Target ESS :math:`\geq 0.1n`; also monitor weight CV :math:`\leq 1` or Gini coefficient
+- ☐ Proposal has heavier tails than :math:`|h|f`; verify :math:`\int h^2 f^2 / g \, dx < \infty`
+- ☐ Using log-space arithmetic with logsumexp
+
+**Control Variates**
+
+- ☐ Control mean :math:`\mu_C` is known exactly (not estimated)
+- ☐ Correlation :math:`|\rho| > 0.5` for meaningful reduction
+
+**Antithetic Variates**
+
+- ☐ Verified :math:`\rho(h(U), h(1-U)) < 0` from pilot
+- ☐ Function is monotone (or near-monotone)
+
+**Stratified Sampling**
+
+- ☐ Strata cover entire domain
+- ☐ For Neyman allocation: estimated :math:`\sigma_k` from pilot
+
+
+Connections to Later Chapters
+-----------------------------
+
+The Monte Carlo foundations developed here underpin the remainder of the course:
+
+**Chapter 3: Parametric Inference and Linear Models**
+
+- Maximum likelihood estimation uses Monte Carlo for complex likelihoods
+- Bootstrap standard errors (Chapter 4) rely on MC resampling
+- Simulation-based model checking and residual diagnostics
+
+**Chapter 4: Resampling Methods**
+
+- **Bootstrap**: Resample data with replacement, compute statistic—pure Monte Carlo
+- **Jackknife**: Systematic leave-one-out; variance reduction via antithetic ideas
+- **Cross-validation**: Random partitioning for model selection
+- Variance reduction techniques apply directly to bootstrap variance estimation
+
+**Part III: Bayesian Computation**
+
+- **Posterior expectations** :math:`\mathbb{E}[\theta|y]` are integrals—estimated via MC
+- **Importance sampling** estimates marginal likelihoods :math:`p(y)`
+- **Markov chain Monte Carlo (MCMC)** (Metropolis-Hastings, Gibbs) generates dependent samples when direct sampling fails
+- **Convergence diagnostics** extend the running mean ideas from Section 2.1
+- **Effective Sample Size** from Section 2.6 diagnoses MCMC mixing
+
+The variance reduction techniques are not merely theoretical—they appear throughout modern computational statistics:
+
+- **Sequential Monte Carlo** uses importance sampling with resampling
+- **Rao-Blackwellization** in MCMC is conditional Monte Carlo
+- **Control variates** improve MCMC posterior mean estimates
+- **Antithetic sampling** accelerates bootstrap computations
+
+
+Learning Outcomes Checklist
+---------------------------
+
+Upon completing this chapter, you should be able to:
+
+**Foundational Understanding**
+
+- ☑ Define Monte Carlo integration as estimating :math:`\mathbb{E}_f[h(X)]` via sample averaging
+- ☑ Explain convergence via LLN and uncertainty quantification via CLT
+- ☑ Analyze why the :math:`O(n^{-1/2})` rate is dimension-independent
+- ☑ Compare Monte Carlo with deterministic quadrature for different problem classes
+
+**Random Number Generation**
+
+- ☑ Implement LCG, explain its limitations, and recognize spectral failures
+- ☑ Describe Mersenne Twister and PCG trade-offs
+- ☑ Apply statistical tests (chi-square, runs, serial correlation) to assess PRNG quality
+- ☑ Design reproducible simulations with proper seed management
+
+**Random Variate Generation**
+
+- ☑ Apply inverse CDF for continuous and discrete distributions
+- ☑ Implement binary search and alias method for discrete sampling
+- ☑ Derive and implement rejection sampling with optimal proposals
+- ☑ Use Box-Muller for normal generation; understand its geometric basis
+
+**Variance Reduction**
+
+- ☑ Implement importance sampling; diagnose weight degeneracy via ESS
+- ☑ Apply control variates; derive optimal :math:`\beta` and predict variance reduction
+- ☑ Use antithetic variates for monotone functions; recognize failure modes
+- ☑ Design stratified sampling schemes; apply Neyman allocation
+- ☑ Use common random numbers for system comparisons with paired-t inference
+
+
+Further Reading: Optimization and Missing Data
+----------------------------------------------
+
+The Monte Carlo foundations developed in this chapter extend naturally to two important areas that merit further study: **stochastic optimization** and **missing data models**. These topics, treated comprehensively in Robert and Casella (2004, Chapters 5 and 9), represent sophisticated applications of Monte Carlo methods to problems that resist analytical solution.
+
+Monte Carlo Optimization
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Many statistical problems reduce to optimization: maximum likelihood estimation, posterior mode finding, and loss minimization. When the objective function :math:`h(\theta)` has multiple local optima, irregular geometry, or lacks analytical gradients, deterministic optimization methods struggle. Monte Carlo approaches transform optimization into sampling.
+
+**Key Techniques:**
+
+- **Stochastic exploration**: Sample from a distribution proportional to :math:`\exp(h(\theta)/T)` and identify high-density regions. The parameter :math:`T` (temperature) controls the trade-off between exploration and exploitation.
+
+- **Simulated annealing**: Gradually decrease :math:`T` during sampling, allowing the Markov chain to escape local optima early (high :math:`T`) while concentrating on the global optimum later (low :math:`T`). Under cooling schedules like :math:`T_n = C/\log(n)`, convergence to the global optimum is guaranteed.
+
+- **Stochastic gradient methods**: Approximate gradients :math:`\nabla h(\theta)` using Monte Carlo samples when analytical derivatives are unavailable or data is too large to process at once. The Robbins-Monro algorithm provides convergence guarantees under regularity conditions. Stochastic gradient descent (SGD) and its variants (Adam, RMSprop) are the workhorses of deep learning, where mini-batch gradient estimates replace full-data gradients to enable training on massive datasets.
+
+- **Monte Carlo EM**: When the E-step of the EM algorithm lacks a closed form, replace it with Monte Carlo integration. The MCEM algorithm iterates between simulating latent variables and maximizing expected complete-data log-likelihood.
+
+**Connection to Chapter 2**: Importance sampling (Section 2.6) enables efficient gradient estimation in stochastic optimization. Variance reduction techniques accelerate convergence of Monte Carlo EM. The effective sample size diagnostic warns when importance weights degenerate during optimization.
+
+Missing Data Models
+~~~~~~~~~~~~~~~~~~~
+
+Missing data pervades applied statistics: survey nonresponse, censored observations, latent variables in mixture models, and hidden states in time series. The Monte Carlo solution is **data augmentation**—treat missing values as additional parameters and sample them alongside model parameters.
+
+**Key Applications:**
+
+- **Incomplete observations**: When data are missing at random (MAR), the missing mechanism is ignorable and Gibbs sampling alternates between imputing missing values and updating parameters given the completed data.
+
+- **Finite mixtures**: Mixture models :math:`f(x|\theta) = \sum_{k=1}^K \pi_k f_k(x|\theta_k)` introduce latent allocation variables :math:`Z_i \in \{1, \ldots, K\}`. Gibbs sampling augments the data with allocations, simplifying an intractable marginal likelihood into tractable complete-data conditionals.
+
+- **Hidden Markov models**: When observations :math:`Y_1, \ldots, Y_n` depend on an unobserved Markov chain :math:`X_1, \ldots, X_n`, the forward-backward algorithm computes :math:`P(X_t | Y_{1:n})` exactly, enabling efficient Gibbs sampling for HMM parameters.
+
+- **Changepoint models**: The number and locations of regime changes are unknown. Reversible jump Markov chain Monte Carlo and product partition models handle the variable-dimensional parameter space.
+
+- **Stochastic volatility**: Financial time series exhibit time-varying variance. Since volatility is unobserved, the model becomes a missing data problem where the latent volatility process is sampled alongside observation parameters.
+
+**Connection to Chapter 2**: The variance reduction methods of Section 2.6 apply directly to Markov chain Monte Carlo output. Control variates reduce posterior mean estimation variance. Importance sampling enables model comparison via marginal likelihood estimation. The Rao-Blackwellization technique (conditional Monte Carlo) improves efficiency by integrating out some latent variables analytically.
+
+**Recommended Reading:**
+
+- Robert, C. P. and Casella, G. (2004). *Monte Carlo Statistical Methods* (2nd ed.), Chapters 5 and 9. Springer-Verlag. Comprehensive treatment of stochastic optimization and missing data with full theoretical development.
+
+- McLachlan, G. J. and Krishnan, T. (2008). *The EM Algorithm and Extensions* (2nd ed.). Wiley. Detailed coverage of EM and its Monte Carlo variants.
+
+- Little, R. J. A. and Rubin, D. B. (2019). *Statistical Analysis with Missing Data* (3rd ed.). Wiley. The definitive reference on missing data mechanisms and multiple imputation.
+
+- Cappé, O., Moulines, E., and Rydén, T. (2005). *Inference in Hidden Markov Models*. Springer. Thorough treatment of HMMs with computational algorithms.
+
+
+Final Perspective
+-----------------
+
+Monte Carlo methods embody a profound insight: randomness, properly harnessed, becomes a precision instrument. The :math:`O(n^{-1/2})` convergence rate—seemingly slow—is actually remarkable because it holds regardless of dimension. Where deterministic methods succumb to the curse of dimensionality, Monte Carlo maintains its steady march toward the true value.
+
+The techniques in this chapter form a complete toolkit:
+
+1. **Generate** uniform random numbers (Section 2.2)
+2. **Transform** them to any target distribution (Sections 2.3–2.5)
+3. **Estimate** integrals with quantified uncertainty (Section 2.1)
+4. **Accelerate** convergence through variance reduction (Section 2.6)
+
+This toolkit is not merely academic. Every posterior computation in Bayesian statistics, every option price in computational finance, every particle transport simulation in physics relies on these methods. The bootstrap and Markov chain Monte Carlo algorithms of later chapters build directly on the Monte Carlo foundations established here.
+
+As we move to parametric inference, resampling methods, and Bayesian computation, the Monte Carlo perspective remains central: when analytical solutions fail, simulation provides the path forward. Master these fundamentals, and you hold the key to modern computational statistics.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **The Pipeline**: PRNG → Variate Generation → MC Estimation → Variance Reduction. Each stage builds on the previous; weakness at any stage propagates forward.
+
+   2. **The Core Insight**: Monte Carlo converts integrals to expectations and expectations to sample averages. The LLN guarantees convergence; the CLT quantifies uncertainty.
+
+   3. **The Rate**: :math:`O(n^{-1/2})` is immutable. To improve precision, either increase :math:`n` or decrease :math:`\sigma^2` through variance reduction—or both.
+
+   4. **The Diagnostics**: Always report SE and CI. Monitor ESS for importance sampling. Verify negative correlation for antithetics. Check convergence visually.
+
+   5. **The Connections**: Bootstrap, Markov chain Monte Carlo, particle filters, and Bayesian computation all rest on these Monte Carlo foundations. The investment in understanding this chapter pays dividends throughout the course.
+
+
+
+References
+----------
+
+.. [BoxMuller1958] Box, G. E. P., and Muller, M. E. (1958). A note on the generation of random normal deviates. *The Annals of Mathematical Statistics*, 29(2), 610–611.
+
+.. [Buffon1777] Buffon, G.-L. L., Comte de (1777). Essai d'arithmétique morale. *Supplément à l'Histoire Naturelle*, Vol. 4. Contains the needle problem for estimating π.
+
+.. [CappeEtAl2005] Cappé, O., Moulines, E., and Rydén, T. (2005). *Inference in Hidden Markov Models*. New York: Springer.
+
+.. [Devroye1986] Devroye, L. (1986). *Non-Uniform Random Variate Generation*. New York: Springer-Verlag. Available free online at https://luc.devroye.org/rnbookindex.html
+
+.. [GilksEtAl1995] Gilks, W. R., Best, N. G., and Tan, K. K. C. (1995). Adaptive rejection Metropolis sampling within Gibbs sampling. *Journal of the Royal Statistical Society: Series C*, 44(4), 455–472.
+
+.. [GilksWild1992] Gilks, W. R., and Wild, P. (1992). Adaptive rejection sampling for Gibbs sampling. *Journal of the Royal Statistical Society: Series C*, 41(2), 337–348.
+
+.. [HullDobell1962] Hull, T. E., and Dobell, A. R. (1962). Random number generators. *SIAM Review*, 4(3), 230–254.
+
+.. [LEcuyerSimard2007] L'Ecuyer, P., and Simard, R. (2007). TestU01: A C library for empirical testing of random number generators. *ACM Transactions on Mathematical Software*, 33(4), Article 22.
+
+.. [Lehmer1951] Lehmer, D. H. (1951). Mathematical methods in large-scale computing units. In *Proceedings of the Second Symposium on Large-Scale Digital Calculating Machinery* (pp. 141–146). Harvard University Press.
+
+.. [LittleRubin2019] Little, R. J. A., and Rubin, D. B. (2019). *Statistical Analysis with Missing Data* (3rd ed.). Hoboken, NJ: Wiley.
+
+.. [Marsaglia1977] Marsaglia, G. (1977). The squeeze method for generating gamma variates. *Computers & Mathematics with Applications*, 3(4), 321–325.
+
+.. [MarsagliaBray1964] Marsaglia, G., and Bray, T. A. (1964). A convenient method for generating normal variables. *SIAM Review*, 6(3), 260–264.
+
+.. [MarsagliaTsang2000] Marsaglia, G., and Tsang, W. W. (2000). The ziggurat method for generating random variables. *Journal of Statistical Software*, 5(8), 1–7.
+
+.. [MarsagliaZaman1993] Marsaglia, G., and Zaman, A. (1993). The KISS generator. Technical report, Department of Statistics, Florida State University.
+
+.. [MatsumotoNishimura1998] Matsumoto, M., and Nishimura, T. (1998). Mersenne Twister: A 623-dimensionally equidistributed uniform pseudo-random number generator. *ACM Transactions on Modeling and Computer Simulation*, 8(1), 3–30.
+
+.. [McLachlanKrishnan2008] McLachlan, G. J., and Krishnan, T. (2008). *The EM Algorithm and Extensions* (2nd ed.). Hoboken, NJ: Wiley.
+
+.. [MetropolisUlam1949] Metropolis, N., and Ulam, S. (1949). The Monte Carlo method. *Journal of the American Statistical Association*, 44(247), 335–341.
+
+.. [ONeill2014] O'Neill, M. E. (2014). PCG: A family of simple fast space-efficient statistically good algorithms for random number generation. Technical Report HMC-CS-2014-0905, Harvey Mudd College.
+
+.. [RobertCasella2004] Robert, C. P., and Casella, G. (2004). *Monte Carlo Statistical Methods* (2nd ed.). New York: Springer.
+
+.. [vonNeumann1951] von Neumann, J. (1951). Various techniques used in connection with random digits. In A. S. Householder, G. E. Forsythe, & H. H. Germond (Eds.), *Monte Carlo method* (pp. 36–38). National Bureau of Standards, Applied Mathematics Series (No. 12).
+
+.. [Welford1962] Welford, B. P. (1962). Note on a method for calculating corrected sums of squares and products. *Technometrics*, 4(3), 419–420.
