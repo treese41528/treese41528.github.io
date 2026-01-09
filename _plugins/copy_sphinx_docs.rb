@@ -6,7 +6,8 @@ Jekyll::Hooks.register :site, :post_write do |site|
   sphinx_dirs = [
     'VirtualHumans',
     'GenerativeAI_ComputationalPsychology',
-    'STAT350/Website'
+    'STAT350/Website',
+    'ComputationalDataScience/Website'
   ]
 
   sphinx_dirs.each do |rel_path|
