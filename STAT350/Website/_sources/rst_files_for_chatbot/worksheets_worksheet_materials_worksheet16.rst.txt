@@ -1,0 +1,872 @@
+.. _worksheet16:
+
+Worksheet 16: Two-Sample Inference
+===================================
+
+.. admonition:: Learning Objectives 🎯
+   :class: info
+
+   • **Distinguish** between independent and paired sample designs and identify which is appropriate for a given research scenario
+   • **Master** the pooled two-sample t-test (equal variances) and understand when the equal variance assumption is reasonable
+   • **Apply** Welch's two-sample t-test for situations with unequal variances and understand the Welch-Satterthwaite approximation
+   • **Construct and interpret** confidence intervals for the difference between two population means
+   • **Use simulation in R** to investigate the robustness of inference procedures under various conditions
+
+Introduction
+------------
+
+In our previous worksheets, we explored statistical inference for a single population mean. We constructed confidence intervals and conducted hypothesis tests to draw conclusions about unknown parameters based on sample data. We now extend these methods to **two-sample scenarios**, where we compare the means from two populations or treatments.
+
+The key question is: *How do we make valid inferences about the difference* :math:`\mu_A - \mu_B` *when we have data from two samples?*
+
+Before performing inference procedures, it is crucial to correctly identify the nature of the data collection design. The appropriate statistical methods depend heavily on whether the data from the two samples are **independent** or **paired**. Understanding the difference clearly helps in selecting the right procedure, ensuring accurate inference and meaningful conclusions.
+
+Why Paired Data Collection?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Sometimes, paired data collection is necessary or highly beneficial because it **controls for variability between subjects**, such as differences in individual baseline characteristics. This control typically increases the precision and power of statistical tests, making it easier to detect true differences between conditions or treatments. However, paired designs require that each measurement in one condition be uniquely matched or repeated on the same or a very similar unit in the other condition. If this matching is forced incorrectly or if the act of taking repeated measurements introduces bias, pairing can become invalid or cumbersome.
+
+Why Independent Procedures?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+On the other hand, **independent procedures are chosen when pairing is not feasible or might introduce bias**. For example, if a before-and-after design could cause learning or fatigue effects, or if it is not practical to measure the same subjects under two conditions, then an independent design is preferred. Independent designs also allow more flexibility in randomizing participants to different treatments and are often simpler to administer, especially with larger populations. However, they can exhibit greater variability because differences between subjects remain uncontrolled.
+
+.. note::
+   **The Trade-Off:**
+   
+   - **Paired designs** → Lower variability (control for subject differences) but potential for bias and logistical challenges
+   - **Independent designs** → Higher variability (subjects differ) but more flexibility and fewer assumptions about matching
+
+Part 1: Independent vs. Paired Designs
+---------------------------------------
+
+Understanding when to use independent versus paired procedures is foundational to proper two-sample inference.
+
+.. admonition:: Key Definitions 📖
+   :class: important
+
+   **Independent Samples:** Observations in one sample have no inherent or systematic connection to observations in the other sample (e.g., separate random samples or distinct treatment groups with different participants). 
+   
+   *Example:* A group receiving Drug A versus a completely separate group receiving Drug B.
+
+   **Paired Samples (Dependent Samples):** Each observation in the first sample is matched to (or repeated on) the same or a very similar subject/unit in the second sample. 
+   
+   *Typical examples:* Repeated measures (before vs. after) on the same individuals, matched pairs (e.g., twins), or split samples from the same source.
+
+**Guiding Questions for Design Identification:**
+
+1. Are the same subjects/units measured twice, or are two different groups being compared?
+2. Is there a natural pairing or matching between observations across the two conditions?
+3. Would knowledge of one observation provide information about which observation it should be compared to in the other group?
+
+**Question 1:** Determine whether each scenario below is best treated as **independent** or **paired**. Briefly justify each choice.
+
+a) A water quality scientist wants to compare two chemical treatments for removing lead, but without splitting samples. She identifies 20 different wells in the region, each with a unique level of lead contamination. She applies Treatment A to 10 wells and Treatment B to the other 10 wells. After each treatment, she measures the lead concentration in each well.
+
+   **Design type:** _______________
+   
+   **Justification:**
+   
+   
+   
+   
+
+b) A water quality scientist is investigating two chemical treatments for removing lead from well water. She obtains 10 large water samples from different wells, each with a known level of lead contamination. From each sample, she splits it into two portions: Treatment A is applied to one portion, and Treatment B to the other. After the treatments, she measures the lead concentration in each portion.
+
+   **Design type:** _______________
+   
+   **Justification:**
+   
+   
+   
+   
+
+c) A materials engineer wants to compare two different protective coatings for steel. She obtains 10 large steel sheets, and cuts each sheet in half. One half is coated with the new protective formulation (Coating A), and the other half is coated with a standard formulation (Coating B). After a specified period, the engineer measures the corrosion level on each half.
+
+   **Design type:** _______________
+   
+   **Justification:**
+   
+   
+   
+   
+
+d) A materials engineer wants to compare two different protective coatings for steel. She randomly selects 20 large steel sheets. She applies the new protective formulation (Coating A) to 10 randomly selected sheets, and applies the standard formulation (Coating B) to the remaining 10 sheets. After a specified period, she measures the corrosion level on each steel sheet.
+
+   **Design type:** _______________
+   
+   **Justification:**
+   
+   
+   
+   
+
+.. warning::
+   **Common Mistake:** Don't confuse "the same treatment applied to different units" with paired data. Pairing requires that each unit in one condition has a specific, matched counterpart in the other condition—either the same unit measured twice or units paired by design (e.g., matched by baseline characteristics).
+
+Part 2: Independent Samples with Known Variances
+-------------------------------------------------
+
+We begin our exploration with the case of two independent samples. Recall that in independent samples, each measurement from one group has no direct connection or matching to a measurement from the other group. Our primary goal in this setting is to perform inference about the difference in the population means, denoted as :math:`\mu_A - \mu_B`.
+
+.. note::
+   **General Test Statistic Structure**
+   
+   All test statistics in this worksheet follow the same general form:
+   
+   .. math::
+   
+      Z_{TS} \text{ or } T_{TS} = \frac{\text{Estimator} - \text{Null Value}}{\text{Standard Error of Estimator}}
+   
+   For two-sample tests:
+   
+   .. math::
+   
+      = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{\sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}}
+   
+   The denominator changes depending on whether variances are known, pooled, or estimated separately.
+
+Assumptions for Independent Samples
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+To perform valid inference for two independent samples, we rely on the following assumptions:
+
+1. **Independence:** Observations within and across groups are independent; data from one individual or measurement does not affect another.
+
+2. **Random Sampling:** Each sample should be representative of its population—ideally, drawn randomly.
+
+3. **Normality (or Approximate Normality):** Each sample comes from an approximately normal population distribution, or the sample sizes are large enough for the Central Limit Theorem to justify approximate normality of the sampling distributions.
+
+4. **Variance Conditions:** We must consider how variances :math:`\sigma_A^2` and :math:`\sigma_B^2` relate across groups. Our choice of inference method depends heavily on whether variances are known, unknown but assumed equal, or unknown and possibly unequal.
+
+The Simple (but Unrealistic) Case: Known Standard Deviations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If assumptions 1-3 hold and the population variances :math:`\sigma_A^2` and :math:`\sigma_B^2` were somehow known, inference would be straightforward. The sampling distribution of the unbiased estimator :math:`\bar{X}_A - \bar{X}_B` follows a Normal distribution:
+
+.. math::
+
+   \bar{X}_A - \bar{X}_B \sim N\left(\mu_A - \mu_B, \frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}\right)
+
+The **test statistic** would be:
+
+.. math::
+
+   Z = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{\sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}}
+
+which follows a standard Normal distribution under :math:`H_0`.
+
+.. admonition:: Known Variance Formulas Summary 📐
+   :class: important
+   
+   **Hypotheses:**
+   
+   - :math:`H_0: \mu_A - \mu_B = \Delta_0`
+   - :math:`H_a: \mu_A - \mu_B < \Delta_0` (one-sided lower)
+   - :math:`H_a: \mu_A - \mu_B \neq \Delta_0` (two-sided)
+   - :math:`H_a: \mu_A - \mu_B > \Delta_0` (one-sided upper)
+   
+   **Test Statistic:**
+   
+   .. math::
+   
+      Z_{TS} = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{\sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}}
+   
+   **100(1 - α)%-level Confidence Intervals/Bounds:**
+   
+   *Upper Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B < (\bar{X}_A - \bar{X}_B) + z_\alpha \sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}
+   
+   *Two-sided Confidence Interval:*
+   
+   .. math::
+   
+      (\bar{X}_A - \bar{X}_B) \pm z_{\alpha/2} \sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}
+   
+   *Lower Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B > (\bar{X}_A - \bar{X}_B) - z_\alpha \sqrt{\frac{\sigma_A^2}{n_A} + \frac{\sigma_B^2}{n_B}}
+
+.. note::
+   While this case is rarely applicable in practice (we usually don't know population variances), it's useful for:
+   
+   - Sample size calculations when historical data provides reliable variance estimates
+   - Understanding the theoretical foundation before moving to more realistic scenarios
+
+**Question 2:** Production Line Efficiency Study
+
+A manufacturer has extensively monitored two different assembly lines (Line A and Line B) over many years, carefully documenting variations in production time under standard conditions. Through this large and stable historical dataset, the company is confident that:
+
+- Line A's production time has a true population standard deviation of :math:`\sigma_A = 3` minutes
+- Line B's production time has a true population standard deviation of :math:`\sigma_B = 5` minutes
+
+These values have proven consistent over thousands of observations, reflecting consistent mechanical and operational variability.
+
+**New Change:**
+
+The manufacturer is now modifying Line A's workflow to streamline certain steps, and it suspects the mean production time on that line may drop by some unknown amount. Because the line's standard deviation historically remains about 3 minutes, the company believes that :math:`\sigma_A = 3` is still valid under the new workflow. However, it is uncertain about Line A's new average production time.
+
+Using the known standard deviations :math:`\sigma_A = 3` minutes and :math:`\sigma_B = 5` minutes, they wish to conduct a **one-sided, two-sample independent Z-test** comparing the mean production times between Line A (modified workflow) and Line B (standard workflow). 
+
+The manufacturer wants to detect a mean difference of at least 4 minutes (Line A being 4 minutes faster) at :math:`\alpha = 0.05`, with a power of 0.90. 
+
+**Your task:** Determine the minimal balanced sample size :math:`n` required per production line to meet these criteria.
+
+**Step 1:** Set up the hypotheses for this one-sided test.
+
+:math:`H_0:` 
+
+:math:`H_a:` 
+
+
+**Step 2:** Identify the significance level and desired power.
+
+:math:`\alpha =` ____
+
+:math:`1 - \beta =` ____
+
+
+**Step 3:** Determine the critical value :math:`z_{\alpha}` and :math:`z_{\beta}`.
+
+:math:`z_{\alpha} =` ____
+
+:math:`z_{\beta} =` ____
+
+
+**Step 4:** Use the sample size formula for a one-sided two-sample Z-test:
+
+.. math::
+
+   n = \frac{(z_{\alpha} + z_{\beta})^2 (\sigma_A^2 + \sigma_B^2)}{(\mu_A - \mu_B - \Delta_0)^2}
+
+where :math:`\Delta_0` is the hypothesized difference under :math:`H_0` (usually 0), and :math:`|\mu_A - \mu_B|` is the minimum detectable difference.
+
+Show your calculation:
+
+
+
+:math:`n =` ____
+
+
+**Step 5:** Round up to ensure adequate power.
+
+**Minimum sample size per group:** :math:`n =` ____
+
+
+After completing your calculations, use the R code below to verify that your sample size achieves the desired power.
+
+.. code-block:: r
+
+   # Verification code for sample size calculation
+
+   # Given parameters
+   sigma_A <- 3      # Line A standard deviation
+   sigma_B <- 5      # Line B standard deviation
+   alpha <- 0.05     # Significance level
+   delta_0 <- 0
+   delta_alt <- 4        # (mu_B-mu_A)_alt Minimum detectable difference (Line A faster by 4 minutes)
+   desired_power <- 0.90
+
+   # YOUR calculated sample size (fill this in)
+   your_n <- ___  # Enter your calculated n here
+
+   # Compute the standard error for your sample size
+   SE <- sqrt(sigma_A^2/your_n + sigma_B^2/your_n)
+
+   # Critical value for one-sided test at alpha = 0.05
+   z_alpha <- qnorm(alpha, lower.tail = FALSE)
+
+   # Cutoff Value under H0
+   cutoff_value <- 0 + z_alpha * SE  # H0: mu_A - mu_B = 0
+
+   # Under Ha, the true difference is -4 (Line A is 4 min faster)
+   # Compute z-score of cutoff_value under Ha distribution
+   z_under_Ha <- (cutoff_value - delta_alt) / SE
+
+   # Achieved power (probability of rejecting H0 when Ha is true)
+   achieved_power <- pnorm(z_under_Ha, lower.tail = FALSE)
+
+   cat("Your sample size:", your_n, "\n")
+   cat("Critical value z_alpha:", round(z_alpha, 3), "\n")
+   cat("Standard error with your n:", round(SE, 3), "\n")
+   cat("Achieved power:", round(achieved_power, 4), "\n")
+   cat("Target power:", desired_power, "\n\n")
+
+   # Check if power requirement is met
+   if (achieved_power >= desired_power - 0.01) {
+   cat("✓ Excellent! Your sample size achieves the target power of", 
+         desired_power, "\n")
+   if (achieved_power > desired_power + 0.05) {
+      cat("  Note: Your n may be larger than necessary (overpowered)\n")
+   }
+   } else {
+   cat("✗ Your sample size achieves only", round(achieved_power, 3), 
+         "power\n")
+   cat("  You need n to achieve at least", desired_power, "power\n")
+   cat("  Try a larger sample size\n")
+   
+   }
+
+
+
+
+Part 3: Pooled Two-Sample t-Test (Equal Variances)
+---------------------------------------------------
+
+In most practical scenarios, population standard deviations must be estimated from sample data. If it is reasonable to assume the two populations share a **common but unknown variance** :math:`\sigma^2`, we simplify by pooling the two sample standard deviations to obtain a single estimate of the common variance. This procedure is called the **pooled two-sample t-test**.
+
+The Pooled Variance Estimator
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The pooled variance estimator is:
+
+.. math::
+
+   S_p^2 = \frac{(n_A - 1)S_A^2 + (n_B - 1)S_B^2}{n_A + n_B - 2}
+
+which is an unbiased estimator provided our assumption :math:`\sigma_A^2 = \sigma_B^2 = \sigma^2` is true.
+
+The **test statistic** follows a Student's t-distribution with degrees of freedom :math:`df = n_A + n_B - 2`:
+
+.. math::
+
+   T = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}} \sim t_{n_A + n_B - 2}
+
+Confidence intervals for :math:`\mu_A - \mu_B` are constructed as:
+
+.. math::
+
+   (\bar{X}_A - \bar{X}_B) \pm t_{\alpha/2, n_A+n_B-2} \cdot S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}
+
+.. admonition:: Pooled Two-Sample t-Test Formulas Summary 📐
+   :class: important
+   
+   **Assumption:** :math:`\sigma_A^2 = \sigma_B^2 = \sigma^2` (equal population variances)
+   
+   **Pooled Variance Estimator:**
+   
+   .. math::
+   
+      S_p^2 = \frac{(n_A - 1)S_A^2 + (n_B - 1)S_B^2}{n_A + n_B - 2}
+   
+   **Degrees of Freedom:** :math:`df = n_A + n_B - 2`
+   
+   **Test Statistic:**
+   
+   .. math::
+   
+      T_{TS} = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}}
+   
+   **100(1 - α)%-level Confidence Intervals/Bounds:**
+   
+   *Upper Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B < (\bar{X}_A - \bar{X}_B) + t_{\alpha, df} \cdot S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}
+   
+   *Two-sided Confidence Interval:*
+   
+   .. math::
+   
+      (\bar{X}_A - \bar{X}_B) \pm t_{\alpha/2, df} \cdot S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}
+   
+   *Lower Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B > (\bar{X}_A - \bar{X}_B) - t_{\alpha, df} \cdot S_p\sqrt{\frac{1}{n_A} + \frac{1}{n_B}}
+   
+   **R Code:**
+   
+   .. code-block:: r
+   
+      t <- qt(p = alpha, df = nu, lower.tail = FALSE)
+      xbarA - xbarB + t * SE
+
+.. warning::
+   **When is the pooled approach risky?**
+   
+   The pooled two-sample t-test assumes :math:`\sigma_A^2 = \sigma_B^2`. If this assumption is violated—especially when sample sizes are also unequal—the test can produce:
+   
+   - Incorrect Type I error rates (the actual :math:`\alpha` differs from the nominal level)
+   - Poor confidence interval coverage (may be much less than the advertised 95%)
+   - Misleading conclusions
+
+Investigating the Pooled Method Through Simulation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Question 3:** In this exercise, you will simulate data from two normally distributed populations with unknown means and variances. Your goal is to construct 95% confidence intervals (CIs) for :math:`\mu_A - \mu_B` using the pooled two-sample t-procedure (assuming equal variances) and then estimate how frequently these CIs capture the true mean difference. 
+
+By varying sample sizes and variances, you will observe the limitations of the pooled approach when variances differ or when group sizes are not balanced.
+
+Let the two populations have true means:
+
+.. math::
+
+   \mu_A = \mu_B = 50
+
+So the true difference is :math:`\mu_A - \mu_B = 0`.
+
+**a)** Simulate each scenario below for a total of **1,500 trials** (Monte Carlo repetitions). In each trial, draw new samples from the respective normal distributions and construct a 95% CI for :math:`\mu_A - \mu_B` using the pooled two-sample t-procedure. Keep track of whether the CI contains the true difference (which is :math:`0` in these examples). Report the coverage proportion in each case.
+
+.. note::
+   **About the Simulation Code**
+   
+   The R function below is provided complete and ready to run. The pedagogical goal here is not to teach simulation programming, but rather to **discover through simulation** what happens when the equal variance assumption is violated. Focus your attention on:
+   
+   - Running the four scenarios
+   - Recording the coverage proportions
+   - Interpreting what the results tell you about the pooled method's robustness
+   
+   The code uses vectorization to efficiently run 1,500 simulations per scenario.
+
+**Scenario a)** Equal sample sizes, equal variances: :math:`n_A = n_B = 5` and :math:`\sigma_A^2 = \sigma_B^2 = 9`.
+
+   **Coverage proportion:** ____
+
+
+**Scenario b)** Equal sample sizes, unequal variances: :math:`n_A = n_B = 5` and :math:`\sigma_A^2 = 4` and :math:`\sigma_B^2 = 25`.
+
+   **Coverage proportion:** ____
+
+
+**Scenario c)** Unequal sample sizes (n_A > n_B), unequal variances: :math:`n_A = 150`, :math:`n_B = 5` and :math:`\sigma_A^2 = 4` and :math:`\sigma_B^2 = 25`.
+
+   **Coverage proportion:** ____
+
+
+**Scenario d)** Unequal sample sizes (n_A < n_B), unequal variances: :math:`n_A = 5`, :math:`n_B = 150` and :math:`\sigma_A^2 = 4` and :math:`\sigma_B^2 = 25`.
+
+   **Coverage proportion:** ____
+
+
+Use the R code below to conduct your simulation study:
+
+.. code-block:: r
+
+   # Vectorized function to simulate pooled t-test coverage
+   # This efficiently runs 1500 simulations for each scenario
+   
+   sim_pooled_coverage_vectorized <- function(nA, nB, sigmaA, sigmaB) {
+     muA <- 50
+     muB <- 50
+     nSim <- 1500
+     conf.level <- 0.95
+     alpha <- 1 - conf.level
+     
+     # Generate all simulation data at once (vectorized)
+     dataA <- matrix(rnorm(nA * nSim, mean = muA, sd = sigmaA), nrow = nSim)
+     dataB <- matrix(rnorm(nB * nSim, mean = muB, sd = sigmaB), nrow = nSim)
+     
+     # Compute sample means and variances for each simulation
+     xbarA <- rowMeans(dataA)
+     xbarB <- rowMeans(dataB)
+     sA2 <- apply(dataA, 1, var)
+     sB2 <- apply(dataB, 1, var)
+     
+     # Pooled variance and standard deviation
+     df <- nA + nB - 2
+     Sp2 <- ((nA - 1)*sA2 + (nB - 1)*sB2) / df
+     Sp <- sqrt(Sp2)
+     
+     # Construct 95% confidence intervals
+     t_crit <- qt(alpha/2, df = df, lower.tail = FALSE)
+     margin <- t_crit * Sp * sqrt(1/nA + 1/nB)
+     CI_lo <- (xbarA - xbarB) - margin
+     CI_hi <- (xbarA - xbarB) + margin
+     
+     # Check if CI contains true difference (0)
+     covers <- (CI_lo <= 0) & (CI_hi >= 0)
+     coverage <- mean(covers)
+     
+     return(coverage)
+   }
+   
+   # Run all four scenarios
+   set.seed(350)  # For reproducibility
+   
+   cat("Simulating pooled t-test coverage under various conditions...\n\n")
+   
+   # Scenario a: Equal n, Equal variances (σ² = 9, so σ = 3)
+   coverage_a <- sim_pooled_coverage_vectorized(5, 5, 3, 3)
+   cat("Scenario a (n=5, n=5, σ=3, σ=3):\n")
+   cat("  Coverage proportion:", round(coverage_a, 4), "\n")
+   cat("  Expected: ~0.95 (should work well)\n\n")
+   
+   # Scenario b: Equal n, Unequal variances (σ_A² = 4, σ_B² = 25)
+   coverage_b <- sim_pooled_coverage_vectorized(5, 5, 2, 5)
+   cat("Scenario b (n=5, n=5, σ=2, σ=5):\n")
+   cat("  Coverage proportion:", round(coverage_b, 4), "\n")
+   cat("  Watch how unequal variances affect coverage\n\n")
+   
+   # Scenario c: Unequal n, Unequal variances (large n_A, small n_B)
+   coverage_c <- sim_pooled_coverage_vectorized(150, 5, 2, 5)
+   cat("Scenario c (n=150, n=5, σ=2, σ=5):\n")
+   cat("  Coverage proportion:", round(coverage_c, 4), "\n")
+   cat("  EXTREME case: large n has small σ, small n has large σ\n\n")
+   
+   # Scenario d: Unequal n, Unequal variances (small n_A, large n_B)
+   coverage_d <- sim_pooled_coverage_vectorized(5, 150, 2, 5)
+   cat("Scenario d (n=5, n=150, σ=2, σ=5):\n")
+   cat("  Coverage proportion:", round(coverage_d, 4), "\n")
+   cat("  EXTREME case: small n has small σ, large n has large σ\n\n")
+   
+   # Summary comparison
+   cat(strrep("=", 60), "\n")
+   cat("SUMMARY OF RESULTS:\n")
+   cat(strrep("=", 60), "\n")
+   cat("Scenario a:", round(coverage_a, 4), "\n")
+   cat("Scenario b:", round(coverage_b, 4), "\n")
+   cat("Scenario c:", round(coverage_c, 4), "\n")
+   cat("Scenario d:", round(coverage_d, 4), "\n")
+   cat("\nTarget coverage: 0.95\n")
+   cat("Which scenarios deviate substantially from 0.95?\n")
+
+.. admonition:: Visualization Exercise 🖥️
+   :class: tip
+   
+   **Visualizing Coverage Across Scenarios**
+   
+   After running your simulations, create a bar plot showing the coverage proportions for all four scenarios. Include a horizontal reference line at 0.95 (the nominal coverage level).
+   
+   **Suggested prompt for your AI assistant:**
+   
+   *"Create a bar plot in R using ggplot2 that displays coverage proportions for four simulation scenarios. Include a horizontal reference line at 0.95 and color-code bars based on whether they're above or below this threshold. Label the scenarios meaningfully."*
+
+**b)** Compare your coverage results across the "equal variances" and "unequal variances" scenarios. 
+
+a) How do you see the pooled intervals behaving (i.e., more or less than 95% coverage) when :math:`\sigma_A` significantly differs from :math:`\sigma_B`?
+
+
+
+
+b) How does equality or non-equality of sample sizes affect the coverage when variances are unequal?
+
+
+
+
+c) Based on your findings, what conclusions can you draw about relying on the pooled approach if there is even a moderate suspicion that variances or sample sizes are substantially different?
+
+
+
+
+.. warning::
+   **The Equal Variance Assumption is Critical:**
+   
+   Your simulation results should reveal that when :math:`\sigma_A \neq \sigma_B`, especially with unequal sample sizes, the pooled method can produce confidence intervals with coverage rates substantially different from the nominal 95%. This demonstrates why we need a more robust alternative—Welch's t-test!
+
+Part 4: Welch's Two-Sample t-Test (Unequal Variances)
+------------------------------------------------------
+
+In practical settings, assuming equal population variances can often be questionable or difficult to justify. For example, preliminary data might suggest noticeable differences in variability between groups, or you might simply lack evidence to confidently assume equality of variances. In these cases, relying on the pooled variance method may lead to incorrect inferences, distorted confidence intervals, and misleading conclusions.
+
+To address these concerns, we introduce **Welch's two-sample t-test**, a flexible and robust alternative that does not require equal variances. Welch's test adjusts both the standard error and the degrees of freedom, providing reliable inference even when variances differ substantially between the two populations or when sample sizes are uneven.
+
+The Welch Test Statistic and Degrees of Freedom
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When we no longer assume equal variances, our inference about the difference in means :math:`\mu_A - \mu_B` must account for each group's variability independently. We define the Welch test statistic as:
+
+.. math::
+
+   T = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{\sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}}
+
+This test statistic does not follow a simple Student's t-distribution with :math:`n_A + n_B - 2` degrees of freedom. Instead, we use the **Welch-Satterthwaite approximation** to estimate degrees of freedom:
+
+.. math::
+
+   df \approx \frac{\left(\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}\right)^2}{\frac{(S_A^2/n_A)^2}{n_A-1} + \frac{(S_B^2/n_B)^2}{n_B-1}}
+
+In practice, the Welch-Satterthwaite formula typically produces a **non-integer value** for :math:`df`. Statistical software uses this fractional degrees of freedom to compute p-values and confidence intervals.
+
+.. note::
+   **Why the Welch-Satterthwaite approximation?**
+   
+   The test statistic :math:`T` above doesn't follow a standard t-distribution because it's a ratio involving two independent sample variances with potentially different scales. The Welch-Satterthwaite method provides an approximate degrees of freedom that makes the distribution of :math:`T` behave like a t-distribution, allowing valid inference.
+   
+   For deeper mathematical insights into why this problem is challenging, consult literature on the **Behrens-Fisher problem**.
+
+Confidence intervals for :math:`\mu_A - \mu_B` using Welch's method are:
+
+.. math::
+
+   (\bar{X}_A - \bar{X}_B) \pm t_{\alpha/2, \nu} \cdot \sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}
+
+where :math:`\nu` is calculated using the Welch-Satterthwaite formula.
+
+.. admonition:: Welch's Two-Sample t-Test Formulas Summary 📐
+   :class: important
+   
+   **No assumption required about equality of variances**
+   
+   **Welch-Satterthwaite Degrees of Freedom:**
+   
+   .. math::
+   
+      \nu = \frac{\left(\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}\right)^2}{\frac{1}{n_A - 1}\left(\frac{S_A^2}{n_A}\right)^2 + \frac{1}{n_B - 1}\left(\frac{S_B^2}{n_B}\right)^2}
+   
+   **Test Statistic:**
+   
+   .. math::
+   
+      T_{TS} = \frac{(\bar{X}_A - \bar{X}_B) - \Delta_0}{\sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}}
+   
+   **Standard Error:**
+   
+   .. math::
+   
+      SE = \sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}
+   
+   **100(1 - α)%-level Confidence Intervals/Bounds:**
+   
+   *Upper Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B < (\bar{X}_A - \bar{X}_B) + t_{\nu, \alpha} \cdot \sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}
+   
+   *Two-sided Confidence Interval:*
+   
+   .. math::
+   
+      (\bar{X}_A - \bar{X}_B) \pm t_{\nu, \alpha/2} \cdot \sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}
+   
+   *Lower Confidence Bound:*
+   
+   .. math::
+   
+      \mu_A - \mu_B > (\bar{X}_A - \bar{X}_B) - t_{\nu, \alpha} \cdot \sqrt{\frac{S_A^2}{n_A} + \frac{S_B^2}{n_B}}
+   
+   **R Code:**
+   
+   .. code-block:: r
+   
+      # Welch's t-test (does NOT assume equal variances)
+      t <- qt(p = alpha, df = nu, lower.tail = FALSE)
+      (xbarA - xbarB) + t * SE
+      
+      # Or use t.test() with var.equal = FALSE
+      t.test(groupA, groupB, var.equal = FALSE)
+
+Application: Warp Thread Breaks in Textile Manufacturing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Context 🧵
+   :class: info
+   
+   In textile manufacturing, a **"warp thread"** refers to the set of lengthwise threads held in tension on a loom, through which the weaving threads (weft) are passed. A **"break"** is an instance where one of these warp threads snaps during the weaving process. Frequent breaks can reduce productivity and quality, making it important to understand factors affecting their frequency.
+
+The built-in R dataset ``warpbreaks`` contains data on the number of warp thread breaks per loom, comparing two types of wool (A and B) under three tension levels (Low, Medium, and High). For this exercise, we will investigate if the wool type (A or B) influences the number of breaks, treating wool type as two independent groups.
+
+**Question 5:** Analyzing the Warpbreaks Data
+
+a) **Check Assumptions:** State and check the assumptions for conducting a two-independent sample t-procedure. Regardless of your conclusions regarding the validity of the normality assumption please complete continue with the statistical analysis.
+
+   **Independence:**
+   
+   
+   
+   **Random Sampling:**
+   
+   
+   
+   **Normality:**
+   
+   
+   
+   Use the R code below to create visualizations that help assess the normality assumption:
+   
+   .. code-block:: r
+   
+      # Load required libraries
+      library(ggplot2)
+      library(gridExtra)  # For grid.arrange()
+
+      # Load and explore the warpbreaks dataset
+      data(warpbreaks)
+
+      # Summary statistics by wool type
+      means <- tapply(warpbreaks$breaks, warpbreaks$wool, mean)
+      sds <- tapply(warpbreaks$breaks, warpbreaks$wool, sd)
+      ns <- tapply(warpbreaks$breaks, warpbreaks$wool, length)
+
+      cat("Wool A - Mean:", means["A"], "SD:", sds["A"], "n:", ns["A"], "\n")
+      cat("Wool B - Mean:", means["B"], "SD:", sds["B"], "n:", ns["B"], "\n")
+
+      # Calculate number of bins
+      n_bins <- max(round(sqrt(ns["A"])) + 2, 5)
+
+      # Subset data by wool type
+      wool_A <- warpbreaks[warpbreaks$wool == "A", ]
+      wool_B <- warpbreaks[warpbreaks$wool == "B", ]
+
+      # Create histogram for Wool A
+      hist_A <- ggplot(wool_A, aes(x = breaks)) +
+      geom_histogram(aes(y = after_stat(density)), 
+                     bins = n_bins, fill = "grey", color = "black") +
+      geom_density(color = "red", linewidth = 1) +
+      stat_function(fun = dnorm, 
+                     args = list(mean = means["A"], sd = sds["A"]),
+                     color = "blue", linewidth = 1) +
+      labs(title = "Wool A: Distribution of Breaks",
+            x = "Number of Breaks",
+            y = "Density") +
+      theme_minimal()
+
+      # Create histogram for Wool B
+      hist_B <- ggplot(wool_B, aes(x = breaks)) +
+      geom_histogram(aes(y = after_stat(density)), 
+                     bins = n_bins, fill = "grey", color = "black") +
+      geom_density(color = "red", linewidth = 1) +
+      stat_function(fun = dnorm, 
+                     args = list(mean = means["B"], sd = sds["B"]),
+                     color = "blue", linewidth = 1) +
+      labs(title = "Wool B: Distribution of Breaks",
+            x = "Number of Breaks",
+            y = "Density") +
+      theme_minimal()
+
+      # Create QQ plot for Wool A
+      qq_A <- ggplot(wool_A, aes(sample = breaks)) +
+      stat_qq(color = "steelblue") +
+      geom_abline(slope = sds["A"], intercept = means["A"], 
+                  color = "red", linewidth = 1) +
+      labs(title = "Wool A: Normal Q-Q Plot",
+            x = "Theoretical Quantiles",
+            y = "Sample Quantiles") +
+      theme_minimal()
+
+      # Create QQ plot for Wool B
+      qq_B <- ggplot(wool_B, aes(sample = breaks)) +
+      stat_qq(color = "steelblue") +
+      geom_abline(slope = sds["B"], intercept = means["B"], 
+                  color = "red", linewidth = 1) +
+      labs(title = "Wool B: Normal Q-Q Plot",
+            x = "Theoretical Quantiles",
+            y = "Sample Quantiles") +
+      theme_minimal()
+
+      # Arrange in 2x2 grid
+      grid.arrange(hist_A, hist_B, qq_A, qq_B, 
+                  ncol = 2, nrow = 2,
+                  top = "Normality Assessment: Warpbreaks by Wool Type")
+   
+   **Your assessment of normality:**
+   
+   
+   
+   
+
+b) **Degrees of Freedom Comparison:** Calculate and compare the degrees of freedom under the assumption of equal variances and using the Welch-Satterthwaite approximation.
+
+   **Pooled (equal variances) degrees of freedom:**
+   
+   :math:`df_{pooled} = n_A + n_B - 2 =` ____
+   
+   
+   **Welch-Satterthwaite degrees of freedom:**
+   
+   Show your calculation using the formula and use R for the computation.
+   
+   :math:`df_{Welch} \approx` ____
+   
+   
+   **What does the difference in degrees of freedom suggest about the equality of variances?**
+   
+   
+   
+
+c) **Confidence Intervals:** Construct 95% confidence intervals for the difference in mean number of breaks between wool type A and wool type B using both methods:
+
+   i. **Pooled two-sample t-test (assuming equal variances):**
+   
+      **95% CI for** :math:`\mu_A - \mu_B` **(pooled):** ( ____ , ____ )
+   
+   ii. **Welch's two-sample t-test (unequal variances):**
+   
+      **95% CI for** :math:`\mu_A - \mu_B` **(Welch):** ( ____ , ____ )
+      
+   iii. **Comparison:** Do both confidence intervals lead to the same conclusion regarding whether there is evidence of a difference in mean breaks between wool types at the :math:`\alpha = 0.05` level?
+   
+      **Pooled CI interpretation:**
+      
+      
+      **Welch CI interpretation:**
+      
+      
+      **Do they agree?**
+
+
+d) **Final Conclusion:** Based on your findings, is there statistical evidence to suggest wool type affects the number of warp breaks? Clearly state your final conclusion in context.
+
+   **Your conclusion:**
+   
+   
+   
+   
+   
+   **Which method (pooled or Welch) do you trust more for this dataset, and why?**
+   
+   
+   
+   
+
+.. admonition:: Visualization Challenge 📊
+   :class: tip
+   
+   **Creating Comparative Visualizations**
+   
+   Create a visualization that compares the distribution of breaks for wool types A and B. Consider using:
+   - Side-by-side boxplots
+   - Violin plots
+   - Overlapping density plots
+   
+   **Sample prompt for your AI assistant:**
+   
+   *"Using the warpbreaks dataset in R, create side-by-side boxplots comparing the number of breaks for wool types A and B. Add individual data points with jitter and color-code by wool type. Include appropriate labels and a title."*
+
+Key Takeaways
+-------------
+
+.. admonition:: Summary 📝
+   :class: important
+   
+   • **Design matters:** Correctly identifying whether data are independent or paired is crucial for selecting appropriate inference methods. Pairing controls for subject-level variability and increases power when applicable.
+   
+   • **The equal variance assumption is strong:** The pooled two-sample t-test assumes :math:`\sigma_A^2 = \sigma_B^2`. When this assumption is violated, especially with unequal sample sizes, coverage rates and Type I error rates can be substantially distorted.
+   
+   • **Welch's test is robust:** Welch's two-sample t-test provides reliable inference without assuming equal variances. The Welch-Satterthwaite approximation adjusts degrees of freedom to account for unequal variability.
+   
+   • **Simulation reveals robustness:** Monte Carlo simulations are powerful tools for investigating the behavior of statistical procedures under various conditions and for building intuition about when methods may fail.
+   
+   • **R is your verification tool:** Use R's built-in functions like ``t.test()`` with appropriate options (``var.equal = TRUE`` or ``FALSE``) to conduct these procedures efficiently, and always check assumptions before interpreting results.
+   
+   • **Looking ahead:** We've focused on independent samples here. The next natural extension is to paired samples, where we analyze the *differences* within pairs—a simpler but equally important scenario that we'll explore in future worksheets.
+
+.. admonition:: Reflection Questions 🤔
+   :class: note
+   
+   Before moving on, consider:
+   
+   1. When would you feel confident assuming equal variances in practice?
+   2. What are the consequences of using a pooled test when variances are actually unequal?
+   3. Is there ever a downside to just always using Welch's test as a default?
+   4. How does the choice between paired and independent designs affect the research questions you can answer?
+
+.. note::
+   **Connection to Previous Worksheets:**
+   
+   - Worksheet 14-15: Single-sample inference procedures
+   - Current concepts build on understanding sampling distributions, t-distributions, and hypothesis testing
+   
+   **Preview of Next Topics:**
+   
+   - Paired sample procedures (analyzing differences within matched pairs)
+   - Multiple comparisons and ANOVA
+   - Non-parametric alternatives when normality assumptions fail
