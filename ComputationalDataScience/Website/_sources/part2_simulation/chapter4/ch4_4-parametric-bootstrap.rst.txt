@@ -929,129 +929,159 @@ When Parametric Bootstrap Fails
 Model Misspecification
 ~~~~~~~~~~~~~~~~~~~~~~
 
-The most serious failure mode is **incorrect distributional assumptions**. If the true distribution :math:`F` differs substantially from the assumed family :math:`\{F_\theta\}`, parametric bootstrap can produce:
+The most serious parametric-bootstrap failure mode is **model misspecification**. If the true distribution
+:math:`F` is meaningfully outside the assumed family :math:`\{F_\theta\}`, then simulating from
+:math:`F_{\hat\theta}` does not reproduce the sampling behavior of the statistic under the real data-generating process.
+In that case, the parametric bootstrap can deliver **biased standard errors** and **confidence intervals with severe undercoverage**.
 
-- Biased point estimates (if the estimator depends on the assumed family)
-- CIs with incorrect coverage
-- Misleading SE estimates
-
-**Example**: Assuming normal errors when true errors follow a :math:`t_3` distribution leads to underestimated uncertainty for tail behavior.
+A particularly fragile setting is inference for a **tail functional**, such as
+:math:`p = \Pr(X > c)`, because :math:`p` depends on the distribution’s extreme-right behavior. In the example below,
+the true distribution is a **mixture** (bimodal). Fitting a single Normal forces the model to “average” the two modes,
+which misrepresents the right tail that determines :math:`p`.
 
 .. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_4_fig04_model_misspecification.png
-   :alt: Model misspecification failure showing undercoverage with heavy-tailed data
+   :alt: Parametric bootstrap failure under model misspecification for a tail probability p = P(X > c)
    :align: center
    :width: 95%
 
-   **Figure 4.4.4**: Model misspecification failure. (a) Heavy-tailed :math:`t_3` data with misspecified normal model---note the tail mismatch. (b) Parametric bootstrap SE is too small. (c) Coverage simulation shows parametric (wrong model) achieves only ~88% coverage versus nominal 95%, while nonparametric remains near 95%.
+   **Figure 4.4.4**: Model misspecification, parametric bootstrap can be confidently wrong.
+   (a) Data are generated from a mixture distribution, but a single Normal model is fitted, producing a tail mismatch beyond the threshold :math:`c=6`.
+   (b) Bootstrap distributions for :math:`\hat{p}^* = \Pr(X^* > c)` differ sharply: the parametric bootstrap (wrong model) concentrates on smaller values,
+   while the nonparametric bootstrap remains anchored to the empirical tail behavior.
+   (c) In repeated-sampling experiments, the 95% parametric-bootstrap CI for :math:`p` can have drastic undercoverage under misspecification,
+   whereas the nonparametric bootstrap is typically much closer to nominal.
 
 
 Boundary Parameters
 ~~~~~~~~~~~~~~~~~~~
 
-When the true parameter lies at or near the boundary of the parameter space, parametric bootstrap can fail:
+Boundary and near boundary settings are **nonregular**: the estimator’s sampling distribution can be highly asymmetric, and the usual bootstrap logic can break. In these cases, the parametric bootstrap can fail, and the **standard nonparametric bootstrap can fail as well** when the statistic is constrained by the sample support.
 
-- **Uniform[0, θ]**: If :math:`\hat{\theta} = X_{(n)}` (sample maximum), bootstrap samples from :math:`U[0, \hat{\theta}]` can never exceed :math:`\hat{\theta}`, making it impossible to assess upward uncertainty.
+- **Uniform[0, \(\theta\)] (endpoint / maximum)**:
+  If :math:`\hat{\theta} = X_{(n)}` (the sample maximum), then a parametric bootstrap that simulates
+  :math:`X^* \sim \mathrm{Unif}(0,\hat{\theta})` produces :math:`\hat{\theta}^*=\max(X^*) \le \hat{\theta}` always.
+  This truncation makes it impossible to represent **upward uncertainty** in :math:`\theta`.
+  The same structural problem occurs for the **standard nonparametric bootstrap**, since resampling from :math:`\hat F_n`
+  cannot generate observations exceeding :math:`X_{(n)}`.
 
-- **Variance = 0**: If sample variance is very small, parametric bootstrap from :math:`N(\hat{\mu}, \hat{\sigma}^2)` with tiny :math:`\hat{\sigma}` produces degenerate samples.
+- **Variance near 0 (degenerate scale estimate)**:
+  If the sample variance is extremely small, a parametric bootstrap from :math:`N(\hat{\mu},\hat{\sigma}^2)` with tiny
+  :math:`\hat{\sigma}` yields nearly degenerate bootstrap samples and misleadingly small standard errors.
 
-**Remedy**: Use alternative estimators (e.g., bias-corrected maximum) or nonparametric methods near boundaries. Standard remedies include:
-
-- **m-out-of-n bootstrap**: Resample :math:`m < n` observations, allowing "room" for variation beyond sample extremes
-- **Subsampling**: A related approach that uses smaller subsets without replacement
-- **Bias-corrected estimators**: For Uniform[0, θ], use :math:`\hat{\theta}_{bc} = \frac{n+1}{n} X_{(n)}`
+**Remedies** (choose based on context):
+- **Exact finite-sample theory when available**: for Uniform endpoints, order-statistic results yield exact tail probabilities and CIs.
+- **Bias-corrected or alternative estimators**: for Uniform[0, \(\theta\)],
+  :math:`\hat{\theta}_{bc}=\frac{n+1}{n}X_{(n)}` removes the downward bias in :math:`X_{(n)}`.
+- **Subsampling / m-out-of-n bootstrap**: resample :math:`m<n` observations (with or without replacement) to obtain a distributional
+  approximation that is often more stable in nonregular settings.
+- **Reparameterization**: when possible, transform to an unconstrained scale to avoid boundary artifacts.
 
 .. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_4_fig06_boundary_failure.png
-   :alt: Boundary parameter failure showing bootstrap truncation at sample maximum
+   :alt: Boundary parameter failure showing bootstrap truncation at the sample maximum
    :align: center
    :width: 95%
 
-   **Figure 4.4.6**: Boundary parameter failure for Uniform[0, :math:`\theta`]. (a) Sample maximum underestimates true :math:`\theta`. (b) Bootstrap from U[0, :math:`\hat{\theta}`] is truncated---it cannot exceed the sample maximum, making upward uncertainty assessment impossible. (c) Both true SE and CI upper bound are underestimated.
+   **Figure 4.4.6**: Boundary parameter failure for Uniform[0, :math:`\theta`]. (a) The MLE :math:`\hat{\theta}=X_{(n)}` typically
+   underestimates the true endpoint. (b) Parametric bootstrap from :math:`\mathrm{Unif}(0,\hat{\theta})` is truncated at
+   :math:`\hat{\theta}` (and the standard nonparametric bootstrap is similarly truncated), so upward uncertainty cannot be represented.
+   (c) The resulting bootstrap standard error and percentile CI upper bound are biased downward relative to the true sampling behavior.
 
 
 Heavy-Tailed Distributions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-For distributions without finite variance (Cauchy, stable distributions with :math:`\alpha < 2`), the bootstrap can be inconsistent---but the failure depends on the statistic. The problem is acute for the **sample mean** and other non-robust functionals under infinite variance: the sample mean doesn't converge to a limit, so neither does the bootstrap approximation.
+Heavy tails can break bootstrap inference, but the issue depends on both the **tail behavior** of :math:`F` and the **statistic** :math:`T_n`.
 
-However, robust statistics (median, trimmed means, M-estimators) may still have valid bootstrap inference even under heavy tails, provided they have well-defined limiting distributions.
+- If :math:`F` has **infinite variance** (e.g., stable laws with :math:`\alpha < 2`), then the sample mean and other non-robust, variance-dependent functionals often have **nonstandard** asymptotics (no CLT, stable limits, or extremely slow convergence). In these regimes, the usual nonparametric bootstrap may give a poor or even inconsistent approximation to the sampling distribution of :math:`T_n`.
 
-**Remedy**: Use robust estimators (median, trimmed mean) and match the bootstrap to the estimator's asymptotic properties.
+- In the extreme case of **no finite mean** (e.g., Cauchy), the sample mean does not stabilize in the usual sense; it does not concentrate around a constant. A bootstrap distribution built from :math:`\hat F_n` cannot recover a “nice” sampling law for :math:`\bar X` because the target itself is nonstandard.
 
+Robust statistics are typically safer under heavy tails. Medians, trimmed means, and many M-estimators can retain well-behaved limiting distributions (often asymptotically normal under mild conditions) and are therefore more compatible with bootstrap inference.
+
+**Remedy**: Prefer robust estimators (median, trimmed mean, appropriate M-estimators), and choose a bootstrap that matches the estimator and tail regime. When tails are very heavy, consider diagnostics (tail plots, extreme values) and sensitivity checks across multiple robust choices.
 
 Parametric vs. Nonparametric: A Decision Framework
 --------------------------------------------------
 
-Choosing between parametric and nonparametric bootstrap involves balancing efficiency against robustness.
+Choosing between parametric and nonparametric bootstrap involves balancing **efficiency** against **robustness**.
 
 .. list-table:: Parametric vs. Nonparametric Bootstrap
    :header-rows: 1
-   :widths: 25 35 40
+   :widths: 24 38 38
 
    * - Criterion
      - Parametric Bootstrap
      - Nonparametric Bootstrap
-   * - Assumptions
-     - Requires parametric family
-     - Distribution-free
-   * - Efficiency
-     - Higher if model correct
-     - Lower but robust
-   * - Small samples (n < 30)
-     - Often better
-     - Can struggle
+   * - Primary assumption
+     - Data follow a specified family :math:`\{F_\theta\}` (after fitting :math:`\hat\theta`)
+     - Uses :math:`\hat F_n`; fewer distributional assumptions
+   * - When it shines
+     - Often more efficient when the model is credible, especially for small :math:`n`
+     - Generally more robust to distributional misspecification
+   * - Small samples (:math:`n \lesssim 30`)
+     - Can give tighter, more stable inference if the model is correct
+     - Can be noisier (discrete resampling, higher Monte Carlo variability), but often still reasonable
    * - Model misspecification
-     - Fails
-     - Remains valid
-   * - Complex functionals
-     - May need analytical derivatives
-     - Always applicable
+     - Can fail badly (bias, undercoverage, misleading SEs)
+     - Typically more robust, but not universally “always valid”
+   * - Complex statistics / functionals
+     - Often straightforward (simulate from fitted model, recompute statistic)
+     - Often straightforward (resample data, recompute statistic)
+   * - Support constraints / boundaries
+     - Can fail for boundary MLEs (e.g., :math:`\hat\theta = X_{(n)}`); may require special remedies
+     - Can also fail or be conservative for extreme order statistics; may require m-out-of-n / subsampling
    * - Computational cost
-     - Similar (both O(B·n))
-     - Similar
-
+     - Usually :math:`O(Bn)` plus model fitting if refit each replicate
+     - Usually :math:`O(Bn)` plus any refitting inside each replicate
 
 Decision Flowchart
 ~~~~~~~~~~~~~~~~~~
 
-1. **Do you have strong prior knowledge about the distribution?**
-   
-   - Yes → Consider parametric
-   - No → Use nonparametric
+1. **Do you have strong prior knowledge for a parametric family?**
 
-2. **Can you validate model assumptions?**
-   
-   - Q-Q plots look good, tests non-significant → Parametric acceptable
-   - Clear departures → Use nonparametric
+   - No → Start with **nonparametric**.
+   - Yes → Continue.
 
-3. **Is the sample size small (n < 30)?**
-   
-   - Yes and model credible → Parametric may help
-   - Yes and model uncertain → Be cautious with either approach
+2. **Do basic diagnostics support the model (shape, tails, support)?**
 
-4. **Does the statistic involve distributional shape (tails, skewness)?**
-   
-   - Yes → Parametric assumptions matter more
-   - No (just location) → Either approach often works
+   - Clear departures (skewness, multimodality, heavy tails, truncation) → Prefer **nonparametric** or revise the model.
+   - Diagnostics look reasonable → Continue.
 
-5. **When in doubt**: Run both. If results differ substantially, investigate why.
+3. **Is the sample size small (:math:`n \lesssim 30`)?**
+
+   - Yes and model credible → **Parametric** often improves efficiency and stability.
+   - Yes and model uncertain → Prefer **nonparametric**, and treat parametric as a sensitivity check only.
+
+4. **Is the target sensitive to tails or support (extremes, thresholds, quantiles)?**
+
+   - Yes → Parametric assumptions matter more; validate aggressively and consider robust or tail-appropriate models.
+   - No → Either method may work; compare as a robustness check.
+
+5. **When in doubt**: Run both. If results differ materially, diagnose why (model fit, tails, boundaries, dependence).
 
 .. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_4_fig08_decision_framework.png
    :alt: Decision framework flowchart for choosing between parametric and nonparametric bootstrap
    :align: center
    :width: 95%
 
-   **Figure 4.4.8**: Decision framework for choosing between parametric and nonparametric bootstrap. Start with model knowledge, check sample size and diagnostics, then select method. The key insight: parametric trades robustness for efficiency---when in doubt, start with nonparametric and compare.
-
+   **Figure 4.4.8**: Decision framework for choosing between parametric and nonparametric bootstrap. Parametric bootstrap trades robustness for efficiency. A practical default is to start with nonparametric and use parametric only when the model is credible and diagnostics support it.
 
 .. admonition:: Practical Recommendation
    :class: tip
 
-   **Default strategy**: Start with nonparametric bootstrap for robustness. Use parametric bootstrap when:
-   
-   1. You have good reason to trust the parametric model
-   2. Sample size is small and model is well-established
-   3. You need the efficiency gain (e.g., multiple testing corrections)
-   4. Nonparametric bootstrap produces problematic results (boundary issues, extreme values)
+   **Default**: Start with **nonparametric** for robustness, then compare with a parametric bootstrap if a credible model exists.
+
+   Prefer **parametric bootstrap** when:
+
+   1. You have a well-justified parametric family for :math:`F`
+   2. Diagnostics do not show clear shape or tail conflicts
+   3. :math:`n` is small and efficiency matters
+
+   Use **special remedies** near boundaries or extremes (for either method):
+
+   - Exact theory when available (order statistics, known pivots)
+   - Bias-corrected estimators (e.g., :math:`\hat\theta_{bc} = \frac{n+1}{n} X_{(n)}`)
+   - m-out-of-n bootstrap or subsampling for boundary or extreme-value functionals
 
 
 Practical Considerations
