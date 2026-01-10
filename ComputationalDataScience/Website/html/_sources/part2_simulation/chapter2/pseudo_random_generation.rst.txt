@@ -1,0 +1,887 @@
+.. _pseudo-random-generation:
+
+Pseudo-Random Number Generation
+================================
+
+At the heart of every Monte Carlo simulation lies a fundamental paradox: we use deterministic algorithms to generate sequences that appear random. Pseudo-random number generators (PRNGs) resolve this paradox by producing deterministic sequences that pass statistical tests for randomness, providing the foundation upon which all computational statistics and simulation methods rest.
+
+The challenge of generating high-quality pseudo-random numbers extends far beyond simple uniformity. Modern applications demand generators that are fast, have enormous periods, pass batteries of statistical tests, and maintain their properties even when used in parallel computing environments. A poor PRNG can silently corrupt simulation results, making the understanding of these algorithms essential for any serious practitioner of computational methods.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand** the mathematical structure of PRNGs and their deterministic nature
+   • **Implement** classical algorithms like Linear Congruential Generators and Mersenne Twister
+   • **Evaluate** PRNG quality using statistical test suites
+   • **Apply** best practices for seed management and parallel random number generation
+
+Foundations of Pseudo-Randomness
+---------------------------------
+
+True randomness is a luxury computers cannot afford. Instead, we create the illusion of randomness through carefully designed deterministic algorithms.
+
+Mathematical Definition
+~~~~~~~~~~~~~~~~~~~~~~~
+
+**Definition**: A uniform pseudo-random number generator is an algorithm which, starting from an initial value u₀ (the seed) and a transformation D, produces a sequence:
+
+.. math::
+
+   u_i = D^i(u_0), \quad i = 1, 2, 3, ...
+
+For all practical n, the values u₁, u₂, ..., uₙ should reproduce the behavior of an i.i.d. sample of uniform random variables on [0, 1].
+
+More formally, we test the hypothesis:
+
+.. math::
+
+   H_0: \text{Joint law of } (U_1, ..., U_n) \sim \text{Uniform}[0,1]^n
+
+against:
+
+.. math::
+
+   H_a: \text{The joint law differs from i.i.d. uniform}
+
+The Deterministic Paradox
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PRNGs are entirely deterministic—given the same seed, they produce identical sequences. This property is both a blessing and a curse:
+
+**Advantages**:
+- Reproducibility for debugging and verification
+- Ability to replay simulations exactly
+- Control over random streams in parallel computing
+
+**Challenges**:
+- Finite period (sequences eventually repeat)
+- Correlations between successive values
+- Vulnerability to poor seed choices
+
+Python Implementation Framework
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   from abc import ABC, abstractmethod
+   import matplotlib.pyplot as plt
+   from typing import Union, List, Tuple
+   
+   class PRNG(ABC):
+       """
+       Abstract base class for pseudo-random number generators.
+       """
+       
+       def __init__(self, seed: int = None):
+           """
+           Initialize PRNG with seed.
+           
+           Parameters
+           ----------
+           seed : int
+               Initial seed value. If None, use system time.
+           """
+           if seed is None:
+               import time
+               seed = int(time.time() * 1000000) % (2**32)
+           
+           self.initial_seed = seed
+           self.state = seed
+           self.counter = 0
+       
+       @abstractmethod
+       def next_int(self) -> int:
+           """Generate next integer in sequence."""
+           pass
+       
+       def next_uniform(self) -> float:
+           """Generate next uniform random number in [0, 1)."""
+           return self.next_int() / self.max_int
+       
+       def generate(self, n: int) -> np.ndarray:
+           """Generate n uniform random numbers."""
+           return np.array([self.next_uniform() for _ in range(n)])
+       
+       def reset(self):
+           """Reset generator to initial seed."""
+           self.state = self.initial_seed
+           self.counter = 0
+       
+       @property
+       @abstractmethod
+       def max_int(self) -> int:
+           """Maximum integer value generator can produce."""
+           pass
+       
+       @property
+       @abstractmethod
+       def period(self) -> int:
+           """Period of the generator."""
+           pass
+
+Linear Congruential Generators
+-------------------------------
+
+Linear Congruential Generators (LCGs) are the workhorses of pseudo-random generation, simple yet surprisingly effective when properly parameterized.
+
+Mathematical Structure
+~~~~~~~~~~~~~~~~~~~~~~
+
+An LCG is defined by the recurrence:
+
+.. math::
+
+   X_{n+1} = (a \cdot X_n + c) \bmod m
+
+where:
+- m > 0 is the modulus
+- 0 < a < m is the multiplier  
+- 0 ≤ c < m is the increment
+- 0 ≤ X₀ < m is the seed
+
+The period is at most m, achieved when parameters satisfy the Hull-Dobell conditions:
+1. c and m are relatively prime
+2. a - 1 is divisible by all prime factors of m
+3. If m is divisible by 4, then a - 1 is divisible by 4
+
+Implementation and Analysis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   class LCG(PRNG):
+       """
+       Linear Congruential Generator.
+       
+       Classic parameters from various implementations:
+       - MINSTD: a=48271, c=0, m=2^31-1 (Park & Miller)
+       - RANDU: a=65539, c=0, m=2^31 (historically bad!)
+       - Numerical Recipes: a=1664525, c=1013904223, m=2^32
+       """
+       
+       def __init__(self, seed=None, a=1664525, c=1013904223, m=2**32):
+           super().__init__(seed)
+           self.a = a
+           self.c = c
+           self.m = m
+           
+           # Validate parameters
+           assert 0 < a < m, "Multiplier must be in (0, m)"
+           assert 0 <= c < m, "Increment must be in [0, m)"
+           assert 0 <= self.state < m, "Seed must be in [0, m)"
+       
+       def next_int(self) -> int:
+           """Generate next integer using LCG formula."""
+           self.state = (self.a * self.state + self.c) % self.m
+           self.counter += 1
+           return self.state
+       
+       @property
+       def max_int(self) -> int:
+           return self.m - 1
+       
+       @property
+       def period(self) -> int:
+           """Theoretical maximum period."""
+           if self.c == 0:
+               return self.m // 4  # Typical for multiplicative LCG
+           return self.m  # Full period if Hull-Dobell conditions met
+       
+       def detect_period(self, max_iterations=10**7) -> int:
+           """Empirically detect the actual period."""
+           self.reset()
+           initial_state = self.state
+           
+           for i in range(1, max_iterations):
+               self.next_int()
+               if self.state == initial_state:
+                   return i
+           
+           return -1  # Period not found within max_iterations
+
+.. admonition:: Example 💡: The Infamous RANDU Generator
+   :class: note
+
+   **RANDU** was widely used in the 1960s-70s but has catastrophic flaws. Let's visualize why it fails:
+   
+   .. code-block:: python
+   
+      def visualize_lcg_correlations():
+          """Demonstrate correlations in LCGs using 3D plots."""
+          
+          fig = plt.figure(figsize=(15, 5))
+          
+          # RANDU - historically bad
+          randu = LCG(seed=1, a=65539, c=0, m=2**31)
+          
+          # Good LCG - Numerical Recipes
+          good_lcg = LCG(seed=1, a=1664525, c=1013904223, m=2**32)
+          
+          # Generate triplets
+          n_points = 10000
+          
+          for idx, (lcg, name) in enumerate([(randu, 'RANDU (Bad)'), 
+                                             (good_lcg, 'Good LCG')]):
+              lcg.reset()
+              points = lcg.generate(n_points * 3).reshape(-1, 3)
+              
+              ax = fig.add_subplot(1, 2, idx+1, projection='3d')
+              ax.scatter(points[:1000, 0], points[:1000, 1], 
+                        points[:1000, 2], alpha=0.3, s=1)
+              ax.set_title(f'{name}: 3D Structure')
+              ax.set_xlabel('$U_i$')
+              ax.set_ylabel('$U_{i+1}$')
+              ax.set_zlabel('$U_{i+2}$')
+          
+          plt.tight_layout()
+          plt.show()
+          
+          # Spectral test results
+          print("RANDU: Points lie on only 15 parallel planes in 3D!")
+          print("This catastrophic correlation makes it unsuitable for Monte Carlo.")
+   
+   **Result**: RANDU's points fall on just 15 parallel planes in 3D space, causing severe correlations.
+
+Mersenne Twister
+----------------
+
+The Mersenne Twister MT19937 is the gold standard for non-cryptographic applications, offering an enormous period and excellent statistical properties.
+
+Algorithm Structure
+~~~~~~~~~~~~~~~~~~~
+
+The Mersenne Twister is based on a matrix linear recurrence over a finite binary field:
+
+.. math::
+
+   x_{k+n} = x_{k+m} \oplus (x_k^u | x_{k+1}^l) A
+
+where:
+- n = 624 is the degree of recurrence
+- m = 397 is the middle word
+- A is a special matrix for efficient computation
+- Period: 2^{19937} - 1 (a Mersenne prime)
+
+.. code-block:: python
+
+   class MersenneTwister(PRNG):
+       """
+       Mersenne Twister MT19937 implementation.
+       """
+       
+       def __init__(self, seed=None):
+           super().__init__(seed)
+           
+           # MT19937 parameters
+           self.w, self.n, self.m, self.r = 32, 624, 397, 31
+           self.a = 0x9908B0DF
+           self.u, self.d = 11, 0xFFFFFFFF
+           self.s, self.b = 7, 0x9D2C5680
+           self.t, self.c = 15, 0xEFC60000
+           self.l = 18
+           self.f = 1812433253
+           
+           # Initialize state array
+           self.MT = [0] * self.n
+           self.index = self.n + 1
+           self.lower_mask = (1 << self.r) - 1
+           self.upper_mask = (~self.lower_mask) & 0xFFFFFFFF
+           
+           self.seed_mt(seed)
+       
+       def seed_mt(self, seed):
+           """Initialize generator state from seed."""
+           self.MT[0] = seed
+           for i in range(1, self.n):
+               self.MT[i] = (self.f * (self.MT[i-1] ^ (self.MT[i-1] >> (self.w-2))) + i) & 0xFFFFFFFF
+           self.index = self.n
+       
+       def extract_number(self) -> int:
+           """Extract tempered pseudorandom number."""
+           if self.index >= self.n:
+               if self.index > self.n:
+                   raise Exception("Generator not seeded")
+               self.twist()
+           
+           y = self.MT[self.index]
+           y = y ^ ((y >> self.u) & self.d)
+           y = y ^ ((y << self.s) & self.b)
+           y = y ^ ((y << self.t) & self.c)
+           y = y ^ (y >> self.l)
+           
+           self.index += 1
+           return y & 0xFFFFFFFF
+       
+       def twist(self):
+           """Generate next n values."""
+           for i in range(self.n):
+               x = (self.MT[i] & self.upper_mask) + (self.MT[(i+1) % self.n] & self.lower_mask)
+               xA = x >> 1
+               if x & 0x1:
+                   xA = xA ^ self.a
+               self.MT[i] = self.MT[(i + self.m) % self.n] ^ xA
+           self.index = 0
+       
+       def next_int(self) -> int:
+           return self.extract_number()
+       
+       @property
+       def max_int(self) -> int:
+           return 2**32 - 1
+       
+       @property  
+       def period(self) -> int:
+           return 2**19937 - 1
+
+Statistical Testing of PRNGs
+-----------------------------
+
+A PRNG must pass rigorous statistical tests to be considered suitable for Monte Carlo simulations.
+
+Test Suite Framework
+~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   class PRNGTester:
+       """
+       Statistical test suite for PRNGs.
+       """
+       
+       def __init__(self, generator: PRNG):
+           self.generator = generator
+           self.test_results = {}
+       
+       def chi_square_uniformity(self, n_samples=10000, n_bins=100):
+           """
+           Chi-square test for uniformity.
+           
+           H0: Samples are uniformly distributed on [0,1]
+           """
+           from scipy import stats
+           
+           samples = self.generator.generate(n_samples)
+           observed, _ = np.histogram(samples, bins=n_bins, range=(0, 1))
+           expected = n_samples / n_bins
+           
+           chi2_stat = np.sum((observed - expected)**2 / expected)
+           p_value = 1 - stats.chi2.cdf(chi2_stat, df=n_bins-1)
+           
+           self.test_results['uniformity'] = {
+               'statistic': chi2_stat,
+               'p_value': p_value,
+               'pass': p_value > 0.01
+           }
+           
+           return p_value > 0.01
+       
+       def serial_correlation_test(self, n_samples=10000, lag=1):
+           """
+           Test for serial correlation at specified lag.
+           
+           H0: No correlation between U_i and U_{i+lag}
+           """
+           samples = self.generator.generate(n_samples + lag)
+           
+           # Compute correlation
+           x = samples[:-lag]
+           y = samples[lag:]
+           correlation = np.corrcoef(x, y)[0, 1]
+           
+           # Standard error under null hypothesis
+           se = 1 / np.sqrt(n_samples)
+           z_stat = correlation / se
+           p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+           
+           self.test_results[f'correlation_lag{lag}'] = {
+               'correlation': correlation,
+               'p_value': p_value,
+               'pass': p_value > 0.01
+           }
+           
+           return p_value > 0.01
+       
+       def runs_test(self, n_samples=10000):
+           """
+           Wald-Wolfowitz runs test for independence.
+           
+           H0: Sequence is random (no patterns)
+           """
+           samples = self.generator.generate(n_samples)
+           median = np.median(samples)
+           
+           # Convert to binary sequence
+           binary = (samples > median).astype(int)
+           
+           # Count runs
+           runs = 1
+           for i in range(1, len(binary)):
+               if binary[i] != binary[i-1]:
+                   runs += 1
+           
+           # Expected runs and variance under H0
+           n1 = np.sum(binary)
+           n2 = n_samples - n1
+           
+           expected_runs = (2 * n1 * n2) / n_samples + 1
+           variance = (2 * n1 * n2 * (2 * n1 * n2 - n_samples)) / \
+                      (n_samples**2 * (n_samples - 1))
+           
+           # Standardized test statistic
+           z_stat = (runs - expected_runs) / np.sqrt(variance)
+           p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+           
+           self.test_results['runs'] = {
+               'runs': runs,
+               'expected': expected_runs,
+               'p_value': p_value,
+               'pass': p_value > 0.01
+           }
+           
+           return p_value > 0.01
+       
+       def spectral_test(self, dimension=2, n_samples=1000):
+           """
+           Simplified spectral test - looks for hyperplane structure.
+           
+           Tests if points are too regularly distributed.
+           """
+           samples = self.generator.generate(n_samples * dimension)
+           points = samples.reshape(-1, dimension)
+           
+           # Compute distances to nearest neighbors
+           from scipy.spatial import distance_matrix
+           
+           dist_matrix = distance_matrix(points[:100], points[:100])
+           np.fill_diagonal(dist_matrix, np.inf)
+           nearest_distances = np.min(dist_matrix, axis=1)
+           
+           # Test if distances are too regular (bad)
+           cv = np.std(nearest_distances) / np.mean(nearest_distances)
+           
+           # For true random points, CV should be around 0.5
+           self.test_results[f'spectral_{dimension}d'] = {
+               'cv': cv,
+               'pass': 0.3 < cv < 0.7  # Rough bounds
+           }
+           
+           return 0.3 < cv < 0.7
+       
+       def birthday_spacing_test(self, n_samples=1000, year_length=365):
+           """
+           Birthday spacing test for detecting patterns.
+           """
+           # Generate "birthdays"
+           samples = self.generator.generate(n_samples)
+           birthdays = np.floor(samples * year_length).astype(int)
+           birthdays = np.sort(birthdays)
+           
+           # Compute spacings
+           spacings = np.diff(birthdays)
+           spacings = spacings[spacings > 0]  # Remove zeros
+           
+           # Test if spacings follow expected distribution
+           from scipy import stats
+           _, p_value = stats.kstest(spacings, 
+                                    lambda x: 1 - np.exp(-x/year_length))
+           
+           self.test_results['birthday'] = {
+               'p_value': p_value,
+               'pass': p_value > 0.01
+           }
+           
+           return p_value > 0.01
+       
+       def run_all_tests(self, verbose=True):
+           """Run complete test suite."""
+           tests = [
+               ('Uniformity', self.chi_square_uniformity),
+               ('Serial Correlation', self.serial_correlation_test),
+               ('Runs Test', self.runs_test),
+               ('Spectral Test 2D', lambda: self.spectral_test(2)),
+               ('Spectral Test 3D', lambda: self.spectral_test(3)),
+               ('Birthday Spacing', self.birthday_spacing_test)
+           ]
+           
+           if verbose:
+               print("PRNG Statistical Test Suite")
+               print("=" * 50)
+           
+           all_pass = True
+           for name, test_func in tests:
+               passed = test_func()
+               all_pass = all_pass and passed
+               
+               if verbose:
+                   status = "✓ PASS" if passed else "✗ FAIL"
+                   print(f"{name:.<30} {status}")
+           
+           if verbose:
+               print("=" * 50)
+               print(f"Overall: {'PASS' if all_pass else 'FAIL'}")
+           
+           return all_pass
+
+NIST Test Suite
+~~~~~~~~~~~~~~~
+
+The NIST Statistical Test Suite (SP 800-22) provides comprehensive randomness testing:
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   Passing statistical tests is necessary but not sufficient for cryptographic security. PRNGs suitable for Monte Carlo may be completely broken for cryptographic use.
+   
+   **Monte Carlo Requirements**:
+   - Statistical uniformity and independence
+   - Long period
+   - Computational efficiency
+   
+   **Additional Cryptographic Requirements**:
+   - Unpredictability (cannot determine next value from previous values)
+   - Backtracking resistance
+   - Side-channel resistance
+
+Modern PRNGs and Best Practices
+--------------------------------
+
+Contemporary applications demand PRNGs that work well in parallel environments and provide independent streams.
+
+PCG Family
+~~~~~~~~~~
+
+The Permuted Congruential Generator (PCG) family offers excellent statistical properties with small state:
+
+.. code-block:: python
+
+   class PCG32(PRNG):
+       """
+       PCG32 - Fast, space-efficient, statistically excellent.
+       """
+       
+       def __init__(self, seed=None, stream=None):
+           super().__init__(seed)
+           self.state = seed
+           self.inc = (stream or 1) * 2 + 1  # Must be odd
+       
+       def next_int(self) -> int:
+           """PCG32 generation algorithm."""
+           # LCG step
+           oldstate = self.state
+           self.state = oldstate * 6364136223846793005 + self.inc
+           
+           # Permutation step (XSH RR)
+           xorshifted = ((oldstate >> 18) ^ oldstate) >> 27
+           rot = oldstate >> 59
+           
+           result = (xorshifted >> rot) | (xorshifted << ((-rot) & 31))
+           return result & 0xFFFFFFFF
+       
+       @property
+       def max_int(self) -> int:
+           return 2**32 - 1
+       
+       @property
+       def period(self) -> int:
+           return 2**64  # Per stream
+
+Parallel Random Number Generation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   class ParallelPRNG:
+       """
+       Manager for parallel random number generation.
+       """
+       
+       def __init__(self, base_seed=12345, n_streams=4):
+           """
+           Initialize parallel PRNG streams.
+           
+           Uses different techniques:
+           1. Random spacing
+           2. Leapfrog  
+           3. Independent streams (PCG)
+           """
+           self.base_seed = base_seed
+           self.n_streams = n_streams
+           self.generators = []
+           
+           # Method 1: Random spacing (skip-ahead)
+           # Good for LCGs with known skip-ahead formulas
+           
+           # Method 2: Different seeds (simple but risky)
+           # Can lead to overlapping sequences
+           
+           # Method 3: Independent streams (recommended)
+           for i in range(n_streams):
+               gen = PCG32(seed=base_seed, stream=i)
+               self.generators.append(gen)
+       
+       def parallel_monte_carlo(self, func, n_samples_per_stream):
+           """
+           Run Monte Carlo in parallel with independent streams.
+           """
+           from multiprocessing import Pool
+           
+           def worker(stream_id):
+               """Worker function for one stream."""
+               gen = self.generators[stream_id]
+               samples = gen.generate(n_samples_per_stream)
+               return np.mean([func(x) for x in samples])
+           
+           with Pool(self.n_streams) as pool:
+               results = pool.map(worker, range(self.n_streams))
+           
+           # Combine results
+           return np.mean(results), np.std(results) / np.sqrt(self.n_streams)
+
+Seed Management
+~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   class SeedManager:
+       """
+       Centralized seed management for reproducible simulations.
+       """
+       
+       def __init__(self, master_seed=None):
+           """Initialize with master seed."""
+           if master_seed is None:
+               master_seed = np.random.randint(2**32)
+           
+           self.master_seed = master_seed
+           self.seed_counter = 0
+           self.seed_history = {'master': master_seed}
+       
+       def get_seed(self, identifier=None):
+           """
+           Get a unique seed for a simulation component.
+           
+           Parameters
+           ----------
+           identifier : str
+               Optional identifier for this seed
+           """
+           # Generate seed from master + counter
+           self.seed_counter += 1
+           seed = (self.master_seed + self.seed_counter * 1000000007) % (2**32)
+           
+           if identifier:
+               self.seed_history[identifier] = seed
+           
+           return seed
+       
+       def get_numpy_rng(self, identifier=None):
+           """Get a numpy RandomState with managed seed."""
+           return np.random.RandomState(self.get_seed(identifier))
+       
+       def save_state(self, filename):
+           """Save seed state for reproducibility."""
+           import json
+           with open(filename, 'w') as f:
+               json.dump({
+                   'master_seed': self.master_seed,
+                   'counter': self.seed_counter,
+                   'history': self.seed_history
+               }, f)
+       
+       @classmethod
+       def load_state(cls, filename):
+           """Load seed state from file."""
+           import json
+           with open(filename, 'r') as f:
+               data = json.load(f)
+           
+           manager = cls(data['master_seed'])
+           manager.seed_counter = data['counter']
+           manager.seed_history = data['history']
+           return manager
+
+Practical Considerations
+------------------------
+
+Quality vs Speed Trade-offs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def benchmark_prngs(n_samples=10**7):
+       """Benchmark different PRNG implementations."""
+       import time
+       
+       generators = [
+           ('Python random', lambda: np.random.random(n_samples)),
+           ('NumPy MT19937', lambda: np.random.RandomState(42).random(n_samples)),
+           ('LCG', lambda: LCG(42).generate(n_samples)),
+           ('PCG32', lambda: PCG32(42).generate(n_samples)),
+       ]
+       
+       print(f"Generating {n_samples:,} random numbers...")
+       print("-" * 50)
+       
+       for name, gen_func in generators:
+           start = time.time()
+           samples = gen_func()
+           elapsed = time.time() - start
+           
+           # Basic quality check - mean and std
+           mean = np.mean(samples)
+           std = np.std(samples)
+           
+           print(f"{name:.<25} {elapsed:>6.3f}s")
+           print(f"  Mean: {mean:.6f} (expect 0.5)")
+           print(f"  Std:  {std:.6f} (expect {1/np.sqrt(12):.6f})")
+           print(f"  Rate: {n_samples/elapsed/1e6:.1f} M samples/sec")
+           print()
+
+Common Mistakes to Avoid
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Never use system time as seed in production!** This makes results non-reproducible and can lead to correlation in distributed systems started simultaneously.
+   
+   **Instead**: Use a seed management system:
+   
+   .. code-block:: python
+   
+      # Bad
+      np.random.seed(int(time.time()))
+      
+      # Good
+      seed_manager = SeedManager(master_seed=42)
+      rng = seed_manager.get_numpy_rng('experiment_1')
+
+Testing Your Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def visual_prng_test(generator, n_points=10000):
+       """Visual tests for PRNG quality."""
+       
+       fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+       
+       # Test 1: 2D scatter
+       generator.reset()
+       points = generator.generate(n_points * 2).reshape(-1, 2)
+       axes[0, 0].scatter(points[:, 0], points[:, 1], alpha=0.3, s=1)
+       axes[0, 0].set_title('2D Uniform Scatter')
+       axes[0, 0].set_xlabel('$U_i$')
+       axes[0, 0].set_ylabel('$U_{i+1}$')
+       
+       # Test 2: Histogram
+       generator.reset()
+       samples = generator.generate(n_points)
+       axes[0, 1].hist(samples, bins=50, density=True, alpha=0.7)
+       axes[0, 1].axhline(y=1, color='r', linestyle='--', label='Expected')
+       axes[0, 1].set_title('Uniformity Test')
+       axes[0, 1].set_xlabel('Value')
+       axes[0, 1].set_ylabel('Density')
+       axes[0, 1].legend()
+       
+       # Test 3: Autocorrelation
+       from statsmodels.graphics.tsaplots import plot_acf
+       generator.reset()
+       samples = generator.generate(1000)
+       plot_acf(samples, ax=axes[0, 2], lags=50)
+       axes[0, 2].set_title('Autocorrelation Function')
+       
+       # Test 4: Gap test
+       generator.reset()
+       samples = generator.generate(n_points)
+       gaps = np.diff(np.sort(samples))
+       axes[1, 0].hist(gaps * n_points, bins=50, density=True, alpha=0.7)
+       
+       # Theoretical exponential
+       x = np.linspace(0, 5, 100)
+       axes[1, 0].plot(x, np.exp(-x), 'r--', label='Exponential(1)')
+       axes[1, 0].set_title('Gap Test')
+       axes[1, 0].set_xlabel('Scaled Gap')
+       axes[1, 0].set_ylabel('Density')
+       axes[1, 0].legend()
+       
+       # Test 5: Running mean
+       generator.reset()
+       samples = generator.generate(n_points)
+       running_mean = np.cumsum(samples) / np.arange(1, n_points + 1)
+       axes[1, 1].plot(running_mean, alpha=0.7)
+       axes[1, 1].axhline(y=0.5, color='r', linestyle='--')
+       axes[1, 1].fill_between(range(n_points),
+                               0.5 - 1.96/np.sqrt(np.arange(1, n_points+1)),
+                               0.5 + 1.96/np.sqrt(np.arange(1, n_points+1)),
+                               alpha=0.2, color='red', label='95% CI')
+       axes[1, 1].set_title('Convergence of Mean')
+       axes[1, 1].set_xlabel('Sample Size')
+       axes[1, 1].set_ylabel('Running Mean')
+       axes[1, 1].legend()
+       
+       # Test 6: Spectral test (3D)
+       generator.reset()
+       points_3d = generator.generate(3000).reshape(-1, 3)
+       ax = fig.add_subplot(2, 3, 6, projection='3d')
+       ax.scatter(points_3d[:, 0], points_3d[:, 1], points_3d[:, 2], 
+                 alpha=0.3, s=1)
+       ax.set_title('3D Structure')
+       
+       plt.tight_layout()
+       plt.show()
+
+Bringing It All Together
+-------------------------
+
+Pseudo-random number generation forms the bedrock of Monte Carlo methods. While perfect randomness remains computationally unattainable, modern PRNGs provide sequences that are indistinguishable from true randomness for practical purposes. The key lies in choosing appropriate generators for specific applications and managing them correctly.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: PRNGs are deterministic algorithms producing sequences that mimic randomness
+   2. **Computational insight**: Quality involves period length, uniformity, independence, and dimensional distribution
+   3. **Practical application**: Use established generators (MT19937, PCG) rather than rolling your own
+   4. **Connection**: Seed management and parallel streams are crucial for reproducible, scalable simulations
+
+Exercises
+~~~~~~~~~
+
+1. **Conceptual Understanding**: Prove that an LCG with parameters a = 1, c = 1, m = 2^n has period m. Show that despite having full period, this is a terrible PRNG. What patterns would you observe?
+
+2. **Implementation**: Implement the Middle Square Method (von Neumann, 1946):
+   
+   .. code-block:: python
+   
+      def middle_square(seed, n_digits=4):
+          """
+          Von Neumann's middle square method.
+          
+          1. Square the seed
+          2. Extract middle n_digits as next number
+          3. Use as new seed
+          """
+          # Your implementation here
+          pass
+   
+   Demonstrate why this method fails (hint: find seeds that lead to 0 or short cycles).
+
+3. **Analysis**: Compare the spectral properties of different LCGs:
+   
+   a) Plot successive pairs (u_i, u_{i+1}) for RANDU and a good LCG
+   b) Perform 3D spectral analysis by finding the minimum number of parallel planes
+   c) Explain why multipliers of the form a = 2^k ± 1 often perform poorly
+
+4. **Extension**: Implement a cryptographically secure PRNG (CSPRNG) using AES in counter mode:
+   
+   .. code-block:: python
+   
+      from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+      
+      class AES_CSPRNG:
+          """AES-based CSPRNG suitable for cryptographic applications."""
+          # Your implementation here
+          pass
+   
+   Compare its speed and statistical properties with MT19937. When would you use each?

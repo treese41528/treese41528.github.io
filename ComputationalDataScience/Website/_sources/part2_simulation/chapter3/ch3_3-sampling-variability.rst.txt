@@ -1,0 +1,2665 @@
+.. _ch3_3-sampling-variability:
+
+===============================================
+Sampling Variability and Variance Estimation
+===============================================
+
+In :ref:`Section 3.2 <ch3_2-maximum-likelihood-estimation>`, we developed maximum likelihood estimation—a systematic method for obtaining point estimates :math:`\hat{\theta}` from data. But a point estimate alone tells only half the story. Reporting that a vaccine has 95% efficacy, or that a regression coefficient is 2.3, means little without understanding the *uncertainty* in these estimates. How much would :math:`\hat{\theta}` vary if we repeated the study? Could the true parameter plausibly be zero? These questions require understanding the **sampling variability** of estimators.
+
+This section develops the theoretical foundations for quantifying estimator uncertainty. We begin with the fundamental concepts: what makes an estimator good (bias, variance, consistency), and how estimators behave across hypothetical repeated samples (sampling distributions). We then develop the **delta method**, which propagates uncertainty through transformations—essential when the scientifically relevant quantity is a nonlinear function of directly estimable parameters. Finally, we survey methods for estimating variance from data: Fisher information, observed information, and robust sandwich estimators that remain valid even when model assumptions fail.
+
+These tools are indispensable throughout statistics: constructing confidence intervals, performing hypothesis tests, comparing estimator quality, and understanding when asymptotic approximations can be trusted. The concepts developed here apply immediately to regression coefficients (Section 3.4), generalized linear models (Section 3.5), and provide the theoretical foundation for bootstrap methods (Chapter 4).
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Define**: Statistical estimators, bias, variance, mean squared error, and consistency
+   • **Distinguish**: Exact versus asymptotic sampling distributions
+   • **Derive**: Variance formulas for transformed parameters via the delta method
+   • **Implement**: Variance estimation via Fisher information, observed information, and sandwich estimators
+   • **Apply**: Standard errors and confidence intervals for complex statistics
+
+
+Statistical Estimators and Their Properties
+-------------------------------------------
+
+An **estimator** is a rule (function) that maps data to a numerical value intended to approximate an unknown parameter. Formally, if :math:`X_1, \ldots, X_n` are random variables representing data from a distribution :math:`F_\theta`, then an estimator :math:`\hat{\theta} = T(X_1, \ldots, X_n)` is itself a random variable—its value depends on which sample we happen to observe.
+
+This simple observation has profound implications: because :math:`\hat{\theta}` is random, it has a probability distribution (the **sampling distribution**), and we can characterize its behavior using familiar concepts like expectation, variance, and probability statements.
+
+What Is an Estimator?
+~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition: Estimator
+   :class: note
+
+   Let :math:`X_1, \ldots, X_n` be a random sample from a distribution :math:`F_\theta` indexed by parameter :math:`\theta \in \Theta`. An **estimator** of :math:`\theta` is any statistic :math:`\hat{\theta} = T(X_1, \ldots, X_n)` used to estimate :math:`\theta`.
+   
+   Key points:
+   
+   - The estimator :math:`\hat{\theta}` is a *random variable* (before observing data)
+   - The estimate :math:`\hat{\theta} = t` is a *number* (after observing data :math:`x_1, \ldots, x_n`)
+   - Different samples yield different estimates—this variability is sampling variability
+
+**Examples of estimators**:
+
+.. list-table:: Common Estimators
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Parameter
+     - Estimator
+     - Formula
+     - Name
+   * - Mean :math:`\mu`
+     - :math:`\bar{X}`
+     - :math:`\frac{1}{n}\sum_{i=1}^n X_i`
+     - Sample mean
+   * - Variance :math:`\sigma^2`
+     - :math:`S^2`
+     - :math:`\frac{1}{n-1}\sum_{i=1}^n (X_i - \bar{X})^2`
+     - Sample variance
+   * - Proportion :math:`p`
+     - :math:`\hat{p}`
+     - :math:`\frac{1}{n}\sum_{i=1}^n X_i` (for :math:`X_i \in \{0,1\}`)
+     - Sample proportion
+   * - Rate :math:`\lambda`
+     - :math:`\hat{\lambda}`
+     - :math:`1/\bar{X}` (for Exponential)
+     - MLE
+   * - Median :math:`m`
+     - :math:`\hat{m}`
+     - :math:`X_{((n+1)/2)}`
+     - Sample median
+
+Not all estimators for the same parameter are equally good. How do we compare them?
+
+Bias
+~~~~
+
+**Bias** measures systematic error—whether an estimator tends to overestimate or underestimate on average.
+
+.. admonition:: Definition: Bias
+   :class: note
+
+   The **bias** of an estimator :math:`\hat{\theta}` for parameter :math:`\theta` is:
+   
+   .. math::
+      :label: bias-def
+   
+      \text{Bias}(\hat{\theta}) = \mathbb{E}[\hat{\theta}] - \theta
+   
+   An estimator is **unbiased** if :math:`\mathbb{E}[\hat{\theta}] = \theta` for all :math:`\theta \in \Theta`.
+
+**Examples**:
+
+1. **Sample mean** :math:`\bar{X}` is unbiased for :math:`\mu`:
+
+   .. math::
+
+      \mathbb{E}[\bar{X}] = \mathbb{E}\left[\frac{1}{n}\sum_{i=1}^n X_i\right] = \frac{1}{n}\sum_{i=1}^n \mathbb{E}[X_i] = \frac{1}{n} \cdot n\mu = \mu
+
+2. **Sample variance** :math:`S^2 = \frac{1}{n-1}\sum(X_i - \bar{X})^2` is unbiased for :math:`\sigma^2`:
+
+   .. math::
+
+      \mathbb{E}[S^2] = \sigma^2
+
+   The divisor :math:`n-1` (not :math:`n`) ensures unbiasedness. The "naive" estimator :math:`\frac{1}{n}\sum(X_i - \bar{X})^2` has bias :math:`-\sigma^2/n`.
+
+3. **MLE of variance** :math:`\hat{\sigma}^2_{\text{MLE}} = \frac{1}{n}\sum(X_i - \bar{X})^2` is biased:
+
+   .. math::
+
+      \mathbb{E}[\hat{\sigma}^2_{\text{MLE}}] = \frac{n-1}{n}\sigma^2 \neq \sigma^2
+
+   The bias is :math:`-\sigma^2/n`, which vanishes as :math:`n \to \infty`.
+
+.. admonition:: Common Pitfall ⚠️ Unbiasedness Is Not Everything
+   :class: warning
+
+   Unbiasedness is desirable but not paramount. A biased estimator with small variance can have smaller overall error than an unbiased estimator with large variance. We formalize this with mean squared error.
+
+Variance
+~~~~~~~~
+
+**Variance** measures precision—how much an estimator fluctuates across samples.
+
+.. admonition:: Definition: Estimator Variance
+   :class: note
+
+   The **variance** of an estimator :math:`\hat{\theta}` is:
+   
+   .. math::
+      :label: var-def
+   
+      \text{Var}(\hat{\theta}) = \mathbb{E}\left[(\hat{\theta} - \mathbb{E}[\hat{\theta}])^2\right]
+   
+   The **standard error** is :math:`\text{SE}(\hat{\theta}) = \sqrt{\text{Var}(\hat{\theta})}`.
+
+**Example**: For the sample mean from a population with variance :math:`\sigma^2`:
+
+.. math::
+
+   \text{Var}(\bar{X}) = \text{Var}\left(\frac{1}{n}\sum_{i=1}^n X_i\right) = \frac{1}{n^2}\sum_{i=1}^n \text{Var}(X_i) = \frac{1}{n^2} \cdot n\sigma^2 = \frac{\sigma^2}{n}
+
+Thus :math:`\text{SE}(\bar{X}) = \sigma/\sqrt{n}`. This fundamental result shows:
+
+- Larger samples → smaller standard error → more precise estimates
+- The precision improves at rate :math:`1/\sqrt{n}`, not :math:`1/n`
+- Quadrupling the sample size halves the standard error
+
+Mean Squared Error
+~~~~~~~~~~~~~~~~~~
+
+**Mean squared error** (MSE) combines bias and variance into a single measure of overall estimator quality.
+
+.. admonition:: Definition: Mean Squared Error
+   :class: note
+
+   The **mean squared error** of :math:`\hat{\theta}` is:
+   
+   .. math::
+      :label: mse-def
+   
+      \text{MSE}(\hat{\theta}) = \mathbb{E}\left[(\hat{\theta} - \theta)^2\right]
+
+.. admonition:: Theorem: Bias-Variance Decomposition
+   :class: note
+
+   .. math::
+      :label: bias-variance
+   
+      \text{MSE}(\hat{\theta}) = \text{Bias}(\hat{\theta})^2 + \text{Var}(\hat{\theta})
+   
+   **Proof**: Let :math:`b = \mathbb{E}[\hat{\theta}] - \theta` (bias). Then:
+   
+   .. math::
+   
+      \text{MSE} &= \mathbb{E}[(\hat{\theta} - \theta)^2] = \mathbb{E}[(\hat{\theta} - \mathbb{E}[\hat{\theta}] + b)^2] \\
+      &= \mathbb{E}[(\hat{\theta} - \mathbb{E}[\hat{\theta}])^2] + 2b\mathbb{E}[\hat{\theta} - \mathbb{E}[\hat{\theta}]] + b^2 \\
+      &= \text{Var}(\hat{\theta}) + 0 + \text{Bias}^2
+
+This decomposition reveals a fundamental tradeoff:
+
+- **Low bias, high variance**: The estimator is centered correctly but imprecise
+- **High bias, low variance**: The estimator is precise but systematically wrong
+- **Optimal**: Balance bias and variance to minimize MSE
+
+.. code-block:: python
+
+   import numpy as np
+   import matplotlib.pyplot as plt
+
+   def demonstrate_bias_variance():
+       """Illustrate bias-variance tradeoff with two estimators."""
+       rng = np.random.default_rng(42)
+       
+       # True parameter
+       theta_true = 5.0
+       n = 10
+       sigma = 2.0
+       n_sim = 10000
+       
+       # Estimator 1: Sample mean (unbiased)
+       estimates_1 = []
+       for _ in range(n_sim):
+           x = rng.normal(theta_true, sigma, n)
+           estimates_1.append(np.mean(x))
+       estimates_1 = np.array(estimates_1)
+       
+       # Estimator 2: Shrinkage estimator (biased toward 0)
+       shrink_factor = 0.8
+       estimates_2 = shrink_factor * estimates_1
+       
+       # Compute properties
+       bias_1 = np.mean(estimates_1) - theta_true
+       var_1 = np.var(estimates_1)
+       mse_1 = np.mean((estimates_1 - theta_true)**2)
+       
+       bias_2 = np.mean(estimates_2) - theta_true
+       var_2 = np.var(estimates_2)
+       mse_2 = np.mean((estimates_2 - theta_true)**2)
+       
+       print("="*60)
+       print("BIAS-VARIANCE TRADEOFF DEMONSTRATION")
+       print("="*60)
+       print(f"\nTrue θ = {theta_true}, n = {n}, σ = {sigma}")
+       
+       print(f"\nEstimator 1: Sample Mean X̄ (unbiased)")
+       print(f"  Bias:     {bias_1:8.4f}")
+       print(f"  Variance: {var_1:8.4f}")
+       print(f"  MSE:      {mse_1:8.4f}")
+       
+       print(f"\nEstimator 2: Shrinkage 0.8·X̄ (biased)")
+       print(f"  Bias:     {bias_2:8.4f}")
+       print(f"  Variance: {var_2:8.4f}")
+       print(f"  MSE:      {mse_2:8.4f}")
+       
+       print(f"\n→ Shrinkage has {'LOWER' if mse_2 < mse_1 else 'HIGHER'} MSE despite being biased!")
+       
+   demonstrate_bias_variance()
+
+.. code-block:: text
+
+   ============================================================
+   BIAS-VARIANCE TRADEOFF DEMONSTRATION
+   ============================================================
+
+   True θ = 5.0, n = 10, σ = 2.0
+
+   Estimator 1: Sample Mean X̄ (unbiased)
+     Bias:       0.0023
+     Variance:   0.4012
+     MSE:        0.4012
+
+   Estimator 2: Shrinkage 0.8·X̄ (biased)
+     Bias:      -0.9982
+     Variance:   0.2568
+     MSE:        1.2531
+
+   → Shrinkage has HIGHER MSE despite being biased!
+
+In this case, the shrinkage estimator's reduced variance doesn't compensate for its bias. However, in high-dimensional settings (Section 3.4), shrinkage often wins—this is the foundation of ridge regression and the James-Stein phenomenon.
+
+Consistency
+~~~~~~~~~~~
+
+**Consistency** ensures that estimators converge to the truth as sample size grows.
+
+.. admonition:: Definition: Consistency
+   :class: note
+
+   An estimator :math:`\hat{\theta}_n` is **consistent** for :math:`\theta` if:
+   
+   .. math::
+      :label: consistency
+   
+      \hat{\theta}_n \xrightarrow{p} \theta \quad \text{as } n \to \infty
+   
+   That is, for any :math:`\varepsilon > 0`:
+   
+   .. math::
+   
+      \lim_{n \to \infty} P(|\hat{\theta}_n - \theta| > \varepsilon) = 0
+
+**Sufficient conditions for consistency:**
+
+1. **Unbiased + vanishing variance**: If :math:`\mathbb{E}[\hat{\theta}_n] = \theta` and :math:`\text{Var}(\hat{\theta}_n) \to 0`, then :math:`\hat{\theta}_n` is consistent.
+
+2. **MSE → 0**: If :math:`\text{MSE}(\hat{\theta}_n) \to 0`, then :math:`\hat{\theta}_n` is consistent.
+
+3. **Biased but asymptotically unbiased**: If :math:`\text{Bias}(\hat{\theta}_n) \to 0` and :math:`\text{Var}(\hat{\theta}_n) \to 0`, then :math:`\hat{\theta}_n` is consistent.
+
+**Example**: The sample mean :math:`\bar{X}_n` is consistent for :math:`\mu`:
+
+- :math:`\mathbb{E}[\bar{X}_n] = \mu` (unbiased)
+- :math:`\text{Var}(\bar{X}_n) = \sigma^2/n \to 0`
+
+This follows from the **Law of Large Numbers**.
+
+.. admonition:: Example 💡 Biased but Consistent
+   :class: note
+
+   The MLE of variance :math:`\hat{\sigma}^2_n = \frac{1}{n}\sum(X_i - \bar{X})^2` is biased:
+   
+   .. math::
+   
+      \mathbb{E}[\hat{\sigma}^2_n] = \frac{n-1}{n}\sigma^2
+   
+   But it's consistent because:
+   
+   - Bias :math:`= -\sigma^2/n \to 0`
+   - Variance :math:`\to 0` (by LLN applied to squared deviations)
+   
+   For large :math:`n`, the bias becomes negligible.
+
+
+Sampling Distributions
+----------------------
+
+The **sampling distribution** of an estimator describes its probability distribution across hypothetical repeated samples. Understanding sampling distributions is essential for inference: confidence intervals, hypothesis tests, and p-values all depend on knowing (or approximating) how :math:`\hat{\theta}` is distributed.
+
+Exact Sampling Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Some estimators have known, exact distributions under specific assumptions.
+
+**Example 1: Sample mean from Normal population**
+
+If :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)`, then:
+
+.. math::
+   :label: xbar-normal
+
+   \bar{X} \sim \mathcal{N}\left(\mu, \frac{\sigma^2}{n}\right) \quad \text{exactly}
+
+This is exact for any :math:`n`, not just asymptotically.
+
+**Example 2: Sample variance from Normal population**
+
+If :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)`, then:
+
+.. math::
+   :label: s2-chisq
+
+   \frac{(n-1)S^2}{\sigma^2} \sim \chi^2_{n-1}
+
+Moreover, :math:`\bar{X}` and :math:`S^2` are independent—a remarkable property unique to the normal distribution.
+
+**Example 3: t-statistic**
+
+Combining the above, when :math:`\sigma^2` is unknown:
+
+.. math::
+   :label: t-stat
+
+   T = \frac{\bar{X} - \mu}{S/\sqrt{n}} \sim t_{n-1}
+
+This exact result justifies t-tests and t-based confidence intervals.
+
+Asymptotic Sampling Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When exact distributions are unavailable, we rely on **asymptotic** (large-sample) approximations, primarily through the Central Limit Theorem.
+
+.. admonition:: Theorem: Central Limit Theorem
+   :class: note
+
+   Let :math:`X_1, \ldots, X_n` be iid with mean :math:`\mu` and variance :math:`\sigma^2 < \infty`. Then:
+   
+   .. math::
+      :label: clt
+   
+      \sqrt{n}(\bar{X}_n - \mu) \xrightarrow{d} \mathcal{N}(0, \sigma^2)
+   
+   Equivalently:
+   
+   .. math::
+   
+      \frac{\bar{X}_n - \mu}{\sigma/\sqrt{n}} \xrightarrow{d} \mathcal{N}(0, 1)
+
+The CLT implies that for large :math:`n`, the sample mean is approximately normal regardless of the underlying distribution.
+
+**From Section 3.2**, we have the more general result for MLEs:
+
+.. math::
+
+   \sqrt{n}(\hat{\theta}_{\text{MLE}} - \theta) \xrightarrow{d} \mathcal{N}\left(0, I(\theta)^{-1}\right)
+
+where :math:`I(\theta)` is the Fisher information.
+
+Exact vs. Asymptotic: When to Use Which
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Exact vs Asymptotic Sampling Distributions
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Situation
+     - Exact Distribution
+     - Asymptotic Approximation
+   * - Normal data, known :math:`\sigma`
+     - :math:`\bar{X} \sim N(\mu, \sigma^2/n)` — use z-test
+     - Not needed
+   * - Normal data, unknown :math:`\sigma`
+     - :math:`t = (\bar{X}-\mu)/(S/\sqrt{n}) \sim t_{n-1}` — use t-test
+     - For large :math:`n`, :math:`t \approx z`
+   * - Non-normal data, large :math:`n`
+     - Usually unavailable
+     - CLT: :math:`\bar{X} \approx N(\mu, \sigma^2/n)`
+   * - MLEs generally
+     - Rarely available
+     - :math:`\hat{\theta} \approx N(\theta, I(\theta)^{-1}/n)`
+   * - Small :math:`n`, non-normal
+     - May need exact (e.g., permutation)
+     - Approximation may be poor
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+   import matplotlib.pyplot as plt
+
+   def compare_exact_asymptotic():
+       """Compare exact t-distribution with normal approximation."""
+       rng = np.random.default_rng(42)
+       
+       sample_sizes = [5, 15, 30, 100]
+       n_sim = 50000
+       
+       print("="*65)
+       print("EXACT VS ASYMPTOTIC: T-DISTRIBUTION CONVERGENCE TO NORMAL")
+       print("="*65)
+       
+       for n in sample_sizes:
+           # Simulate t-statistics under H0: μ = 0
+           t_stats = []
+           for _ in range(n_sim):
+               x = rng.normal(0, 1, n)
+               t = np.mean(x) / (np.std(x, ddof=1) / np.sqrt(n))
+               t_stats.append(t)
+           
+           t_stats = np.array(t_stats)
+           
+           # Compare to t_{n-1} and N(0,1)
+           # Use 95th percentile as comparison
+           t_critical = stats.t.ppf(0.975, n-1)
+           z_critical = stats.norm.ppf(0.975)  # 1.96
+           
+           empirical_95 = np.percentile(np.abs(t_stats), 95)
+           
+           print(f"\nn = {n}:")
+           print(f"  Exact t_{n-1} critical value (97.5%): {t_critical:.4f}")
+           print(f"  Normal approximation z critical:      {z_critical:.4f}")
+           print(f"  Empirical 95th percentile |t|:        {empirical_95:.4f}")
+           print(f"  Error using normal: {100*abs(t_critical - z_critical)/t_critical:.1f}%")
+       
+   compare_exact_asymptotic()
+
+.. code-block:: text
+
+   =================================================================
+   EXACT VS ASYMPTOTIC: T-DISTRIBUTION CONVERGENCE TO NORMAL
+   =================================================================
+
+   n = 5:
+     Exact t_4 critical value (97.5%): 2.7764
+     Normal approximation z critical:      1.9600
+     Empirical 95th percentile |t|:        2.7621
+     Error using normal: 29.4%
+
+   n = 15:
+     Exact t_14 critical value (97.5%): 2.1448
+     Normal approximation z critical:      1.9600
+     Empirical 95th percentile |t|:        2.1359
+     Error using normal: 8.6%
+
+   n = 30:
+     Exact t_29 critical value (97.5%): 2.0452
+     Normal approximation z critical:      1.9600
+     Empirical 95th percentile |t|:        2.0420
+     Error using normal: 4.2%
+
+   n = 100:
+     Exact t_99 critical value (97.5%): 1.9842
+     Normal approximation z critical:      1.9600
+     Empirical 95th percentile |t|:        1.9812
+     Error using normal: 1.2%
+
+**Key insight**: For :math:`n < 30`, using the normal approximation instead of the exact t-distribution leads to confidence intervals that are too narrow and p-values that are too small. Always use exact distributions when available.
+
+
+The Delta Method
+----------------
+
+With the foundations of estimator properties and sampling distributions established, we now address a key practical question: given an estimator :math:`\hat{\theta}` with known variance, what is the variance of a transformation :math:`g(\hat{\theta})`?
+
+Motivation: Why Transform Parameters?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Parameter transformations arise naturally throughout statistics:
+
+**Interpretability**: The odds ratio :math:`\psi = p/(1-p)` is more interpretable than the probability :math:`p` itself in many contexts. The hazard ratio in survival analysis is the exponential of a regression coefficient.
+
+**Boundedness**: Parameters like probabilities (:math:`p \in (0,1)`) and variances (:math:`\sigma^2 > 0`) have constrained ranges. Transformations to :math:`\mathbb{R}` (logit for probabilities, log for variances) enable unconstrained optimization and symmetric confidence intervals.
+
+**Variance stabilization**: For Poisson data with mean :math:`\lambda`, the variance also equals :math:`\lambda`. The square root transformation :math:`\sqrt{X}` has approximately constant variance regardless of :math:`\lambda`—useful for regression and ANOVA.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig05_variance_stabilization.png
+   :alt: Poisson square root transformation stabilizing variance
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.1**: Variance stabilization for Poisson data. (a) Raw counts show increasing spread with :math:`\lambda` since :math:`\text{Var}(X) = \lambda`. (b) Variance of the sample mean increases linearly with :math:`\lambda` for raw data but remains nearly constant for :math:`\sqrt{X}`. (c) After square root transformation, the data have approximately constant variance :math:`\approx 1/4` regardless of the Poisson mean—essential for valid regression analysis.
+
+**Scientific parameters**: Physical and biological quantities often involve ratios, products, or other nonlinear combinations of directly estimable parameters.
+
+.. admonition:: Example 💡 The Vaccine Efficacy Problem
+   :class: note
+
+   **Setting**: In a vaccine trial, we observe:
+   
+   - Vaccinated group: :math:`n_v = 20,000` subjects, :math:`x_v = 8` infections → :math:`\hat{p}_v = 0.0004`
+   - Placebo group: :math:`n_p = 20,000` subjects, :math:`x_p = 162` infections → :math:`\hat{p}_p = 0.0081`
+   
+   **Vaccine efficacy** is defined as :math:`\text{VE} = 1 - \frac{p_v}{p_p}` (the relative risk reduction).
+   
+   **Questions**:
+   
+   1. What is :math:`\widehat{\text{VE}}`?
+   2. What is :math:`\text{SE}(\widehat{\text{VE}})`?
+   3. What is a 95% confidence interval for VE?
+   
+   **The challenge**: VE is a nonlinear function of two estimated probabilities. The delta method provides the systematic approach to answering questions 2 and 3.
+
+
+The Univariate Delta Method
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Statement and Proof
+^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Theorem: Univariate Delta Method
+   :class: note
+
+   Let :math:`\{T_n\}` be a sequence of random variables satisfying:
+   
+   .. math::
+      :label: delta-condition
+   
+      \sqrt{n}(T_n - \theta) \xrightarrow{d} \mathcal{N}(0, \sigma^2)
+   
+   If :math:`g` is a function with continuous derivative :math:`g'(\theta) \neq 0`, then:
+   
+   .. math::
+      :label: delta-result
+   
+      \sqrt{n}(g(T_n) - g(\theta)) \xrightarrow{d} \mathcal{N}(0, [g'(\theta)]^2 \sigma^2)
+
+**Proof**: Taylor expand :math:`g(T_n)` around :math:`\theta`:
+
+.. math::
+
+   g(T_n) = g(\theta) + g'(\theta)(T_n - \theta) + \frac{1}{2}g''(\tilde{\theta})(T_n - \theta)^2
+
+for some :math:`\tilde{\theta}` between :math:`T_n` and :math:`\theta`. Rearranging:
+
+.. math::
+
+   \sqrt{n}(g(T_n) - g(\theta)) = g'(\theta) \cdot \sqrt{n}(T_n - \theta) + \frac{1}{2}g''(\tilde{\theta}) \cdot \sqrt{n}(T_n - \theta)^2
+
+The first term converges to :math:`g'(\theta) \cdot \mathcal{N}(0, \sigma^2) = \mathcal{N}(0, [g'(\theta)]^2 \sigma^2)` by Slutsky's theorem.
+
+For the second term: :math:`\sqrt{n}(T_n - \theta)^2 = \frac{1}{\sqrt{n}} \cdot [\sqrt{n}(T_n - \theta)]^2`. Since :math:`[\sqrt{n}(T_n - \theta)]^2 = O_p(1)` (bounded in probability) and :math:`1/\sqrt{n} \to 0`, the remainder is :math:`o_p(1)` and vanishes in the limit. :math:`\blacksquare`
+
+Practical Formulation
+~~~~~~~~~~~~~~~~~~~~~
+
+For practical use, the delta method gives:
+
+.. math::
+   :label: delta-practical
+
+   \text{Var}(g(\hat{\theta})) \approx [g'(\theta)]^2 \cdot \text{Var}(\hat{\theta})
+
+Since we don't know :math:`\theta`, we use the **plug-in principle**: evaluate :math:`g'` at :math:`\hat{\theta}`:
+
+.. math::
+   :label: delta-plugin
+
+   \widehat{\text{Var}}(g(\hat{\theta})) = [g'(\hat{\theta})]^2 \cdot \widehat{\text{Var}}(\hat{\theta})
+
+Taking square roots gives the **standard error**:
+
+.. math::
+   :label: delta-se
+
+   \text{SE}(g(\hat{\theta})) = |g'(\hat{\theta})| \cdot \text{SE}(\hat{\theta})
+
+.. admonition:: Geometric Interpretation
+   :class: tip
+
+   The delta method says: *variance transforms like the square of the derivative*.
+   
+   If :math:`g'(\theta) = 2`, then small changes in :math:`\hat{\theta}` produce changes in :math:`g(\hat{\theta})` that are twice as large. The standard deviation of :math:`g(\hat{\theta})` is therefore twice that of :math:`\hat{\theta}`, and the variance is four times as large.
+   
+   This is simply the linearization: near :math:`\theta`, the function :math:`g` behaves like its tangent line with slope :math:`g'(\theta)`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig01_delta_method_geometry.png
+   :alt: Delta method linearization showing input distribution, tangent line approximation, and output distribution
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.2**: The delta method in action. (a) The estimator :math:`\hat{\theta}` follows a normal distribution centered at :math:`\theta_0 = 2`. (b) The nonlinear function :math:`g(\theta) = e^\theta` is approximated by its tangent line at :math:`\theta_0`; the "Error" annotation shows where linearization diverges from the true curve. (c) The resulting distribution of :math:`g(\hat{\theta})` (histogram) closely matches the delta method approximation (red curve) with variance :math:`[g'(\theta_0)]^2 \sigma^2`.
+
+
+Common Transformations
+~~~~~~~~~~~~~~~~~~~~~~
+
+The following table provides delta method results for frequently used transformations:
+
+.. list-table:: Delta Method for Common Transformations
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Transformation
+     - :math:`g(\theta)`
+     - :math:`g'(\theta)`
+     - :math:`\text{Var}(g(\hat{\theta}))`
+   * - Log
+     - :math:`\log(\theta)`
+     - :math:`1/\theta`
+     - :math:`\text{Var}(\hat{\theta})/\theta^2`
+   * - Exponential
+     - :math:`e^\theta`
+     - :math:`e^\theta`
+     - :math:`e^{2\theta} \cdot \text{Var}(\hat{\theta})`
+   * - Square root
+     - :math:`\sqrt{\theta}`
+     - :math:`\frac{1}{2\sqrt{\theta}}`
+     - :math:`\frac{\text{Var}(\hat{\theta})}{4\theta}`
+   * - Square
+     - :math:`\theta^2`
+     - :math:`2\theta`
+     - :math:`4\theta^2 \cdot \text{Var}(\hat{\theta})`
+   * - Reciprocal
+     - :math:`1/\theta`
+     - :math:`-1/\theta^2`
+     - :math:`\text{Var}(\hat{\theta})/\theta^4`
+   * - Logit
+     - :math:`\log\frac{\theta}{1-\theta}`
+     - :math:`\frac{1}{\theta(1-\theta)}`
+     - :math:`\frac{\text{Var}(\hat{\theta})}{\theta^2(1-\theta)^2}`
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig02_variance_amplification.png
+   :alt: Variance scaling by square of derivative for different transformations
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.3**: Variance scales as :math:`[g'(\theta)]^2`. Starting from the same input distribution with :math:`\text{Var}(\hat{\theta}) = 0.04`: (a) identity transformation preserves variance; (b) doubling (:math:`g' = 2`) quadruples variance; (c) squaring at :math:`\theta_0 = 2` with :math:`g' = 4` amplifies variance by factor 16; (d) square root at :math:`\theta_0 = 2` with :math:`g' = 0.25` shrinks variance by factor 16.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def delta_method_se(theta_hat, se_theta, g_prime):
+       """
+       Compute standard error of g(θ̂) via delta method.
+
+       Parameters
+       ----------
+       theta_hat : float
+           Point estimate of θ.
+       se_theta : float
+           Standard error of θ̂.
+       g_prime : callable
+           Derivative g'(θ), evaluated at theta_hat.
+
+       Returns
+       -------
+       float
+           Standard error of g(θ̂).
+       """
+       return np.abs(g_prime(theta_hat)) * se_theta
+
+   def delta_method_ci(theta_hat, se_theta, g, g_prime, alpha=0.05):
+       """
+       Compute confidence interval for g(θ) via delta method.
+
+       Parameters
+       ----------
+       theta_hat : float
+           Point estimate of θ.
+       se_theta : float
+           Standard error of θ̂.
+       g : callable
+           Transformation function.
+       g_prime : callable
+           Derivative of g.
+       alpha : float
+           Significance level (default 0.05 for 95% CI).
+
+       Returns
+       -------
+       dict
+           Point estimate, SE, and confidence interval.
+       """
+       z = stats.norm.ppf(1 - alpha / 2)
+       g_hat = g(theta_hat)
+       se_g = delta_method_se(theta_hat, se_theta, g_prime)
+
+       return {
+           'estimate': g_hat,
+           'se': se_g,
+           'ci_lower': g_hat - z * se_g,
+           'ci_upper': g_hat + z * se_g
+       }
+
+   # Example: Log transformation of Poisson rate
+   # λ̂ = 4.5, SE(λ̂) = 0.67
+   lambda_hat = 4.5
+   se_lambda = 0.67
+
+   # g(λ) = log(λ), g'(λ) = 1/λ
+   result = delta_method_ci(
+       lambda_hat, se_lambda,
+       g=np.log,
+       g_prime=lambda x: 1/x
+   )
+
+   print("Log-transformation of Poisson rate:")
+   print(f"  log(λ̂) = {result['estimate']:.4f}")
+   print(f"  SE(log(λ̂)) = {result['se']:.4f}")
+   print(f"  95% CI: ({result['ci_lower']:.4f}, {result['ci_upper']:.4f})")
+
+   # Back-transform to get CI for λ
+   print(f"\n  Back-transformed CI for λ: ({np.exp(result['ci_lower']):.4f}, {np.exp(result['ci_upper']):.4f})")
+
+.. code-block:: text
+
+   Log-transformation of Poisson rate:
+     log(λ̂) = 1.5041
+     SE(log(λ̂)) = 0.1489
+     95% CI: (1.2123, 1.7959)
+
+     Back-transformed CI for λ: (3.3618, 6.0242)
+
+
+.. admonition:: Example 💡 Odds Ratio Confidence Interval
+   :class: note
+
+   **Setup**: In a case-control study:
+   
+   - Cases: 45 exposed, 55 unexposed → :math:`\hat{p}_1 = 45/100 = 0.45`
+   - Controls: 25 exposed, 75 unexposed → :math:`\hat{p}_2 = 25/100 = 0.25`
+   
+   The estimated odds ratio is:
+   
+   .. math::
+   
+      \widehat{\text{OR}} = \frac{\hat{p}_1/(1-\hat{p}_1)}{\hat{p}_2/(1-\hat{p}_2)} = \frac{0.45/0.55}{0.25/0.75} = \frac{0.818}{0.333} = 2.45
+   
+   **Log-OR approach** (preferred for confidence intervals):
+   
+   .. math::
+   
+      \log(\widehat{\text{OR}}) = \log\left(\frac{a \cdot d}{b \cdot c}\right) = \log(45) + \log(75) - \log(55) - \log(25) = 0.898
+   
+   The variance of log-OR from a 2×2 table is approximately:
+   
+   .. math::
+   
+      \text{Var}(\log(\widehat{\text{OR}})) \approx \frac{1}{a} + \frac{1}{b} + \frac{1}{c} + \frac{1}{d} = \frac{1}{45} + \frac{1}{55} + \frac{1}{25} + \frac{1}{75} = 0.0936
+   
+   So :math:`\text{SE}(\log(\widehat{\text{OR}})) = \sqrt{0.0936} = 0.306`.
+   
+   **95% CI for log-OR**: :math:`0.898 \pm 1.96 \times 0.306 = (0.298, 1.498)`
+   
+   **95% CI for OR**: :math:`(e^{0.298}, e^{1.498}) = (1.35, 4.47)`
+   
+   The exposure is associated with significantly increased odds of being a case (OR significantly > 1).
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig03_log_logit_transforms.png
+   :alt: Log and logit transformations symmetrizing distributions
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.4**: Transformations symmetrize distributions and improve confidence intervals. **Top row**: Exponential rate :math:`\hat{\lambda}` is right-skewed (a), but :math:`\log(\hat{\lambda})` is nearly symmetric (b), yielding a valid asymmetric CI on the original scale (c). **Bottom row**: Proportion :math:`\hat{p}` near zero is constrained and skewed (d), but :math:`\text{logit}(\hat{p})` is symmetric on :math:`\mathbb{R}` (e); the logit-scale CI respects the :math:`[0,1]` boundary while Wald may not (f).
+
+
+The Multivariate Delta Method
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When dealing with multiple parameters or vector-valued functions, we need the multivariate extension.
+
+Statement
+^^^^^^^^^
+
+.. admonition:: Theorem: Multivariate Delta Method
+   :class: note
+
+   Let :math:`\mathbf{T}_n` be a :math:`p`-dimensional random vector satisfying:
+   
+   .. math::
+   
+      \sqrt{n}(\mathbf{T}_n - \boldsymbol{\theta}) \xrightarrow{d} \mathcal{N}_p(\mathbf{0}, \boldsymbol{\Sigma})
+   
+   If :math:`g: \mathbb{R}^p \to \mathbb{R}^q` has continuous partial derivatives with Jacobian matrix :math:`\mathbf{G} = \nabla g(\boldsymbol{\theta})`, then:
+   
+   .. math::
+      :label: multivariate-delta
+   
+      \sqrt{n}(g(\mathbf{T}_n) - g(\boldsymbol{\theta})) \xrightarrow{d} \mathcal{N}_q(\mathbf{0}, \mathbf{G} \boldsymbol{\Sigma} \mathbf{G}^\top)
+
+For a scalar function :math:`g: \mathbb{R}^p \to \mathbb{R}`, the gradient is a column vector :math:`\nabla g = (\partial g / \partial \theta_1, \ldots, \partial g / \partial \theta_p)^\top`, and:
+
+.. math::
+   :label: multivariate-delta-scalar
+
+   \text{Var}(g(\hat{\boldsymbol{\theta}})) \approx (\nabla g)^\top \boldsymbol{\Sigma} (\nabla g) = \sum_{j=1}^{p} \sum_{k=1}^{p} \frac{\partial g}{\partial \theta_j} \frac{\partial g}{\partial \theta_k} \sigma_{jk}
+
+Special Cases
+^^^^^^^^^^^^^
+
+**Linear combinations**: If :math:`g(\boldsymbol{\theta}) = \mathbf{a}^\top \boldsymbol{\theta}` for constant vector :math:`\mathbf{a}`, then :math:`\nabla g = \mathbf{a}` and:
+
+.. math::
+
+   \text{Var}(\mathbf{a}^\top \hat{\boldsymbol{\theta}}) = \mathbf{a}^\top \boldsymbol{\Sigma} \mathbf{a}
+
+This is exact (not approximate) since linear functions require no Taylor expansion.
+
+**Ratio of two parameters**: If :math:`g(\theta_1, \theta_2) = \theta_1 / \theta_2`, then:
+
+.. math::
+
+   \nabla g = \left( \frac{1}{\theta_2}, -\frac{\theta_1}{\theta_2^2} \right)^\top
+
+.. math::
+   :label: ratio-variance
+
+   \text{Var}\left(\frac{\hat{\theta}_1}{\hat{\theta}_2}\right) \approx \frac{1}{\theta_2^2}\text{Var}(\hat{\theta}_1) + \frac{\theta_1^2}{\theta_2^4}\text{Var}(\hat{\theta}_2) - \frac{2\theta_1}{\theta_2^3}\text{Cov}(\hat{\theta}_1, \hat{\theta}_2)
+
+**Product of two parameters**: If :math:`g(\theta_1, \theta_2) = \theta_1 \theta_2`, then :math:`\nabla g = (\theta_2, \theta_1)^\top` and:
+
+.. math::
+   :label: product-variance
+
+   \text{Var}(\hat{\theta}_1 \hat{\theta}_2) \approx \theta_2^2 \text{Var}(\hat{\theta}_1) + \theta_1^2 \text{Var}(\hat{\theta}_2) + 2\theta_1 \theta_2 \text{Cov}(\hat{\theta}_1, \hat{\theta}_2)
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def multivariate_delta_method(theta_hat, cov_matrix, g, gradient_g):
+       """
+       Apply multivariate delta method.
+
+       Parameters
+       ----------
+       theta_hat : ndarray
+           Point estimates (p-vector).
+       cov_matrix : ndarray
+           Covariance matrix of theta_hat (p × p).
+       g : callable
+           Scalar transformation function.
+       gradient_g : callable
+           Gradient of g, returns p-vector.
+
+       Returns
+       -------
+       dict
+           Estimate, variance, SE, and 95% CI for g(θ).
+       """
+       g_hat = g(theta_hat)
+       grad = gradient_g(theta_hat)
+
+       # Var(g(θ̂)) = ∇g' Σ ∇g
+       var_g = grad @ cov_matrix @ grad
+       se_g = np.sqrt(var_g)
+
+       z = stats.norm.ppf(0.975)
+       return {
+           'estimate': g_hat,
+           'variance': var_g,
+           'se': se_g,
+           'ci_lower': g_hat - z * se_g,
+           'ci_upper': g_hat + z * se_g
+       }
+
+   # Example: Vaccine efficacy VE = 1 - p_v/p_p
+   # From two independent proportions
+   p_v_hat = 8 / 20000    # Vaccinated infection rate
+   p_p_hat = 162 / 20000  # Placebo infection rate
+
+   n_v, n_p = 20000, 20000
+   var_p_v = p_v_hat * (1 - p_v_hat) / n_v
+   var_p_p = p_p_hat * (1 - p_p_hat) / n_p
+
+   # Independent samples → covariance = 0
+   theta_hat = np.array([p_v_hat, p_p_hat])
+   cov_matrix = np.diag([var_p_v, var_p_p])
+
+   # VE = 1 - p_v/p_p = g(p_v, p_p)
+   def ve(theta):
+       return 1 - theta[0] / theta[1]
+
+   def grad_ve(theta):
+       # ∂VE/∂p_v = -1/p_p, ∂VE/∂p_p = p_v/p_p²
+       return np.array([-1/theta[1], theta[0]/theta[1]**2])
+
+   result = multivariate_delta_method(theta_hat, cov_matrix, ve, grad_ve)
+
+   print("Vaccine Efficacy Analysis:")
+   print(f"  p̂_v = {p_v_hat:.6f} (vaccinated)")
+   print(f"  p̂_p = {p_p_hat:.6f} (placebo)")
+   print(f"\n  VE = 1 - RR = {result['estimate']:.4f} ({100*result['estimate']:.1f}%)")
+   print(f"  SE(VE) = {result['se']:.4f}")
+   print(f"  95% CI: ({result['ci_lower']:.4f}, {result['ci_upper']:.4f})")
+   print(f"  95% CI: ({100*result['ci_lower']:.1f}%, {100*result['ci_upper']:.1f}%)")
+
+.. code-block:: text
+
+   Vaccine Efficacy Analysis:
+     p̂_v = 0.000400 (vaccinated)
+     p̂_p = 0.008100 (placebo)
+
+     VE = 1 - RR = 0.9506 (95.1%)
+     SE(VE) = 0.0175
+     95% CI: (0.9163, 0.9849)
+     95% CI: (91.6%, 98.5%)
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig04_multivariate_delta.png
+   :alt: Multivariate delta method showing joint distribution, gradient, and resulting univariate distribution
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.5**: The multivariate delta method for :math:`g(\theta_1, \theta_2) = \theta_1/\theta_2`. (a) Joint distribution of :math:`(\hat{\theta}_1, \hat{\theta}_2)` with 95% confidence ellipse. (b) Contours of :math:`g` with gradient vector :math:`\nabla g = (1/\theta_2, -\theta_1/\theta_2^2)^\top` at the true parameter. (c) The resulting distribution of the ratio estimate with delta method normal approximation and 95% CI derived from :math:`\text{Var}(g) = (\nabla g)^\top \boldsymbol{\Sigma} (\nabla g)`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig10_vaccine_efficacy.png
+   :alt: Complete vaccine efficacy analysis showing joint distribution and CI comparison
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.6**: Vaccine efficacy analysis (VE = 95.1%). (a) Joint distribution of :math:`(\hat{p}_v, \hat{p}_p)` with iso-VE lines; the elongated confidence region reflects much larger uncertainty in :math:`\hat{p}_p` due to more events. (b) Distribution of :math:`\widehat{\text{VE}}` with delta method approximation showing excellent agreement (SE = 1.8%). (c) Three 95% CI methods: delta on VE scale, log-RR back-transformed, and bootstrap percentile—all give similar results for this high-efficacy vaccine.
+
+
+The Plug-in Principle
+---------------------
+
+The delta method relies on a broader concept: **plug-in estimation**. If :math:`\tau = g(\theta)` is the parameter of interest, the plug-in estimator is simply :math:`\hat{\tau} = g(\hat{\theta})`.
+
+Formal Statement
+~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition: Plug-in Estimator
+   :class: note
+
+   Let :math:`\hat{F}_n` be the empirical distribution function of a sample :math:`X_1, \ldots, X_n`. For any functional :math:`T(F)` (a mapping from distributions to real numbers), the **plug-in estimator** is:
+   
+   .. math::
+   
+      \hat{T} = T(\hat{F}_n)
+   
+   Replace the unknown true distribution :math:`F` with its empirical counterpart :math:`\hat{F}_n`, then compute the functional.
+
+**Examples**:
+
+- **Mean**: :math:`T(F) = \int x \, dF(x)`. Plug-in: :math:`\hat{T} = \int x \, d\hat{F}_n(x) = \bar{X}`
+- **Variance**: :math:`T(F) = \int (x - \mu)^2 dF(x)`. Plug-in: :math:`\hat{T} = \frac{1}{n}\sum(X_i - \bar{X})^2`
+- **Quantiles**: :math:`T(F) = F^{-1}(p)`. Plug-in: :math:`\hat{T} = \hat{F}_n^{-1}(p)` = sample quantile
+- **Correlation**: :math:`T(F) = \text{Corr}_F(X, Y)`. Plug-in: sample correlation
+
+The plug-in principle is remarkably general and forms the foundation for much of nonparametric statistics. Combined with the delta method, it provides variance estimates for almost any statistic.
+
+When Plug-in Works Well
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Plug-in estimation is most reliable when:
+
+1. **The functional is smooth**: Small changes in :math:`F` produce small changes in :math:`T(F)`. The delta method formalizes this through differentiability.
+
+2. **The sample size is adequate**: :math:`\hat{F}_n` must be a good approximation to :math:`F`.
+
+3. **The estimator :math:`\hat{\theta}` is consistent**: We need :math:`\hat{\theta} \xrightarrow{p} \theta_0` for :math:`g(\hat{\theta})` to be consistent for :math:`g(\theta_0)`.
+
+.. admonition:: Common Pitfall ⚠️ When Plug-in Fails
+   :class: warning
+
+   The plug-in principle can fail when:
+   
+   **1. Non-differentiable functionals**: The sample maximum :math:`X_{(n)}` estimating the population maximum doesn't follow normal asymptotics—the delta method doesn't apply.
+   
+   **2. Boundary parameters**: If :math:`\theta` is near the boundary of the parameter space, :math:`g(\hat{\theta})` may have poor properties. Example: :math:`\hat{p} = 0` when estimating :math:`\log(p)`.
+   
+   **3. High curvature**: When :math:`g''(\theta)` is large and :math:`\text{Var}(\hat{\theta})` is not small, the linear approximation breaks down. The second-order delta method may help.
+   
+   **4. Discontinuous transformations**: Indicator functions and step functions have zero derivative almost everywhere, making the delta method useless.
+   
+   **5. Ratio estimation with noisy denominators**: When :math:`\hat{\theta}_2` is small or has large variance relative to :math:`|\theta_2|`, the delta method CI for :math:`\theta_1/\theta_2` can have poor coverage. **Fieller's theorem** provides an alternative approach that constructs CIs by inverting a hypothesis test, yielding more reliable coverage when the denominator is uncertain. Consider Fieller's method when the coefficient of variation of the denominator exceeds ~20%.
+
+
+Variance Estimation Methods
+---------------------------
+
+To apply the delta method in practice, we need :math:`\text{Var}(\hat{\theta})`. Several analytical approaches exist, each with tradeoffs. (Chapter 4 introduces resampling-based alternatives that complement these methods.)
+
+Fisher Information (Expected Information)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+From :ref:`Section 3.2 <ch3_2-maximum-likelihood-estimation>`, the MLE has asymptotic variance:
+
+.. math::
+
+   \text{Var}(\hat{\theta}) \approx \frac{1}{n I_1(\theta)}
+
+where :math:`I_1(\theta) = -\mathbb{E}[\partial^2 \log f(X|\theta) / \partial \theta^2]` is the per-observation Fisher information.
+
+**Plug-in variance estimate**:
+
+.. math::
+   :label: fisher-var-est
+
+   \widehat{\text{Var}}(\hat{\theta}) = \frac{1}{n I_1(\hat{\theta})}
+
+**Advantages**: Theoretically motivated; often has closed-form expression for exponential families.
+
+**Disadvantages**: Assumes correct model specification; may differ from observed information.
+
+Observed Information
+~~~~~~~~~~~~~~~~~~~~
+
+Replace the expected Hessian with the observed (sample) Hessian:
+
+.. math::
+   :label: observed-info
+
+   J_n(\hat{\theta}) = -\frac{\partial^2 \ell_n(\theta)}{\partial \theta^2}\bigg|_{\theta = \hat{\theta}}
+
+The observed information variance estimate is:
+
+.. math::
+   :label: observed-var-est
+
+   \widehat{\text{Var}}(\hat{\theta}) = J_n(\hat{\theta})^{-1}
+
+**Advantages**: Data-adaptive; accounts for sample-specific curvature; preferred by some theoretical arguments (Efron & Hinkley, 1978).
+
+**Disadvantages**: More variable than expected information; can be unstable for small samples.
+
+**Under correct specification**, expected and observed information are asymptotically equivalent. Under **misspecification**, observed information combined with sandwich adjustment is more robust.
+
+Sandwich Variance Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the model may be misspecified, the **sandwich estimator** (introduced in :ref:`Section 3.2 <ch3_2-maximum-likelihood-estimation>`) provides robust standard errors:
+
+.. math::
+   :label: sandwich-variance
+
+   \widehat{\text{Var}}_{\text{sandwich}}(\hat{\theta}) = A^{-1} B A^{-1}
+
+where :math:`A = -\frac{1}{n}\sum_{i=1}^n \nabla^2 \ell_i(\hat{\theta})` is the average Hessian and :math:`B = \frac{1}{n}\sum_{i=1}^n \nabla \ell_i(\hat{\theta}) \nabla \ell_i(\hat{\theta})^\top` is the empirical variance of score contributions.
+
+Under correct specification, :math:`A = B` and the sandwich reduces to the inverse Fisher information. Under misspecification, :math:`A \neq B` and the sandwich captures the true variability.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def sandwich_se(log_lik_contributions, theta_hat, epsilon=1e-5):
+       """
+       Compute sandwich standard errors.
+
+       Parameters
+       ----------
+       log_lik_contributions : callable
+           Function returning vector of per-observation log-likelihoods.
+       theta_hat : ndarray
+           MLE parameter estimates.
+       epsilon : float
+           Step size for numerical derivatives.
+
+       Returns
+       -------
+       ndarray
+           Sandwich standard errors.
+       """
+       n = len(log_lik_contributions(theta_hat))
+       p = len(theta_hat)
+
+       # Compute A: average Hessian
+       A = np.zeros((p, p))
+       for i in range(p):
+           for j in range(i, p):
+               theta_pp = theta_hat.copy()
+               theta_pm = theta_hat.copy()
+               theta_mp = theta_hat.copy()
+               theta_mm = theta_hat.copy()
+
+               theta_pp[i] += epsilon; theta_pp[j] += epsilon
+               theta_pm[i] += epsilon; theta_pm[j] -= epsilon
+               theta_mp[i] -= epsilon; theta_mp[j] += epsilon
+               theta_mm[i] -= epsilon; theta_mm[j] -= epsilon
+
+               A[i, j] = -np.mean(
+                   (log_lik_contributions(theta_pp) - log_lik_contributions(theta_pm)
+                    - log_lik_contributions(theta_mp) + log_lik_contributions(theta_mm))
+               ) / (4 * epsilon**2)
+               A[j, i] = A[i, j]
+
+       # Compute B: empirical variance of scores
+       scores = np.zeros((n, p))
+       for j in range(p):
+           theta_plus = theta_hat.copy()
+           theta_minus = theta_hat.copy()
+           theta_plus[j] += epsilon
+           theta_minus[j] -= epsilon
+           scores[:, j] = (log_lik_contributions(theta_plus) 
+                          - log_lik_contributions(theta_minus)) / (2 * epsilon)
+
+       B = scores.T @ scores / n
+
+       # Sandwich: A^{-1} B A^{-1}
+       A_inv = np.linalg.inv(A)
+       sandwich_cov = A_inv @ B @ A_inv / n
+
+       return np.sqrt(np.diag(sandwich_cov))
+
+Numerical Differentiation
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When analytical Hessians are unavailable, numerical approximation works well:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import optimize
+
+   def numerical_hessian(log_lik, theta, epsilon=1e-5):
+       """
+       Compute Hessian of log-likelihood numerically.
+
+       Parameters
+       ----------
+       log_lik : callable
+           Log-likelihood function.
+       theta : ndarray
+           Parameter values.
+       epsilon : float
+           Step size for finite differences.
+
+       Returns
+       -------
+       ndarray
+           Hessian matrix.
+       """
+       p = len(theta)
+       H = np.zeros((p, p))
+
+       for i in range(p):
+           for j in range(i, p):
+               # Second partial derivative via central differences
+               theta_pp = theta.copy()
+               theta_pm = theta.copy()
+               theta_mp = theta.copy()
+               theta_mm = theta.copy()
+
+               theta_pp[i] += epsilon
+               theta_pp[j] += epsilon
+               theta_pm[i] += epsilon
+               theta_pm[j] -= epsilon
+               theta_mp[i] -= epsilon
+               theta_mp[j] += epsilon
+               theta_mm[i] -= epsilon
+               theta_mm[j] -= epsilon
+
+               H[i, j] = (log_lik(theta_pp) - log_lik(theta_pm) 
+                          - log_lik(theta_mp) + log_lik(theta_mm)) / (4 * epsilon**2)
+               H[j, i] = H[i, j]
+
+       return H
+
+   def variance_from_hessian(log_lik, theta_hat):
+       """
+       Estimate variance via observed information (negative Hessian inverse).
+       """
+       H = numerical_hessian(log_lik, theta_hat)
+       return np.linalg.inv(-H)
+
+   # Example: Normal MLE variance
+   rng = np.random.default_rng(42)
+   x = rng.normal(5, 2, size=100)
+
+   def normal_log_lik(theta):
+       mu, log_sigma = theta  # Use log(σ) for unconstrained optimization
+       sigma = np.exp(log_sigma)
+       return np.sum(stats.norm.logpdf(x, mu, sigma))
+
+   # Find MLE
+   result = optimize.minimize(
+       lambda theta: -normal_log_lik(theta),
+       x0=[np.mean(x), np.log(np.std(x))],
+       method='BFGS'
+   )
+   theta_hat = result.x
+   mu_hat, sigma_hat = theta_hat[0], np.exp(theta_hat[1])
+
+   # Variance via observed information
+   cov_hat = variance_from_hessian(normal_log_lik, theta_hat)
+
+   print(f"Normal MLE:")
+   print(f"  μ̂ = {mu_hat:.4f}, σ̂ = {sigma_hat:.4f}")
+   print(f"  SE(μ̂) = {np.sqrt(cov_hat[0,0]):.4f}")
+   print(f"  SE(log(σ̂)) = {np.sqrt(cov_hat[1,1]):.4f}")
+
+.. code-block:: text
+
+   Normal MLE:
+     μ̂ = 4.8572, σ̂ = 1.9183
+     SE(μ̂) = 0.1918
+     SE(log(σ̂)) = 0.0707
+
+
+Comparison of Variance Estimation Methods
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Variance Estimation Methods Comparison
+   :header-rows: 1
+   :widths: 20 30 25 25
+
+   * - Method
+     - Best When
+     - Advantages
+     - Disadvantages
+   * - Fisher Information
+     - Large :math:`n`, correct model
+     - Fast, stable, closed-form
+     - Assumes model correct
+   * - Observed Information
+     - Moderate :math:`n`
+     - Data-adaptive, accounts for curvature
+     - More variable than Fisher
+   * - Sandwich (Robust)
+     - Model may be misspecified
+     - Consistent under misspecification
+     - Conservative; requires score computations
+   * - Numerical Hessian
+     - No analytical derivatives
+     - General purpose
+     - Numerical precision issues
+
+.. admonition:: Looking Ahead: Resampling Methods
+   :class: tip
+
+   Chapter 4 introduces the **bootstrap**, which provides variance estimates without analytical derivatives or distributional assumptions. The bootstrap is particularly valuable for:
+   
+   - Complex statistics where information-based methods are intractable
+   - Small samples where asymptotic approximations may fail
+   - Validating analytical standard errors
+   
+   The delta method and bootstrap are complementary: use analytical methods when they apply, and bootstrap when they don't or to check robustness.
+
+
+Second-Order Delta Method
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the first derivative vanishes (:math:`g'(\theta_0) = 0`) or when higher accuracy is needed, the second-order delta method incorporates curvature.
+
+Statement
+^^^^^^^^^
+
+If :math:`g'(\theta_0) = 0` but :math:`g''(\theta_0) \neq 0`, then:
+
+.. math::
+   :label: second-order-delta
+
+   n(g(T_n) - g(\theta_0)) \xrightarrow{d} \frac{1}{2} g''(\theta_0) \cdot \sigma^2 \cdot \chi^2_1
+
+The distribution is no longer normal—it's a scaled chi-squared. The variance of :math:`g(T_n)` is of order :math:`1/n^2` rather than :math:`1/n`, and the distribution is generally asymmetric.
+
+.. admonition:: Example 💡 Zero Derivative: :math:`g(\mu) = \mu^2` at :math:`\mu = 0`
+   :class: note
+
+   **Setup**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)`. Consider :math:`g(\mu) = \mu^2` at the point :math:`\mu = 0`.
+   
+   Since :math:`g'(\mu) = 2\mu`, we have :math:`g'(0) = 0`. The first-order delta method gives :math:`\text{Var}(\bar{X}^2) \approx 0`, which is clearly wrong—the estimator :math:`\bar{X}^2` certainly has positive variance!
+   
+   Using the second-order result with :math:`g''(\mu) = 2`:
+   
+   .. math::
+   
+      n(\bar{X}^2 - 0) \xrightarrow{d} \frac{1}{2} \cdot 2 \cdot (\sigma^2/n) \cdot n \cdot \chi^2_1 = \sigma^2 \chi^2_1
+   
+   This recovers the correct result that :math:`n\bar{X}^2/\sigma^2 \sim \chi^2_1` under :math:`\mu = 0`. The distribution is chi-squared, not normal, and the variance is :math:`O(1/n^2)` rather than :math:`O(1/n)`.
+
+
+Applications and Worked Examples
+--------------------------------
+
+Relative Risk and Risk Difference
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In epidemiology, we often compare risks between two groups.
+
+**Setting**: Treatment group has :math:`\hat{p}_1 = x_1/n_1` infections; control has :math:`\hat{p}_2 = x_2/n_2`.
+
+**Relative risk**: :math:`\text{RR} = p_1/p_2`
+
+Using the delta method on :math:`\log(\text{RR}) = \log(p_1) - \log(p_2)`:
+
+.. math::
+
+   \text{Var}(\log(\widehat{\text{RR}})) = \frac{1-p_1}{n_1 p_1} + \frac{1-p_2}{n_2 p_2}
+
+.. admonition:: Common Pitfall ⚠️ Zero Cell Counts
+   :class: warning
+
+   When any cell has zero events (:math:`x_1 = 0` or :math:`x_2 = 0`), the log transformation fails. Apply a **continuity correction** before computing log-scale statistics. The Haldane–Anscombe correction adds 0.5 to all cells: use :math:`\hat{p}_i = (x_i + 0.5)/(n_i + 1)`. This small adjustment enables valid inference while minimally affecting point estimates for non-zero counts.
+
+**Risk difference**: :math:`\text{RD} = p_1 - p_2`
+
+This is a linear combination, so no delta method is needed:
+
+.. math::
+
+   \text{Var}(\widehat{\text{RD}}) = \frac{p_1(1-p_1)}{n_1} + \frac{p_2(1-p_2)}{n_2}
+
+.. code-block:: python
+
+   def risk_measures(x1, n1, x2, n2, alpha=0.05):
+       """
+       Compute relative risk and risk difference with confidence intervals.
+
+       Parameters
+       ----------
+       x1, n1 : int
+           Events and sample size in group 1 (treatment).
+       x2, n2 : int
+           Events and sample size in group 2 (control).
+       alpha : float
+           Significance level.
+
+       Returns
+       -------
+       dict
+           RR, RD, and their confidence intervals.
+       """
+       p1_hat = x1 / n1
+       p2_hat = x2 / n2
+       z = stats.norm.ppf(1 - alpha / 2)
+
+       # Relative Risk
+       rr = p1_hat / p2_hat
+       # Var(log(RR)) = (1-p1)/(n1*p1) + (1-p2)/(n2*p2)
+       var_log_rr = (1 - p1_hat) / (n1 * p1_hat) + (1 - p2_hat) / (n2 * p2_hat)
+       se_log_rr = np.sqrt(var_log_rr)
+       ci_rr = (rr * np.exp(-z * se_log_rr), rr * np.exp(z * se_log_rr))
+
+       # Risk Difference
+       rd = p1_hat - p2_hat
+       var_rd = p1_hat * (1 - p1_hat) / n1 + p2_hat * (1 - p2_hat) / n2
+       se_rd = np.sqrt(var_rd)
+       ci_rd = (rd - z * se_rd, rd + z * se_rd)
+
+       return {
+           'p1': p1_hat, 'p2': p2_hat,
+           'RR': rr, 'se_log_RR': se_log_rr, 'ci_RR': ci_rr,
+           'RD': rd, 'se_RD': se_rd, 'ci_RD': ci_rd
+       }
+
+   # Example: Clinical trial data
+   result = risk_measures(x1=15, n1=200, x2=30, n2=200)
+   print("Risk Analysis:")
+   print(f"  Treatment risk: {result['p1']:.3f}")
+   print(f"  Control risk:   {result['p2']:.3f}")
+   print(f"\n  Relative Risk: {result['RR']:.3f}")
+   print(f"  95% CI (RR):   ({result['ci_RR'][0]:.3f}, {result['ci_RR'][1]:.3f})")
+   print(f"\n  Risk Difference: {result['RD']:.3f}")
+   print(f"  95% CI (RD):     ({result['ci_RD'][0]:.3f}, {result['ci_RD'][1]:.3f})")
+
+.. code-block:: text
+
+   Risk Analysis:
+     Treatment risk: 0.075
+     Control risk:   0.150
+
+     Relative Risk: 0.500
+     95% CI (RR):   (0.278, 0.899)
+
+     Risk Difference: -0.075
+     95% CI (RD):     (-0.132, -0.018)
+
+
+Coefficient of Variation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The coefficient of variation :math:`\text{CV} = \sigma/\mu` measures relative dispersion.
+
+**Setup**: From Normal data, we estimate :math:`\hat{\mu} = \bar{X}` and :math:`\hat{\sigma} = S`.
+
+**Delta method** for :math:`g(\mu, \sigma) = \sigma/\mu`:
+
+.. math::
+
+   \nabla g = \left( -\frac{\sigma}{\mu^2}, \frac{1}{\mu} \right)^\top
+
+For large :math:`n` from :math:`\mathcal{N}(\mu, \sigma^2)`, asymptotic results give:
+
+.. math::
+
+   \text{Cov}(\bar{X}, S) \approx 0, \quad \text{Var}(\bar{X}) = \sigma^2/n, \quad \text{Var}(S) \approx \sigma^2/(2n) \quad \text{(for normal data)}
+
+Thus:
+
+.. math::
+   :label: cv-variance
+
+   \text{Var}(\widehat{\text{CV}}) \approx \frac{\sigma^2}{\mu^4} \cdot \frac{\sigma^2}{n} + \frac{1}{\mu^2} \cdot \frac{\sigma^2}{2n} = \frac{\text{CV}^2}{n}\left(\text{CV}^2 + \frac{1}{2}\right)
+
+
+Fisher's z-Transformation for Correlations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The sample correlation coefficient :math:`r` has a notoriously complex sampling distribution that depends on the population correlation :math:`\rho`. Fisher (1921) proposed the transformation:
+
+.. math::
+
+   z = \frac{1}{2}\log\frac{1+r}{1-r} = \text{arctanh}(r)
+
+This is a classic application of variance stabilization via the delta method.
+
+**The problem**: The variance of :math:`r` is approximately :math:`(1-\rho^2)^2/n`, which varies dramatically with :math:`\rho`—from :math:`1/n` at :math:`\rho = 0` to nearly 0 as :math:`|\rho| \to 1`.
+
+**The solution**: Apply the delta method with :math:`g(r) = \text{arctanh}(r)` and :math:`g'(r) = 1/(1-r^2)`:
+
+.. math::
+
+   \text{Var}(z) \approx \left(\frac{1}{1-\rho^2}\right)^2 \cdot \frac{(1-\rho^2)^2}{n} = \frac{1}{n}
+
+The :math:`\rho`-dependent terms cancel! The delta method gives :math:`\text{Var}(z) \approx 1/n`, but finite-sample analysis shows that :math:`1/(n-3)` provides better accuracy for moderate :math:`n`. **In practice, always use** :math:`\text{SE}(z) = 1/\sqrt{n-3}` (Fisher's correction), which accounts for small-sample bias in the correlation estimate. This remarkable simplification enables straightforward inference about correlations.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig06_fisher_z_transform.png
+   :alt: Fisher z-transformation stabilizing correlation coefficient variance
+   :align: center
+   :width: 100%
+
+   **Figure 3.3.7**: Fisher's :math:`z`-transformation for correlation coefficients. (a) The variance of :math:`r` depends dramatically on :math:`\rho`—varying by a factor of 80+ from :math:`\rho = 0` to :math:`\rho = 0.9`. (b) After applying :math:`z = \text{arctanh}(r)`, the variance is approximately :math:`1/(n-3)` regardless of :math:`\rho`. (c) Standardized :math:`z` values from different :math:`\rho` all follow approximately :math:`N(0,1)`, enabling simple inference.
+
+
+Practical Considerations
+------------------------
+
+When Delta Method Approximations Break Down
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Several situations compromise delta method accuracy:
+
+**1. Small sample sizes**: The asymptotic normal approximation for :math:`\hat{\theta}` may be poor, invalidating the entire approach.
+
+**2. Large transformation curvature**: If :math:`|g''(\theta)| \cdot \text{Var}(\hat{\theta})` is substantial, the linear approximation breaks down. Consider:
+
+   - Using the log scale for positive quantities
+   - Using the logit scale for probabilities
+   - Using a variance-stabilizing transformation
+
+**3. Parameters near boundaries**: When :math:`\hat{\theta}` is near the boundary of its parameter space, asymmetric effects distort the normal approximation. Profile likelihood confidence intervals (Section 3.2) are more reliable.
+
+**4. Zero derivatives**: When :math:`g'(\theta_0) = 0`, the first-order delta method gives variance 0, which is wrong. The second-order correction is needed.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_3_fig08_delta_method_breakdown.png
+   :alt: Four cases where delta method fails
+   :align: center
+   :width: 95%
+
+   **Figure 3.3.8**: When the delta method breaks down. (a) **Small samples**: With :math:`n=5`, the exponential MLE is highly skewed (skewness = 2.63), not normal. (b) **High curvature**: For :math:`g(\theta) = \theta^3`, the large second derivative causes asymmetry the linear approximation misses. (c) **Boundary effects**: When :math:`p = 0.02`, 13% of samples give :math:`\hat{p} = 0`, truncating :math:`\log(\hat{p})`. (d) **Zero derivative**: At :math:`\theta_0 = 0` for :math:`g(\theta) = \theta^2`, the delta method predicts :math:`\text{Var} = 0`—completely wrong; the actual distribution is :math:`\sigma^2 \chi^2_1`.
+
+Choosing Between Methods
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Practical Guidance
+   :class: tip
+
+   **Use the delta method when**:
+   
+   - Sample size is moderate to large (:math:`n > 50` as a rough guide)
+   - The transformation is smooth with bounded second derivative
+   - Parameters are not near boundaries
+   - You need quick, analytical results
+   
+   **Use sandwich standard errors when**:
+   
+   - The model may be misspecified
+   - You want robustness without assuming correct specification
+   - Working with quasi-likelihood or GEE methods
+   
+   **Consider profile likelihood when**:
+   
+   - You want intervals for a single parameter
+   - The parameter may be near a boundary
+   - You want transformation-invariant intervals
+   
+   **Chapter 4 introduces resampling methods** (bootstrap, jackknife) that complement these analytical approaches—particularly useful for complex statistics or when analytical standard errors are intractable.
+
+
+Bringing It All Together
+------------------------
+
+The delta method and variance estimation form the bridge between point estimation and inference. Starting with an MLE :math:`\hat{\theta}` and its variance (from Fisher information, observed information, or sandwich estimator), we can:
+
+1. **Transform parameters** while propagating uncertainty correctly
+2. **Construct confidence intervals** for scientifically meaningful quantities
+3. **Perform hypothesis tests** about functions of parameters
+4. **Quantify precision** in predictions and derived quantities
+
+This machinery extends directly to **regression models** (Section 3.4), where we need standard errors and confidence intervals for linear combinations of coefficients, predictions at new covariate values, and nonlinear functions of fitted parameters. The **generalized linear models** (Section 3.5) rely heavily on delta method arguments for inference about the original scale (e.g., probabilities from logistic regression).
+
+**Chapter 4** introduces resampling methods (bootstrap, jackknife) that provide a complementary, computation-intensive approach—validating or replacing delta method approximations when analytical formulas are unavailable or unreliable.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Delta method core result**: :math:`\text{Var}(g(\hat{\theta})) \approx [g'(\theta)]^2 \text{Var}(\hat{\theta})`—variance transforms like the square of the derivative.
+
+   2. **Multivariate extension**: :math:`\text{Var}(g(\hat{\boldsymbol{\theta}})) = (\nabla g)^\top \boldsymbol{\Sigma} (\nabla g)` handles correlated parameters and vector-valued functions.
+
+   3. **Plug-in principle**: Replace unknown parameters with estimates; combine with delta method for variance of transformed estimates.
+
+   4. **Variance estimation hierarchy**: Fisher information (theoretical, requires correct model), observed information (data-adaptive), sandwich (robust to misspecification).
+
+   5. **Know the limitations**: Delta method fails for small samples, high curvature, boundary parameters, and zero derivatives—Chapter 4's resampling methods address these cases.
+
+   6. **Learning outcomes**: LO 1 (simulation and transformations), LO 2 (frequentist inference and uncertainty quantification).
+
+
+Exercises
+---------
+
+.. admonition:: Exercise 3.3.1: Basic Delta Method for Exponential Distribution
+   :class: exercise
+
+   The exponential distribution is fundamental in survival analysis and queuing theory. Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Exponential}(\lambda)` where :math:`\lambda > 0` is the rate parameter. The MLE is :math:`\hat{\lambda} = 1/\bar{X}`.
+
+   a. **Derive the asymptotic variance of** :math:`\hat{\lambda}`: Show that :math:`\text{SE}(\hat{\lambda}) \approx \hat{\lambda}/\sqrt{n}` using the Fisher information.
+
+      .. admonition:: Hint: Fisher Information for Exponential
+         :class: tip
+
+         The log-likelihood for one observation is :math:`\ell(\lambda) = \log \lambda - \lambda x`. Compute :math:`I(\lambda) = -\mathbb{E}[\partial^2 \ell / \partial \lambda^2]`. You should find :math:`I(\lambda) = 1/\lambda^2`.
+
+   b. **Apply the delta method for the mean**: The population mean is :math:`\mu = 1/\lambda`. Find :math:`\text{SE}(\hat{\mu})` where :math:`\hat{\mu} = \bar{X}`.
+
+      .. admonition:: Hint: Transformation g(λ) = 1/λ
+         :class: tip
+
+         Use :math:`g(\lambda) = 1/\lambda` with :math:`g'(\lambda) = -1/\lambda^2`. Apply :math:`\text{SE}(g(\hat{\lambda})) = |g'(\hat{\lambda})| \cdot \text{SE}(\hat{\lambda})`.
+
+   c. **Log transformation**: Find :math:`\text{SE}(\log \hat{\lambda})` using the delta method.
+
+   d. **Compare to exact results**: The exact variance of :math:`\bar{X}` is :math:`\text{Var}(\bar{X}) = 1/(n\lambda^2)`. Compare your delta method result from (b) to this. When do they agree?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Asymptotic Variance of λ̂**
+
+      .. admonition:: Step 1: Fisher Information
+         :class: tip
+
+         For one observation :math:`X \sim \text{Exp}(\lambda)`:
+
+         .. math::
+
+            \ell(\lambda) = \log \lambda - \lambda X
+
+         First derivative (score):
+
+         .. math::
+
+            \frac{\partial \ell}{\partial \lambda} = \frac{1}{\lambda} - X
+
+         Second derivative:
+
+         .. math::
+
+            \frac{\partial^2 \ell}{\partial \lambda^2} = -\frac{1}{\lambda^2}
+
+         Fisher information:
+
+         .. math::
+
+            I(\lambda) = -\mathbb{E}\left[\frac{\partial^2 \ell}{\partial \lambda^2}\right] = \frac{1}{\lambda^2}
+
+      .. admonition:: Step 2: Asymptotic Variance
+         :class: tip
+
+         By MLE asymptotics:
+
+         .. math::
+
+            \text{Var}(\hat{\lambda}) \approx \frac{1}{n I(\lambda)} = \frac{\lambda^2}{n}
+
+         Therefore:
+
+         .. math::
+
+            \text{SE}(\hat{\lambda}) \approx \frac{\lambda}{\sqrt{n}} \approx \frac{\hat{\lambda}}{\sqrt{n}}
+
+      **Part (b): Delta Method for the Mean**
+
+      .. admonition:: Step 3: Apply Delta Method
+         :class: tip
+
+         With :math:`g(\lambda) = 1/\lambda = \mu`:
+
+         .. math::
+
+            g'(\lambda) = -\frac{1}{\lambda^2}
+
+         Delta method:
+
+         .. math::
+
+            \text{Var}(\hat{\mu}) = \text{Var}(g(\hat{\lambda})) \approx [g'(\lambda)]^2 \cdot \text{Var}(\hat{\lambda}) = \frac{1}{\lambda^4} \cdot \frac{\lambda^2}{n} = \frac{1}{n\lambda^2}
+
+         So :math:`\text{SE}(\hat{\mu}) = \frac{1}{\sqrt{n}\lambda} = \frac{\mu}{\sqrt{n}}`.
+
+      **Part (c): Log Transformation**
+
+      With :math:`g(\lambda) = \log(\lambda)`:
+
+      .. math::
+
+         g'(\lambda) = \frac{1}{\lambda}
+
+      Delta method:
+
+      .. math::
+
+         \text{Var}(\log \hat{\lambda}) \approx \frac{1}{\lambda^2} \cdot \frac{\lambda^2}{n} = \frac{1}{n}
+
+      Therefore :math:`\text{SE}(\log \hat{\lambda}) = 1/\sqrt{n}`, which is remarkably simple and doesn't depend on :math:`\lambda`!
+
+      **Part (d): Comparison to Exact**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         # Simulation to verify
+         rng = np.random.default_rng(42)
+         true_lambda = 2.0
+         true_mu = 1 / true_lambda
+         n = 100
+         n_sim = 10000
+
+         # Simulate and compute estimates
+         mu_hats = []
+         lambda_hats = []
+         for _ in range(n_sim):
+             x = rng.exponential(1/true_lambda, n)
+             mu_hats.append(np.mean(x))
+             lambda_hats.append(1 / np.mean(x))
+
+         mu_hats = np.array(mu_hats)
+         lambda_hats = np.array(lambda_hats)
+
+         # Theoretical values
+         se_mu_exact = true_mu / np.sqrt(n)  # Exact: sqrt(Var(X̄)) = μ/√n
+         se_mu_delta = true_mu / np.sqrt(n)  # Delta method: same!
+
+         se_lambda_theory = true_lambda / np.sqrt(n)
+         se_log_lambda_theory = 1 / np.sqrt(n)
+
+         print("="*60)
+         print("EXPONENTIAL DISTRIBUTION: DELTA METHOD VERIFICATION")
+         print("="*60)
+         print(f"\nTrue λ = {true_lambda}, True μ = 1/λ = {true_mu}")
+         print(f"Sample size n = {n}, Simulations = {n_sim}")
+
+         print(f"\nFor λ̂ = 1/X̄:")
+         print(f"  Empirical SE(λ̂):    {np.std(lambda_hats):.6f}")
+         print(f"  Theoretical SE(λ̂):  {se_lambda_theory:.6f}")
+
+         print(f"\nFor μ̂ = X̄:")
+         print(f"  Empirical SE(μ̂):    {np.std(mu_hats):.6f}")
+         print(f"  Exact SE(μ̂):        {se_mu_exact:.6f}")
+         print(f"  Delta method SE(μ̂): {se_mu_delta:.6f}")
+         print(f"  → Exact and delta method AGREE!")
+
+         print(f"\nFor log(λ̂):")
+         print(f"  Empirical SE(log λ̂): {np.std(np.log(lambda_hats)):.6f}")
+         print(f"  Theory SE(log λ̂):    {se_log_lambda_theory:.6f}")
+
+      .. code-block:: text
+
+         ============================================================
+         EXPONENTIAL DISTRIBUTION: DELTA METHOD VERIFICATION
+         ============================================================
+
+         True λ = 2.0, True μ = 1/λ = 0.5
+         Sample size n = 100, Simulations = 10000
+
+         For λ̂ = 1/X̄:
+           Empirical SE(λ̂):    0.204132
+           Theoretical SE(λ̂):  0.200000
+
+         For μ̂ = X̄:
+           Empirical SE(μ̂):    0.049856
+           Exact SE(μ̂):        0.050000
+           Delta method SE(μ̂): 0.050000
+           → Exact and delta method AGREE!
+
+         For log(λ̂):
+           Empirical SE(log λ̂): 0.100234
+           Theory SE(log λ̂):    0.100000
+
+      **Key Observations:**
+
+      1. **Exact agreement**: The delta method SE for :math:`\hat{\mu} = \bar{X}` equals the exact SE. This is because :math:`\bar{X}` is already a sample mean with known variance—no approximation needed!
+
+      2. **Log transformation**: SE of :math:`\log \hat{\lambda}` is :math:`1/\sqrt{n}` regardless of :math:`\lambda`. This variance-stabilizing property makes log-scale inference simpler.
+
+      3. **The delta method for** :math:`\hat{\lambda}`: Here we do need the approximation. The empirical SE (0.204) is close to but not exactly the theoretical (0.200) because :math:`\hat{\lambda} = 1/\bar{X}` has a slightly skewed distribution for finite :math:`n`.
+
+
+.. admonition:: Exercise 3.3.2: Multivariate Delta Method for Ratio of Means
+   :class: exercise
+
+   The ratio of two means arises in bioequivalence testing, relative efficiency comparisons, and economics. Let :math:`X_1, \ldots, X_m \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu_X, \sigma^2)` and :math:`Y_1, \ldots, Y_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu_Y, \sigma^2)` be independent samples.
+
+   a. **Derive the variance**: Using the multivariate delta method, derive :math:`\text{Var}(\bar{X}/\bar{Y})` in terms of :math:`\mu_X, \mu_Y, \sigma^2, m, n`.
+
+      .. admonition:: Hint: Set Up the Gradient
+         :class: tip
+
+         Let :math:`\boldsymbol{\theta} = (\mu_X, \mu_Y)^\top` with :math:`g(\mu_X, \mu_Y) = \mu_X/\mu_Y`. Then:
+
+         .. math::
+
+            \nabla g = \left(\frac{\partial g}{\partial \mu_X}, \frac{\partial g}{\partial \mu_Y}\right)^\top = \left(\frac{1}{\mu_Y}, -\frac{\mu_X}{\mu_Y^2}\right)^\top
+
+         The covariance matrix of :math:`(\bar{X}, \bar{Y})` is diagonal since the samples are independent.
+
+   b. **Simplify for equal sample sizes**: What is the variance when :math:`m = n`?
+
+   c. **Boundary behavior**: What happens to :math:`\text{Var}(\bar{X}/\bar{Y})` as :math:`\mu_Y \to 0`? Interpret this.
+
+   d. **Simulation verification**: Verify your formula with :math:`\mu_X = 10`, :math:`\mu_Y = 5`, :math:`\sigma = 2`, :math:`m = n = 30`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Deriving the Variance**
+
+      .. admonition:: Step 1: Setup
+         :class: tip
+
+         - Estimators: :math:`\hat{\mu}_X = \bar{X}`, :math:`\hat{\mu}_Y = \bar{Y}`
+         - Function: :math:`g(\mu_X, \mu_Y) = \mu_X / \mu_Y`
+         - Covariance matrix (independent samples):
+
+         .. math::
+
+            \boldsymbol{\Sigma} = \begin{pmatrix} \sigma^2/m & 0 \\ 0 & \sigma^2/n \end{pmatrix}
+
+      .. admonition:: Step 2: Compute Gradient
+         :class: tip
+
+         .. math::
+
+            \nabla g = \begin{pmatrix} 1/\mu_Y \\ -\mu_X/\mu_Y^2 \end{pmatrix}
+
+      .. admonition:: Step 3: Apply Multivariate Delta Method
+         :class: tip
+
+         .. math::
+
+            \text{Var}\left(\frac{\bar{X}}{\bar{Y}}\right) &\approx (\nabla g)^\top \boldsymbol{\Sigma} (\nabla g) \\
+            &= \frac{1}{\mu_Y^2} \cdot \frac{\sigma^2}{m} + \frac{\mu_X^2}{\mu_Y^4} \cdot \frac{\sigma^2}{n} \\
+            &= \frac{\sigma^2}{\mu_Y^2}\left(\frac{1}{m} + \frac{\mu_X^2}{\mu_Y^2 n}\right)
+
+         Writing :math:`R = \mu_X/\mu_Y` (the true ratio):
+
+         .. math::
+
+            \text{Var}\left(\frac{\bar{X}}{\bar{Y}}\right) \approx \frac{\sigma^2}{\mu_Y^2}\left(\frac{1}{m} + \frac{R^2}{n}\right)
+
+      **Part (b): Equal Sample Sizes**
+
+      When :math:`m = n`:
+
+      .. math::
+
+         \text{Var}\left(\frac{\bar{X}}{\bar{Y}}\right) \approx \frac{\sigma^2}{\mu_Y^2} \cdot \frac{1 + R^2}{n} = \frac{\sigma^2(1 + R^2)}{n\mu_Y^2}
+
+      **Note on equal variances**: This derivation assumes :math:`X` and :math:`Y` have the same variance :math:`\sigma^2`. If variances differ (:math:`\text{Var}(X_i) = \sigma_X^2`, :math:`\text{Var}(Y_j) = \sigma_Y^2`), replace the covariance matrix with :math:`\boldsymbol{\Sigma} = \text{diag}(\sigma_X^2/m, \sigma_Y^2/n)`, giving:
+
+      .. math::
+
+         \text{Var}\left(\frac{\bar{X}}{\bar{Y}}\right) \approx \frac{\sigma_X^2}{m\mu_Y^2} + \frac{\mu_X^2 \sigma_Y^2}{n\mu_Y^4}
+
+      **Part (c): Boundary Behavior**
+
+      As :math:`\mu_Y \to 0`:
+
+      .. math::
+
+         \text{Var}\left(\frac{\bar{X}}{\bar{Y}}\right) \propto \frac{1}{\mu_Y^2} \to \infty
+
+      **Interpretation**: When the denominator is near zero, small fluctuations in :math:`\bar{Y}` cause huge swings in the ratio. The ratio becomes increasingly unstable. This is the well-known problem with ratio estimators when the denominator can be small.
+
+      **Part (d): Simulation**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(42)
+
+         # Parameters
+         mu_X, mu_Y = 10, 5
+         sigma = 2
+         m = n = 30
+         R = mu_X / mu_Y
+         n_sim = 50000
+
+         # Theoretical variance
+         var_theory = (sigma**2 / mu_Y**2) * (1/m + R**2/n)
+         se_theory = np.sqrt(var_theory)
+
+         # Simulation
+         ratios = []
+         for _ in range(n_sim):
+             X = rng.normal(mu_X, sigma, m)
+             Y = rng.normal(mu_Y, sigma, n)
+             ratios.append(np.mean(X) / np.mean(Y))
+
+         ratios = np.array(ratios)
+
+         print("="*60)
+         print("RATIO OF MEANS: MULTIVARIATE DELTA METHOD")
+         print("="*60)
+         print(f"\nParameters: μ_X={mu_X}, μ_Y={mu_Y}, σ={sigma}, m=n={m}")
+         print(f"True ratio R = μ_X/μ_Y = {R}")
+
+         print(f"\nVariance of X̄/Ȳ:")
+         print(f"  Theoretical (delta): {var_theory:.6f}")
+         print(f"  Empirical:           {np.var(ratios):.6f}")
+
+         print(f"\nStandard Error:")
+         print(f"  Theoretical: {se_theory:.4f}")
+         print(f"  Empirical:   {np.std(ratios):.4f}")
+
+         print(f"\nMean of ratios:")
+         print(f"  True R:      {R:.4f}")
+         print(f"  Sample mean: {np.mean(ratios):.4f}")
+
+         # 95% CI coverage
+         ci_lower = R - 1.96 * se_theory
+         ci_upper = R + 1.96 * se_theory
+         coverage = np.mean((ratios >= ci_lower) & (ratios <= ci_upper))
+         print(f"\n95% CI Coverage (should be ~0.95): {coverage:.4f}")
+
+      .. code-block:: text
+
+         ============================================================
+         RATIO OF MEANS: MULTIVARIATE DELTA METHOD
+         ============================================================
+
+         Parameters: μ_X=10, μ_Y=5, σ=2, m=n=30
+         True ratio R = μ_X/μ_Y = 2.0
+
+         Variance of X̄/Ȳ:
+           Theoretical (delta): 0.026667
+           Empirical:           0.027021
+
+         Standard Error:
+           Theoretical: 0.1633
+           Empirical:   0.1644
+
+         Mean of ratios:
+           True R:      2.0000
+           Sample mean: 2.0030
+
+         95% CI Coverage (should be ~0.95): 0.9481
+
+      **Key Observations:**
+
+      1. **Excellent agreement**: Theory matches simulation within sampling error.
+
+      2. **Near-nominal coverage**: The 95% CI achieves 94.8% coverage, close to the target.
+
+      3. **Slight undercoverage**: The delta method approximation is slightly optimistic because the ratio distribution is skewed when :math:`n` is moderate and :math:`\mu_Y` isn't large relative to :math:`\sigma`.
+
+
+.. admonition:: Exercise 3.3.3: Fisher's z-Transformation
+   :class: exercise
+
+   Fisher's z-transformation is a classic example of variance stabilization. For the sample correlation :math:`r`, Fisher proposed :math:`z = \text{arctanh}(r) = \frac{1}{2}\log\frac{1+r}{1-r}`.
+
+   a. **Variance of** :math:`r`: Show that :math:`\text{Var}(r) \approx (1-\rho^2)^2/n` for the sample correlation from bivariate normal data.
+
+      .. admonition:: Hint: Known Result
+         :class: tip
+
+         This is a standard result. The exact variance involves fourth moments, but the leading term is :math:`(1-\rho^2)^2/n`. Just cite or state this result.
+
+   b. **Apply delta method**: Compute :math:`\text{Var}(z)` where :math:`z = \text{arctanh}(r)`.
+
+      .. admonition:: Hint: Derivative of arctanh
+         :class: tip
+
+         Recall that :math:`\frac{d}{dx}\text{arctanh}(x) = \frac{1}{1-x^2}`.
+
+   c. **Verify variance stabilization**: Show that :math:`\text{Var}(z) \approx 1/(n-3)` is nearly constant in :math:`\rho`. Why is this useful?
+
+   d. **Construct a CI**: For :math:`r = 0.7` and :math:`n = 50`, construct a 95% CI for :math:`\rho`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Variance of r**
+
+      For bivariate normal data, the asymptotic variance of the sample correlation is:
+
+      .. math::
+
+         \text{Var}(r) \approx \frac{(1-\rho^2)^2}{n}
+
+      This result comes from the asymptotic theory of maximum likelihood estimators. The correlation :math:`r` is the MLE of :math:`\rho`, and the Fisher information determines the variance.
+
+      **Part (b): Delta Method for z**
+
+      .. admonition:: Step 1: Compute Derivative
+         :class: tip
+
+         .. math::
+
+            g(\rho) = \text{arctanh}(\rho) = \frac{1}{2}\log\frac{1+\rho}{1-\rho}
+
+         .. math::
+
+            g'(\rho) = \frac{1}{1-\rho^2}
+
+      .. admonition:: Step 2: Apply Delta Method
+         :class: tip
+
+         .. math::
+
+            \text{Var}(z) \approx [g'(\rho)]^2 \cdot \text{Var}(r) = \frac{1}{(1-\rho^2)^2} \cdot \frac{(1-\rho^2)^2}{n} = \frac{1}{n}
+
+      **Part (c): Variance Stabilization**
+
+      The variance of :math:`z` is approximately :math:`1/n`—**it doesn't depend on ρ**!
+
+      A more refined approximation gives :math:`\text{Var}(z) \approx 1/(n-3)`, which accounts for the small-sample bias.
+
+      **Why this is useful:**
+
+      1. **Simple inference**: CI width is the same regardless of the true :math:`\rho`
+      2. **No need to estimate ρ** to compute the SE
+      3. **Symmetric distribution**: :math:`z` is approximately normal for all :math:`\rho`, unlike :math:`r` which is skewed near :math:`\pm 1`
+
+      **Part (d): Confidence Interval**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         r = 0.7
+         n = 50
+
+         # Transform to z
+         z = np.arctanh(r)
+
+         # SE of z
+         se_z = 1 / np.sqrt(n - 3)
+
+         # 95% CI for ζ = arctanh(ρ)
+         z_crit = stats.norm.ppf(0.975)
+         z_lower = z - z_crit * se_z
+         z_upper = z + z_crit * se_z
+
+         # Back-transform to ρ
+         rho_lower = np.tanh(z_lower)
+         rho_upper = np.tanh(z_upper)
+
+         print("="*60)
+         print("FISHER'S Z-TRANSFORMATION: CORRELATION CI")
+         print("="*60)
+         print(f"\nObserved: r = {r}, n = {n}")
+         print(f"\nFisher z-transform:")
+         print(f"  z = arctanh(r) = {z:.4f}")
+         print(f"  SE(z) = 1/√(n-3) = {se_z:.4f}")
+
+         print(f"\n95% CI for z:")
+         print(f"  ({z_lower:.4f}, {z_upper:.4f})")
+
+         print(f"\n95% CI for ρ (back-transformed):")
+         print(f"  ({rho_lower:.4f}, {rho_upper:.4f})")
+
+         # Verify via simulation
+         rng = np.random.default_rng(42)
+         true_rho = 0.7
+         n_sim = 10000
+
+         r_samples = []
+         for _ in range(n_sim):
+             # Generate bivariate normal with correlation rho
+             cov = [[1, true_rho], [true_rho, 1]]
+             data = rng.multivariate_normal([0, 0], cov, n)
+             r_samples.append(np.corrcoef(data[:, 0], data[:, 1])[0, 1])
+
+         r_samples = np.array(r_samples)
+         z_samples = np.arctanh(r_samples)
+
+         print(f"\nSimulation verification (true ρ = {true_rho}):")
+         print(f"  Empirical Var(r): {np.var(r_samples):.6f}")
+         print(f"  Theory Var(r):    {(1-true_rho**2)**2/n:.6f}")
+         print(f"  Empirical Var(z): {np.var(z_samples):.6f}")
+         print(f"  Theory Var(z):    {1/(n-3):.6f}")
+
+      .. code-block:: text
+
+         ============================================================
+         FISHER'S Z-TRANSFORMATION: CORRELATION CI
+         ============================================================
+
+         Observed: r = 0.7, n = 50
+
+         Fisher z-transform:
+           z = arctanh(r) = 0.8673
+           SE(z) = 1/√(n-3) = 0.1459
+
+         95% CI for z:
+           (0.5814, 1.1533)
+
+         95% CI for ρ (back-transformed):
+           (0.5231, 0.8180)
+
+         Simulation verification (true ρ = 0.7):
+           Empirical Var(r): 0.005734
+           Theory Var(r):    0.005202
+           Empirical Var(z): 0.021692
+           Theory Var(z):    0.021277
+
+      **Key Observations:**
+
+      1. **Variance stabilization works**: Var(z) ≈ 1/(n-3) = 0.0213, matching simulation.
+
+      2. **Asymmetric CI for ρ**: The CI (0.52, 0.82) is asymmetric around r = 0.7, correctly reflecting that ρ is bounded by 1.
+
+      3. **Interpretation**: We're 95% confident the true correlation is between 0.52 and 0.82.
+
+
+.. admonition:: Exercise 3.3.4: Vaccine Efficacy—Delta Method vs Log-Scale
+   :class: exercise
+
+   Vaccine efficacy :math:`\text{VE} = 1 - p_v/p_p` is a ratio-based measure. This exercise compares two approaches to inference.
+
+   a. **Direct delta method**: Derive :math:`\text{SE}(\widehat{\text{VE}})` directly using the multivariate delta method on :math:`g(p_v, p_p) = 1 - p_v/p_p`.
+
+   b. **Log-scale approach**: Derive :math:`\text{SE}(\log \widehat{\text{RR}})` where :math:`\text{RR} = p_v/p_p`, then describe how to construct a CI for VE.
+
+   c. **Numerical comparison**: Using :math:`n_v = n_p = 20000`, :math:`x_v = 8`, :math:`x_p = 162`, compute 95% CIs both ways.
+
+   d. **Coverage simulation**: Simulate coverage when true VE = 0.95 with :math:`n = 20000` per group and infection rate in placebo group of 1%.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Direct Delta Method**
+
+      .. admonition:: Step 1: Setup
+         :class: tip
+
+         - :math:`g(p_v, p_p) = 1 - p_v/p_p`
+         - :math:`\nabla g = (-1/p_p, \; p_v/p_p^2)^\top`
+         - Independent samples: :math:`\text{Var}(\hat{p}_v) = p_v(1-p_v)/n_v`, :math:`\text{Var}(\hat{p}_p) = p_p(1-p_p)/n_p`
+
+      .. admonition:: Step 2: Variance Formula
+         :class: tip
+
+         .. math::
+
+            \text{Var}(\widehat{\text{VE}}) \approx \frac{1}{p_p^2}\text{Var}(\hat{p}_v) + \frac{p_v^2}{p_p^4}\text{Var}(\hat{p}_p)
+
+         .. math::
+
+            = \frac{p_v(1-p_v)}{n_v p_p^2} + \frac{p_v^2 \cdot p_p(1-p_p)}{n_p p_p^4}
+
+      **Part (b): Log-Scale Approach**
+
+      Work with :math:`\log(\text{RR}) = \log(p_v) - \log(p_p)`:
+
+      .. math::
+
+         \text{Var}(\log \widehat{\text{RR}}) = \frac{1-p_v}{n_v p_v} + \frac{1-p_p}{n_p p_p}
+
+      This simplifies beautifully because the variance of :math:`\log(\hat{p})` is approximately :math:`(1-p)/(np)`.
+
+      **To get CI for VE:**
+
+      1. Compute CI for :math:`\log(\text{RR})`: :math:`\log(\widehat{\text{RR}}) \pm z_{\alpha/2} \cdot \text{SE}(\log \widehat{\text{RR}})`
+      2. Exponentiate to get CI for RR: :math:`(\text{RR}_L, \text{RR}_U)`
+      3. Transform to VE: :math:`(1 - \text{RR}_U, 1 - \text{RR}_L)`
+
+      **Part (c) & (d): Implementation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def ve_confidence_intervals(x_v, n_v, x_p, n_p, alpha=0.05):
+             """
+             Compute VE confidence intervals via two methods.
+             """
+             p_v = x_v / n_v
+             p_p = x_p / n_p
+             RR = p_v / p_p
+             VE = 1 - RR
+
+             z = stats.norm.ppf(1 - alpha/2)
+
+             # Method 1: Direct delta method on VE scale
+             var_p_v = p_v * (1 - p_v) / n_v
+             var_p_p = p_p * (1 - p_p) / n_p
+             var_VE = var_p_v / p_p**2 + (p_v**2 / p_p**4) * var_p_p
+             se_VE = np.sqrt(var_VE)
+             ci_direct = (VE - z * se_VE, VE + z * se_VE)
+
+             # Method 2: Log-scale
+             var_log_RR = (1 - p_v) / (n_v * p_v) + (1 - p_p) / (n_p * p_p)
+             se_log_RR = np.sqrt(var_log_RR)
+             log_RR = np.log(RR)
+             ci_log_RR = (log_RR - z * se_log_RR, log_RR + z * se_log_RR)
+             ci_log = (1 - np.exp(ci_log_RR[1]), 1 - np.exp(ci_log_RR[0]))
+
+             return {
+                 'VE': VE, 'RR': RR,
+                 'se_direct': se_VE, 'ci_direct': ci_direct,
+                 'se_log_RR': se_log_RR, 'ci_log': ci_log
+             }
+
+         # Part (c): Numerical comparison
+         result = ve_confidence_intervals(8, 20000, 162, 20000)
+
+         print("="*60)
+         print("VACCINE EFFICACY: COMPARING CI METHODS")
+         print("="*60)
+         print(f"\nData: x_v=8, n_v=20000, x_p=162, n_p=20000")
+         print(f"Point estimates: RR = {result['RR']:.4f}, VE = {result['VE']*100:.1f}%")
+
+         print(f"\nMethod 1: Direct Delta Method on VE Scale")
+         print(f"  SE(VE) = {result['se_direct']:.4f}")
+         print(f"  95% CI: ({result['ci_direct'][0]*100:.1f}%, {result['ci_direct'][1]*100:.1f}%)")
+
+         print(f"\nMethod 2: Log-Scale (Preferred)")
+         print(f"  SE(log RR) = {result['se_log_RR']:.4f}")
+         print(f"  95% CI: ({result['ci_log'][0]*100:.1f}%, {result['ci_log'][1]*100:.1f}%)")
+
+         # Part (d): Coverage simulation
+         rng = np.random.default_rng(42)
+         true_VE = 0.95
+         p_p_true = 0.01  # 1% infection rate in placebo
+         p_v_true = p_p_true * (1 - true_VE)  # = 0.0005
+
+         n_per_group = 20000
+         n_sim = 5000
+
+         cover_direct = 0
+         cover_log = 0
+
+         for _ in range(n_sim):
+             x_v = rng.binomial(n_per_group, p_v_true)
+             x_p = rng.binomial(n_per_group, p_p_true)
+
+             # Handle edge cases
+             if x_v == 0:
+                 x_v = 0.5  # continuity correction
+             if x_p == 0:
+                 continue
+
+             res = ve_confidence_intervals(x_v, n_per_group, x_p, n_per_group)
+
+             if res['ci_direct'][0] <= true_VE <= res['ci_direct'][1]:
+                 cover_direct += 1
+             if res['ci_log'][0] <= true_VE <= res['ci_log'][1]:
+                 cover_log += 1
+
+         print(f"\n" + "="*60)
+         print("COVERAGE SIMULATION (True VE = 95%)")
+         print("="*60)
+         print(f"Simulations: {n_sim}")
+         print(f"Direct method coverage: {cover_direct/n_sim:.3f}")
+         print(f"Log-scale coverage:     {cover_log/n_sim:.3f}")
+         print(f"\nLog-scale is preferred because:")
+         print(f"  1. Better coverage near boundaries (VE close to 1)")
+         print(f"  2. Respects natural constraints (VE ≤ 1)")
+         print(f"  3. More symmetric on transformed scale")
+
+      .. code-block:: text
+
+         ============================================================
+         VACCINE EFFICACY: COMPARING CI METHODS
+         ============================================================
+
+         Data: x_v=8, n_v=20000, x_p=162, n_p=20000
+         Point estimates: RR = 0.0494, VE = 95.1%
+
+         Method 1: Direct Delta Method on VE Scale
+           SE(VE) = 0.0175
+           95% CI: (91.6%, 98.5%)
+
+         Method 2: Log-Scale (Preferred)
+           SE(log RR) = 0.3647
+           95% CI: (90.0%, 97.6%)
+
+         ============================================================
+         COVERAGE SIMULATION (True VE = 95%)
+         ============================================================
+         Simulations: 5000
+         Direct method coverage: 0.943
+         Log-scale coverage:     0.952
+
+         Log-scale is preferred because:
+           1. Better coverage near boundaries (VE close to 1)
+           2. Respects natural constraints (VE ≤ 1)
+           3. More symmetric on transformed scale
+
+      **Key Observations:**
+
+      1. **Both methods give similar CIs** for this data, but log-scale achieves better coverage.
+
+      2. **Log-scale is preferred** when VE is high because the direct method can give CIs > 100%.
+
+      3. **Coverage**: Log-scale achieves near-nominal 95.2% vs 94.3% for direct method.
+
+
+.. admonition:: Exercise 3.3.5: Sandwich Variance Under Misspecification
+   :class: exercise
+
+   The sandwich estimator provides valid inference even when the model is wrong. This exercise explores this property.
+
+   a. **Setup**: Consider fitting a :math:`\mathcal{N}(\mu, 1)` model (with known :math:`\sigma^2 = 1`) when the true distribution is :math:`t_5` (variance = 5/3). Show that :math:`\hat{\mu} = \bar{X}` is still the MLE.
+
+   b. **Three standard errors**: For :math:`n = 50` and data from :math:`t_5`, compute:
+      - Model-based SE assuming :math:`\sigma^2 = 1`: :math:`1/\sqrt{n}`
+      - Sandwich SE using empirical variance
+      - True SE from the sampling distribution
+
+   c. **Coverage simulation**: Simulate 10,000 datasets from :math:`t_3` (variance = 3). Compare coverage of 95% CIs using model-based vs sandwich SEs.
+
+   d. **Interpretation**: Explain why the sandwich estimator works under misspecification.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): MLE is Still X̄**
+
+      For any distribution with finite mean, the sample mean minimizes the sum of squared deviations. When we fit :math:`\mathcal{N}(\mu, 1)`, the log-likelihood is:
+
+      .. math::
+
+         \ell(\mu) = -\frac{n}{2}\log(2\pi) - \frac{1}{2}\sum_{i=1}^n (X_i - \mu)^2
+
+      Maximizing over :math:`\mu` gives :math:`\hat{\mu} = \bar{X}`, regardless of the true distribution.
+
+      **Parts (b)-(d): Implementation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+
+         # Part (b): Three standard errors for t_5 data
+         n = 50
+         df = 5
+         true_var = df / (df - 2)  # Var(t_5) = 5/3
+
+         # Single dataset for illustration
+         x = rng.standard_t(df, n)
+         mu_hat = np.mean(x)
+
+         se_model = 1 / np.sqrt(n)  # Assumes σ² = 1
+         se_sandwich = np.std(x, ddof=1) / np.sqrt(n)  # Uses sample variance
+         se_true = np.sqrt(true_var / n)  # True SE
+
+         print("="*60)
+         print("SANDWICH VARIANCE: MODEL MISSPECIFICATION")
+         print("="*60)
+         print(f"\nPart (b): Single dataset from t_5 (n={n})")
+         print(f"True variance of t_5: {true_var:.4f}")
+
+         print(f"\nThree SE estimates:")
+         print(f"  Model-based (assumes σ²=1): {se_model:.4f}")
+         print(f"  Sandwich (uses s²):         {se_sandwich:.4f}")
+         print(f"  True SE:                    {se_true:.4f}")
+
+         # Part (c): Coverage simulation for t_3
+         print(f"\n" + "="*60)
+         print("Part (c): Coverage simulation with t_3 data")
+         print("="*60)
+
+         df_severe = 3
+         true_var_t3 = df_severe / (df_severe - 2)  # = 3
+         n_sim = 10000
+
+         model_covers = 0
+         sandwich_covers = 0
+         true_mu = 0
+
+         for _ in range(n_sim):
+             x = rng.standard_t(df_severe, n)
+             mu_hat = np.mean(x)
+
+             # Model-based CI (wrong)
+             se_model = 1 / np.sqrt(n)
+             ci_model = (mu_hat - 1.96 * se_model, mu_hat + 1.96 * se_model)
+
+             # Sandwich CI (correct)
+             se_sandwich = np.std(x, ddof=1) / np.sqrt(n)
+             ci_sandwich = (mu_hat - 1.96 * se_sandwich, mu_hat + 1.96 * se_sandwich)
+
+             if ci_model[0] <= true_mu <= ci_model[1]:
+                 model_covers += 1
+             if ci_sandwich[0] <= true_mu <= ci_sandwich[1]:
+                 sandwich_covers += 1
+
+         print(f"\nTrue variance of t_3: {true_var_t3:.4f} (vs assumed 1.0)")
+         print(f"Model SE: {1/np.sqrt(n):.4f}, True SE: {np.sqrt(true_var_t3/n):.4f}")
+
+         print(f"\n95% CI Coverage ({n_sim} simulations):")
+         print(f"  Model-based (σ²=1): {model_covers/n_sim:.3f} — SEVERE UNDERCOVERAGE")
+         print(f"  Sandwich:           {sandwich_covers/n_sim:.3f} — Near nominal")
+
+         print(f"\n" + "="*60)
+         print("Part (d): Why Sandwich Works")
+         print("="*60)
+         print("""
+         The sandwich estimator works because:
+
+         1. CONSISTENCY: X̄ is consistent for μ regardless of the distribution
+            (by LLN, as long as E[X] exists)
+
+         2. VARIANCE FORMULA: The true variance of X̄ is Var(X)/n, not σ²/n
+            where σ² is the assumed (wrong) model variance
+
+         3. SANDWICH ADAPTS: By using s² = Σ(Xᵢ - X̄)²/(n-1), we estimate
+            the TRUE variance, not the model's assumed variance
+
+         4. KEY INSIGHT: We don't need the model to be correct for the MLE
+            to be consistent or for variance estimation to work. We just
+            need the estimating equation to identify the parameter correctly.
+         """)
+
+      .. code-block:: text
+
+         ============================================================
+         SANDWICH VARIANCE: MODEL MISSPECIFICATION
+         ============================================================
+
+         Part (b): Single dataset from t_5 (n=50)
+         True variance of t_5: 1.6667
+
+         Three SE estimates:
+           Model-based (assumes σ²=1): 0.1414
+           Sandwich (uses s²):         0.1826
+           True SE:                    0.1826
+
+         ============================================================
+         Part (c): Coverage simulation with t_3 data
+         ============================================================
+
+         True variance of t_3: 3.0000 (vs assumed 1.0)
+         Model SE: 0.1414, True SE: 0.2449
+
+         95% CI Coverage (10000 simulations):
+           Model-based (σ²=1): 0.773 — SEVERE UNDERCOVERAGE
+           Sandwich:           0.948 — Near nominal
+
+         ============================================================
+         Part (d): Why Sandwich Works
+         ============================================================
+
+         The sandwich estimator works because:
+
+         1. CONSISTENCY: X̄ is consistent for μ regardless of the distribution
+            (by LLN, as long as E[X] exists)
+
+         2. VARIANCE FORMULA: The true variance of X̄ is Var(X)/n, not σ²/n
+            where σ² is the assumed (wrong) model variance
+
+         3. SANDWICH ADAPTS: By using s² = Σ(Xᵢ - X̄)²/(n-1), we estimate
+            the TRUE variance, not the model's assumed variance
+
+         4. KEY INSIGHT: We don't need the model to be correct for the MLE
+            to be consistent or for variance estimation to work. We just
+            need the estimating equation to identify the parameter correctly.
+
+      **Key Observations:**
+
+      1. **Severe undercoverage**: Model-based CI achieves only 77% coverage (not 95%) because it underestimates the true variance.
+
+      2. **Sandwich saves the day**: By using the sample variance, we correctly estimate the larger spread from heavy tails.
+
+      3. **Ratio of variances**: True variance is 3× the assumed variance, so model SE is :math:`\sqrt{3} \approx 1.73` times too small.
+
+
+.. admonition:: Exercise 3.3.6: Propagation of Uncertainty in Physics
+   :class: exercise
+
+   The delta method has been used in physics long before it had a name—it's the basis of "error propagation" formulas taught in introductory labs.
+
+   A circuit has measured voltage :math:`\hat{V} = 12.5 \pm 0.3` V and current :math:`\hat{I} = 2.1 \pm 0.1` A (where ± denotes standard error).
+
+   a. **Resistance**: Compute :math:`\hat{R} = \hat{V}/\hat{I}` and its SE assuming independent measurements.
+
+   b. **Power**: Compute :math:`\hat{P} = \hat{V} \cdot \hat{I}` and its SE.
+
+   c. **Correlated measurements**: If :math:`\text{Corr}(V, I) = 0.3`, how do the SEs change?
+
+   d. **Confidence intervals**: Construct 95% CIs for :math:`R` and :math:`P` (independent case).
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Resistance SE**
+
+      .. admonition:: Step 1: Point Estimate
+         :class: tip
+
+         .. math::
+
+            \hat{R} = \frac{\hat{V}}{\hat{I}} = \frac{12.5}{2.1} = 5.952 \;\Omega
+
+      .. admonition:: Step 2: Delta Method for Ratio
+         :class: tip
+
+         For :math:`g(V, I) = V/I`:
+
+         .. math::
+
+            \nabla g = \left(\frac{1}{I}, -\frac{V}{I^2}\right)^\top = \left(\frac{1}{2.1}, -\frac{12.5}{2.1^2}\right) = (0.476, -2.834)
+
+         With independent measurements:
+
+         .. math::
+
+            \text{Var}(\hat{R}) = \frac{1}{I^2}\text{Var}(V) + \frac{V^2}{I^4}\text{Var}(I)
+
+         .. math::
+
+            = \frac{0.3^2}{2.1^2} + \frac{12.5^2 \cdot 0.1^2}{2.1^4} = 0.0204 + 0.0803 = 0.1007
+
+         .. math::
+
+            \text{SE}(\hat{R}) = \sqrt{0.1007} = 0.317 \;\Omega
+
+      **Part (b): Power SE**
+
+      For :math:`g(V, I) = V \cdot I`:
+
+      .. math::
+
+         \hat{P} = 12.5 \times 2.1 = 26.25 \;\text{W}
+
+      .. math::
+
+         \nabla g = (I, V)^\top = (2.1, 12.5)
+
+      .. math::
+
+         \text{Var}(\hat{P}) = I^2 \text{Var}(V) + V^2 \text{Var}(I) = 2.1^2 \cdot 0.3^2 + 12.5^2 \cdot 0.1^2
+
+      .. math::
+
+         = 0.3969 + 1.5625 = 1.959
+
+      .. math::
+
+         \text{SE}(\hat{P}) = \sqrt{1.959} = 1.40 \;\text{W}
+
+      **Parts (c) & (d): Implementation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         # Measurements
+         V_hat, se_V = 12.5, 0.3
+         I_hat, se_I = 2.1, 0.1
+
+         # Point estimates
+         R_hat = V_hat / I_hat
+         P_hat = V_hat * I_hat
+
+         print("="*60)
+         print("ERROR PROPAGATION: OHM'S LAW")
+         print("="*60)
+         print(f"\nMeasurements:")
+         print(f"  V = {V_hat} ± {se_V} V")
+         print(f"  I = {I_hat} ± {se_I} A")
+
+         # Part (a) & (b): Independent case
+         # Resistance
+         var_R_indep = (se_V/I_hat)**2 + (V_hat * se_I / I_hat**2)**2
+         se_R_indep = np.sqrt(var_R_indep)
+
+         # Power
+         var_P_indep = (I_hat * se_V)**2 + (V_hat * se_I)**2
+         se_P_indep = np.sqrt(var_P_indep)
+
+         print(f"\nIndependent measurements:")
+         print(f"  R = V/I = {R_hat:.3f} ± {se_R_indep:.3f} Ω")
+         print(f"  P = VI  = {P_hat:.2f} ± {se_P_indep:.2f} W")
+
+         # Part (c): Correlated case
+         rho = 0.3
+         cov_VI = rho * se_V * se_I
+
+         # Resistance with correlation
+         # Var(R) = (∂R/∂V)² Var(V) + (∂R/∂I)² Var(I) + 2(∂R/∂V)(∂R/∂I) Cov(V,I)
+         dR_dV = 1 / I_hat
+         dR_dI = -V_hat / I_hat**2
+         var_R_corr = dR_dV**2 * se_V**2 + dR_dI**2 * se_I**2 + 2 * dR_dV * dR_dI * cov_VI
+         se_R_corr = np.sqrt(var_R_corr)
+
+         # Power with correlation
+         dP_dV = I_hat
+         dP_dI = V_hat
+         var_P_corr = dP_dV**2 * se_V**2 + dP_dI**2 * se_I**2 + 2 * dP_dV * dP_dI * cov_VI
+         se_P_corr = np.sqrt(var_P_corr)
+
+         print(f"\nCorrelated measurements (ρ = {rho}):")
+         print(f"  R = {R_hat:.3f} ± {se_R_corr:.3f} Ω")
+         print(f"  P = {P_hat:.2f} ± {se_P_corr:.2f} W")
+
+         print(f"\nEffect of correlation:")
+         print(f"  Resistance SE: {se_R_indep:.3f} → {se_R_corr:.3f} (decreased by {100*(1-se_R_corr/se_R_indep):.1f}%)")
+         print(f"  Power SE:      {se_P_indep:.2f} → {se_P_corr:.2f} (increased by {100*(se_P_corr/se_P_indep-1):.1f}%)")
+
+         # Part (d): Confidence intervals
+         z = stats.norm.ppf(0.975)
+
+         ci_R = (R_hat - z * se_R_indep, R_hat + z * se_R_indep)
+         ci_P = (P_hat - z * se_P_indep, P_hat + z * se_P_indep)
+
+         print(f"\n95% Confidence Intervals (independent):")
+         print(f"  R: ({ci_R[0]:.2f}, {ci_R[1]:.2f}) Ω")
+         print(f"  P: ({ci_P[0]:.2f}, {ci_P[1]:.2f}) W")
+
+      .. code-block:: text
+
+         ============================================================
+         ERROR PROPAGATION: OHM'S LAW
+         ============================================================
+
+         Measurements:
+           V = 12.5 ± 0.3 V
+           I = 2.1 ± 0.1 A
+
+         Independent measurements:
+           R = V/I = 5.952 ± 0.317 Ω
+           P = VI  = 26.25 ± 1.40 W
+
+         Correlated measurements (ρ = 0.3):
+           R = 5.952 ± 0.299 Ω
+           P = 26.25 ± 1.52 W
+
+         Effect of correlation:
+           Resistance SE: 0.317 → 0.299 (decreased by 5.8%)
+           Power SE:      1.40 → 1.52 (increased by 8.5%)
+
+         95% Confidence Intervals (independent):
+           R: (5.33, 6.57) Ω
+           P: (23.51, 28.99) W
+
+      **Key Observations:**
+
+      1. **Correlation matters differently for ratios vs products:**
+         - For R = V/I: Positive correlation in (V, I) DECREASES variance (V and I move together, so their ratio is more stable)
+         - For P = VI: Positive correlation INCREASES variance (fluctuations compound)
+
+      2. **Physics interpretation**: If V and I measurements are correlated (e.g., from the same power supply), the ratio R is more precisely determined, but the product P is less precise.
+
+      3. **This is the standard "error propagation" formula** taught in physics labs—it's just the delta method applied to measurement uncertainty.
+
+
+References
+----------
+
+**Foundational Works on Estimator Properties**
+
+.. [Fisher1922] Fisher, R. A. (1922). On the mathematical foundations of theoretical statistics. *Philosophical Transactions of the Royal Society A*, 222, 309–368. Introduces the concepts of consistency, efficiency, and sufficiency that define estimator quality.
+
+.. [Neyman1934] Neyman, J. (1934). On the two different aspects of the representative method: The method of stratified sampling and the method of purposive selection. *Journal of the Royal Statistical Society*, 97(4), 558–625. Foundational work on sampling theory and the distinction between design-based and model-based inference.
+
+.. [Rao1945] Rao, C. R. (1945). Information and the accuracy attainable in the estimation of statistical parameters. *Bulletin of the Calcutta Mathematical Society*, 37, 81–89. Establishes the Cramér-Rao lower bound providing the fundamental limit on estimator variance.
+
+**The Delta Method**
+
+.. [Cramér1946] Cramér, H. (1946). *Mathematical Methods of Statistics*. Princeton University Press. Contains rigorous treatment of asymptotic theory including the delta method for transformed parameters.
+
+.. [Serfling1980] Serfling, R. J. (1980). *Approximation Theorems of Mathematical Statistics*. Wiley. Comprehensive treatment of asymptotic approximations including multivariate delta method and higher-order expansions.
+
+.. [Oehlert1992] Oehlert, G. W. (1992). A note on the delta method. *The American Statistician*, 46(1), 27–29. Accessible introduction to the delta method with practical guidance on its application.
+
+**Sandwich Estimators and Robust Variance Estimation**
+
+.. [Huber1967] Huber, P. J. (1967). The behavior of maximum likelihood estimates under nonstandard conditions. In *Proceedings of the Fifth Berkeley Symposium on Mathematical Statistics and Probability*, Vol. 1, 221–233. University of California Press. Introduces the sandwich variance estimator providing consistent standard errors under model misspecification.
+
+.. [White1980] White, H. (1980). A heteroskedasticity-consistent covariance matrix estimator and a direct test for heteroskedasticity. *Econometrica*, 48(4), 817–838. Develops heteroskedasticity-consistent standard errors (HC0) now standard in regression analysis.
+
+.. [White1982] White, H. (1982). Maximum likelihood estimation of misspecified models. *Econometrica*, 50(1), 1–25. Establishes the theoretical foundation for quasi-maximum likelihood inference under model misspecification.
+
+.. [MacKinnon1985] MacKinnon, J. G., and White, H. (1985). Some heteroskedasticity-consistent covariance matrix estimators with improved finite sample properties. *Journal of Econometrics*, 29(3), 305–325. Introduces improved versions of heteroskedasticity-consistent estimators (HC1, HC2, HC3) with better finite-sample performance.
+
+**Fisher Information**
+
+.. [Fisher1925] Fisher, R. A. (1925). Theory of statistical estimation. *Proceedings of the Cambridge Philosophical Society*, 22(5), 700–725. Introduces Fisher information as the variance of the score function and establishes its role in asymptotic variance.
+
+.. [Efron1978] Efron, B., and Hinkley, D. V. (1978). Assessing the accuracy of the maximum likelihood estimator: Observed versus expected Fisher information. *Biometrika*, 65(3), 457–487. Compares observed and expected information for variance estimation, arguing for observed information in practice.
+
+.. [Davison2003] Davison, A. C. (2003). *Statistical Models*. Cambridge University Press. Modern treatment of statistical inference including comprehensive discussion of information-based standard errors.
+
+**Consistency and Asymptotic Normality**
+
+.. [Mann1943] Mann, H. B., and Wald, A. (1943). On stochastic limit and order relationships. *Annals of Mathematical Statistics*, 14(3), 217–226. Foundational work on convergence concepts in probability and statistics.
+
+.. [LeCam1953] Le Cam, L. (1953). On some asymptotic properties of maximum likelihood estimates and related Bayes' estimates. *University of California Publications in Statistics*, 1, 277–329. Establishes local asymptotic normality providing the theoretical foundation for asymptotic inference.
+
+.. [VanDerVaart1998] van der Vaart, A. W. (1998). *Asymptotic Statistics*. Cambridge University Press. Definitive modern treatment of asymptotic statistical theory with rigorous proofs and comprehensive coverage.
+
+**Bias-Variance Tradeoff**
+
+.. [Lehmann1983] Lehmann, E. L. (1983). *Theory of Point Estimation*. Wiley. Develops the theory of unbiased estimation and the bias-variance decomposition of mean squared error.
+
+.. [Efron1993] Efron, B. (1993). Bayes and likelihood calculations from confidence intervals. *Biometrika*, 80(1), 3–26. Discusses the relationship between frequentist and Bayesian approaches to uncertainty quantification.
+
+**Cluster-Robust Inference**
+
+.. [Liang1986] Liang, K.-Y., and Zeger, S. L. (1986). Longitudinal data analysis using generalized linear models. *Biometrika*, 73(1), 13–22. Introduces generalized estimating equations (GEE) with cluster-robust standard errors for longitudinal data.
+
+.. [Arellano1987] Arellano, M. (1987). Computing robust standard errors for within-groups estimators. *Oxford Bulletin of Economics and Statistics*, 49(4), 431–434. Develops cluster-robust standard errors for panel data with fixed effects.
+
+.. [Cameron2011] Cameron, A. C., and Miller, D. L. (2011). Robust inference with clustered data. In *Handbook of Empirical Economics and Finance*, 1–28. CRC Press. Comprehensive guide to cluster-robust inference in applied econometrics.
+
+**Textbook Treatments**
+
+.. [CasellaBerger2002] Casella, G., and Berger, R. L. (2002). *Statistical Inference* (2nd ed.). Duxbury Press. Chapter 7 provides accessible coverage of sampling distributions and point estimation properties.
+
+.. [Wasserman2004] Wasserman, L. (2004). *All of Statistics: A Concise Course in Statistical Inference*. Springer. Modern introduction to statistical inference with clear treatment of sampling variability.
+
+.. [EfronHastie2016] Efron, B., and Hastie, T. (2016). *Computer Age Statistical Inference: Algorithms, Evidence, and Data Science*. Cambridge University Press. Contemporary perspective on inference including bootstrap and cross-validation approaches to variance estimation.

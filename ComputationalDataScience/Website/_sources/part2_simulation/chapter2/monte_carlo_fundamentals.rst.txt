@@ -1,0 +1,673 @@
+.. _monte-carlo-fundamentals:
+
+Monte Carlo Fundamentals
+========================
+
+Monte Carlo methods transform intractable analytical problems into computational experiments, using randomness as a fundamental tool for numerical calculation. Named after the famous casino in Monaco, these methods leverage the law of large numbers to solve problems ranging from multidimensional integration to optimization, revolutionizing fields from physics to finance.
+
+At their core, Monte Carlo methods represent quantities of interest as expectations with respect to probability distributions, then approximate these expectations through repeated random sampling. This probabilistic approach often succeeds where deterministic methods fail, particularly in high-dimensional spaces where the curse of dimensionality renders traditional numerical methods impractical.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand** the mathematical foundations of Monte Carlo methods and their convergence properties
+   • **Master** the fundamental Monte Carlo estimator and its statistical properties
+   • **Apply** Monte Carlo integration to compute probabilities and expectations
+   • **Analyze** convergence rates and error bounds using the Central Limit Theorem
+
+What Are Monte Carlo Methods?
+------------------------------
+
+A Monte Carlo method is any computational technique that uses random sampling to solve mathematical problems that might be deterministic in nature.
+
+Formal Definition
+~~~~~~~~~~~~~~~~~
+
+**Definition**: A Monte Carlo method is any computational technique that represents a quantity of interest as an expectation with respect to a specified probability law and then approximates that quantity using repeated pseudo-random draws from that law, with guarantees supplied by probabilistic limit theorems.
+
+Mathematically, if the quantity of interest can be expressed as:
+
+.. math::
+
+   I = E[h(X)] = \int h(x) f_X(x) dx
+
+where f_X is a probability density, then a Monte Carlo estimator with n samples x_1, x_2, ..., x_n drawn i.i.d. from F_X is:
+
+.. math::
+
+   \hat{I}_n = \frac{1}{n} \sum_{i=1}^{n} h(x_i)
+
+**Convergence**: By the Strong Law of Large Numbers:
+
+.. math::
+
+   \hat{I}_n \xrightarrow{a.s.} I \quad \text{as } n \to \infty
+
+**Error Analysis**: By the Central Limit Theorem, if Var[h(X)] < ∞:
+
+.. math::
+
+   \sqrt{n}(\hat{I}_n - I) \xrightarrow{d} N(0, \sigma^2)
+
+where σ² = Var[h(X)].
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   import matplotlib.pyplot as plt
+   from scipy import stats
+   
+   class MonteCarloEstimator:
+       """
+       Generic Monte Carlo estimator with convergence diagnostics.
+       """
+       
+       def __init__(self, h_func, sampler, true_value=None):
+           """
+           Parameters
+           ----------
+           h_func : callable
+               Function h in E[h(X)]
+           sampler : callable
+               Function that returns samples from distribution of X
+           true_value : float, optional
+               True value of E[h(X)] if known
+           """
+           self.h = h_func
+           self.sampler = sampler
+           self.true_value = true_value
+           
+           # Storage for convergence analysis
+           self.estimates = []
+           self.sample_sizes = []
+           self.std_errors = []
+       
+       def estimate(self, n_samples, batch_size=100):
+           """
+           Compute Monte Carlo estimate with batch updates.
+           
+           Parameters
+           ----------
+           n_samples : int
+               Total number of samples
+           batch_size : int
+               Size of batches for updating estimates
+           
+           Returns
+           -------
+           estimate : float
+               Final Monte Carlo estimate
+           std_error : float
+               Standard error of estimate
+           """
+           n_batches = n_samples // batch_size
+           current_sum = 0
+           current_sum_sq = 0
+           
+           for batch in range(n_batches):
+               # Generate batch of samples
+               samples = np.array([self.sampler() for _ in range(batch_size)])
+               h_values = np.array([self.h(x) for x in samples])
+               
+               # Update running sums
+               current_sum += np.sum(h_values)
+               current_sum_sq += np.sum(h_values**2)
+               
+               # Current estimates
+               n_current = (batch + 1) * batch_size
+               current_mean = current_sum / n_current
+               current_var = (current_sum_sq / n_current) - current_mean**2
+               current_se = np.sqrt(current_var / n_current)
+               
+               # Store for convergence analysis
+               self.estimates.append(current_mean)
+               self.sample_sizes.append(n_current)
+               self.std_errors.append(current_se)
+           
+           return current_mean, current_se
+       
+       def plot_convergence(self):
+           """Visualize convergence of Monte Carlo estimates."""
+           fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+           
+           # Left: Estimate vs sample size
+           axes[0].plot(self.sample_sizes, self.estimates, 'b-', alpha=0.7)
+           if self.true_value is not None:
+               axes[0].axhline(self.true_value, color='r', 
+                              linestyle='--', label='True value')
+           
+           # Add confidence bands
+           estimates = np.array(self.estimates)
+           std_errors = np.array(self.std_errors)
+           axes[0].fill_between(self.sample_sizes,
+                                estimates - 1.96*std_errors,
+                                estimates + 1.96*std_errors,
+                                alpha=0.2, label='95% CI')
+           
+           axes[0].set_xlabel('Number of samples')
+           axes[0].set_ylabel('Estimate')
+           axes[0].set_title('Monte Carlo Convergence')
+           axes[0].set_xscale('log')
+           axes[0].legend()
+           axes[0].grid(True, alpha=0.3)
+           
+           # Right: Standard error vs sample size
+           axes[1].loglog(self.sample_sizes, std_errors, 'b-', alpha=0.7)
+           
+           # Theoretical 1/√n rate
+           n_array = np.array(self.sample_sizes)
+           theoretical_se = std_errors[0] * np.sqrt(n_array[0] / n_array)
+           axes[1].loglog(n_array, theoretical_se, 'r--', 
+                         label='1/√n rate', alpha=0.7)
+           
+           axes[1].set_xlabel('Number of samples')
+           axes[1].set_ylabel('Standard error')
+           axes[1].set_title('Standard Error Decay')
+           axes[1].legend()
+           axes[1].grid(True, alpha=0.3)
+           
+           plt.tight_layout()
+           plt.show()
+
+Historical Context
+~~~~~~~~~~~~~~~~~~
+
+Monte Carlo methods emerged from the Manhattan Project in the 1940s, where Stanislaw Ulam, John von Neumann, and Nicholas Metropolis developed these techniques to study neutron diffusion. The evolution includes:
+
+- **1777**: Buffon's Needle - earliest documented use of randomness for π estimation
+- **1940s**: Modern Monte Carlo born at Los Alamos
+- **1953**: Metropolis Algorithm - foundation of MCMC
+- **1970s**: Development of variance reduction techniques
+- **1990s**: Sequential Monte Carlo (particle filters)
+- **2000s**: Quantum Monte Carlo advances
+- **2020s**: Neural network-enhanced Monte Carlo methods
+
+.. admonition:: Example 💡: Buffon's Needle Problem
+   :class: note
+
+   **Given**: Parallel lines distance d apart, needle of length l < d
+   
+   **Find**: Probability needle crosses a line when dropped randomly
+   
+   **Solution**:
+   
+   Mathematical analysis yields:
+   
+   .. math::
+      
+      P(\text{crosses}) = \frac{2l}{\pi d}
+   
+   Monte Carlo simulation:
+   
+   .. code-block:: python
+   
+      def buffon_needle_simulation(l=0.5, d=1.0, n_drops=10000):
+          """Estimate π using Buffon's needle."""
+          crosses = 0
+          
+          for _ in range(n_drops):
+              # Random position of needle center
+              y = np.random.uniform(0, d/2)
+              
+              # Random angle of needle
+              theta = np.random.uniform(0, np.pi)
+              
+              # Check if needle crosses line
+              if y <= (l/2) * np.sin(theta):
+                  crosses += 1
+          
+          # Estimate π from crossing probability
+          p_cross = crosses / n_drops
+          pi_estimate = 2 * l / (d * p_cross) if p_cross > 0 else np.inf
+          
+          return pi_estimate, p_cross
+      
+      # Run simulation
+      np.random.seed(42)
+      pi_est, p_cross = buffon_needle_simulation(n_drops=100000)
+      print(f"π estimate: {pi_est:.6f}")
+      print(f"True π: {np.pi:.6f}")
+      print(f"Error: {abs(pi_est - np.pi):.6f}")
+   
+   **Result**: Monte Carlo recovers π ≈ 3.14159 from purely geometric random experiments.
+
+Computing Probabilities as Expectations
+----------------------------------------
+
+Any probability can be expressed as an expectation using indicator functions, making Monte Carlo methods universally applicable for probability estimation.
+
+Indicator Function Approach
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For any event A:
+
+.. math::
+
+   P(A) = E[1_A(X)] = \int 1_A(x) f_X(x) dx
+
+where 1_A is the indicator function.
+
+.. code-block:: python
+
+   def monte_carlo_probability(event_func, sampler, n_samples=10000):
+       """
+       Estimate probability using Monte Carlo.
+       
+       Parameters
+       ----------
+       event_func : callable
+           Function that returns True if event occurs
+       sampler : callable
+           Function that generates samples from distribution
+       n_samples : int
+           Number of Monte Carlo samples
+       
+       Returns
+       -------
+       p_estimate : float
+           Estimated probability
+       std_error : float
+           Standard error of estimate
+       """
+       indicators = np.array([event_func(sampler()) for _ in range(n_samples)])
+       p_estimate = np.mean(indicators)
+       
+       # Standard error for Bernoulli
+       std_error = np.sqrt(p_estimate * (1 - p_estimate) / n_samples)
+       
+       return p_estimate, std_error
+   
+   # Example: P(X + Y > 1) where X, Y ~ Uniform(0, 1)
+   def sampler_xy():
+       return np.random.uniform(0, 1, 2)
+   
+   def event_sum_greater_one(xy):
+       return xy[0] + xy[1] > 1
+   
+   p_est, se = monte_carlo_probability(event_sum_greater_one, sampler_xy, 50000)
+   print(f"P(X + Y > 1) ≈ {p_est:.4f} ± {1.96*se:.4f}")
+   print(f"True value: 0.5000")
+
+Monte Carlo Integration
+-----------------------
+
+Monte Carlo integration excels where traditional quadrature fails: high dimensions and complex integration regions.
+
+Basic Monte Carlo Integration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To compute:
+
+.. math::
+
+   I = \int_a^b g(x) dx
+
+we can write:
+
+.. math::
+
+   I = (b - a) \int_a^b g(x) \frac{1}{b-a} dx = (b - a) \cdot E[g(U)]
+
+where U ~ Uniform(a, b).
+
+.. code-block:: python
+
+   def monte_carlo_integrate(g, a, b, n_samples=10000):
+       """
+       Monte Carlo integration over [a, b].
+       
+       Parameters
+       ----------
+       g : callable
+           Function to integrate
+       a, b : float
+           Integration bounds
+       n_samples : int
+           Number of samples
+       
+       Returns
+       -------
+       integral : float
+           Estimated integral
+       std_error : float
+           Standard error
+       """
+       # Sample uniformly from [a, b]
+       x = np.random.uniform(a, b, n_samples)
+       
+       # Evaluate function
+       g_values = g(x)
+       
+       # Monte Carlo estimate
+       integral = (b - a) * np.mean(g_values)
+       
+       # Standard error
+       variance = np.var(g_values)
+       std_error = (b - a) * np.sqrt(variance / n_samples)
+       
+       return integral, std_error
+
+Multidimensional Integration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Monte Carlo shines in high dimensions where the curse of dimensionality cripples deterministic methods.
+
+**Key Insight**: Monte Carlo error is O(1/√n) independent of dimension, while deterministic quadrature is O(n^(-k/d)) where k depends on smoothness and d is dimension.
+
+.. admonition:: Example 💡: Volume of High-Dimensional Sphere
+   :class: note
+
+   **Given**: Unit sphere in d dimensions
+   
+   **Find**: Volume using Monte Carlo
+   
+   **Solution**:
+   
+   The volume is the integral of the indicator function over the hypercube:
+   
+   .. code-block:: python
+   
+      def sphere_volume_monte_carlo(d, n_samples=100000):
+          """Estimate volume of unit sphere in d dimensions."""
+          
+          # Generate points in [-1, 1]^d hypercube
+          points = np.random.uniform(-1, 1, (n_samples, d))
+          
+          # Check which points are inside unit sphere
+          distances_squared = np.sum(points**2, axis=1)
+          inside_sphere = distances_squared <= 1
+          
+          # Volume = volume of hypercube × fraction inside
+          hypercube_volume = 2**d
+          fraction_inside = np.mean(inside_sphere)
+          volume_estimate = hypercube_volume * fraction_inside
+          
+          # Standard error
+          std_error = hypercube_volume * np.sqrt(
+              fraction_inside * (1 - fraction_inside) / n_samples
+          )
+          
+          return volume_estimate, std_error
+      
+      # Compare with analytical formula
+      from scipy.special import gamma
+      
+      def true_sphere_volume(d):
+          return np.pi**(d/2) / gamma(d/2 + 1)
+      
+      # Test for various dimensions
+      dimensions = [2, 3, 5, 10, 20]
+      for d in dimensions:
+          est, se = sphere_volume_monte_carlo(d, n_samples=100000)
+          true_val = true_sphere_volume(d)
+          rel_error = abs(est - true_val) / true_val
+          print(f"d={d:2d}: Est={est:.4f} ± {se:.4f}, "
+                f"True={true_val:.4f}, RelErr={rel_error:.2%}")
+   
+   **Result**: Monte Carlo maintains similar relative error across dimensions, unlike grid-based methods.
+
+Importance Sampling Integration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the integrand has high variance, importance sampling can dramatically improve efficiency:
+
+.. math::
+
+   I = \int g(x) dx = \int \frac{g(x)}{q(x)} q(x) dx = E_q\left[\frac{g(X)}{q(X)}\right]
+
+where q is the importance distribution.
+
+.. code-block:: python
+
+   def importance_sampling_integrate(g, importance_sampler, importance_pdf, 
+                                    n_samples=10000):
+       """
+       Monte Carlo integration using importance sampling.
+       
+       Parameters
+       ----------
+       g : callable
+           Function to integrate
+       importance_sampler : callable
+           Generates samples from importance distribution
+       importance_pdf : callable
+           PDF of importance distribution
+       """
+       samples = np.array([importance_sampler() for _ in range(n_samples)])
+       
+       # Importance weights
+       weights = g(samples) / importance_pdf(samples)
+       
+       # Handle potential infinities/NaNs
+       weights = weights[np.isfinite(weights)]
+       
+       integral = np.mean(weights)
+       std_error = np.std(weights) / np.sqrt(len(weights))
+       
+       return integral, std_error
+
+Variance and Convergence Analysis
+----------------------------------
+
+Understanding the statistical properties of Monte Carlo estimators is crucial for practical applications.
+
+Variance of Monte Carlo Estimators
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For the basic estimator:
+
+.. math::
+
+   \text{Var}[\hat{I}_n] = \frac{1}{n} \text{Var}[h(X)] = \frac{\sigma^2}{n}
+
+The root mean square error (RMSE) decreases as O(1/√n):
+
+.. math::
+
+   \text{RMSE} = \sqrt{E[(\hat{I}_n - I)^2]} = \frac{\sigma}{\sqrt{n}}
+
+Confidence Intervals
+~~~~~~~~~~~~~~~~~~~~
+
+Using the CLT, approximate confidence intervals are:
+
+.. math::
+
+   \hat{I}_n \pm z_{\alpha/2} \cdot \frac{\hat{\sigma}}{\sqrt{n}}
+
+where ẑ_{α/2} is the standard normal quantile and σ̂ is the sample standard deviation.
+
+.. code-block:: python
+
+   def monte_carlo_with_confidence(h_func, sampler, n_samples=10000, 
+                                  confidence=0.95):
+       """
+       Monte Carlo estimation with confidence intervals.
+       
+       Returns
+       -------
+       dict
+           Estimate, standard error, and confidence interval
+       """
+       from scipy import stats
+       
+       # Generate samples and evaluate
+       samples = np.array([h_func(sampler()) for _ in range(n_samples)])
+       
+       # Point estimate
+       estimate = np.mean(samples)
+       
+       # Standard error
+       std_error = np.std(samples, ddof=1) / np.sqrt(n_samples)
+       
+       # Confidence interval
+       z_score = stats.norm.ppf((1 + confidence) / 2)
+       margin_error = z_score * std_error
+       ci_lower = estimate - margin_error
+       ci_upper = estimate + margin_error
+       
+       return {
+           'estimate': estimate,
+           'std_error': std_error,
+           'confidence_interval': (ci_lower, ci_upper),
+           'margin_of_error': margin_error,
+           'effective_sample_size': n_samples
+       }
+
+Effective Sample Size
+~~~~~~~~~~~~~~~~~~~~~
+
+When samples are correlated (e.g., from MCMC), the effective sample size is:
+
+.. math::
+
+   n_{\text{eff}} = \frac{n}{1 + 2\sum_{k=1}^{\infty} \rho_k}
+
+where ρ_k is the autocorrelation at lag k.
+
+.. code-block:: python
+
+   def effective_sample_size(samples, max_lag=None):
+       """
+       Compute effective sample size for correlated samples.
+       
+       Parameters
+       ----------
+       samples : array
+           Sample values (possibly correlated)
+       max_lag : int
+           Maximum lag for autocorrelation calculation
+       """
+       n = len(samples)
+       if max_lag is None:
+           max_lag = min(int(n/4), 1000)
+       
+       # Compute autocorrelations
+       mean = np.mean(samples)
+       c0 = np.mean((samples - mean)**2)
+       
+       sum_autocorr = 0
+       for k in range(1, max_lag):
+           ck = np.mean((samples[:-k] - mean) * (samples[k:] - mean))
+           rho_k = ck / c0
+           
+           # Stop when autocorrelation becomes negligible
+           if abs(rho_k) < 0.01:
+               break
+           
+           sum_autocorr += rho_k
+       
+       # Effective sample size
+       n_eff = n / (1 + 2 * sum_autocorr)
+       
+       return n_eff
+
+Practical Considerations
+------------------------
+
+Implementing Monte Carlo methods in production requires attention to reproducibility, parallelization, and numerical stability.
+
+Random Seed Management
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   Using global random seeds can lead to non-reproducible results in parallel computing environments.
+   
+   **Solution**: Use independent random number generators:
+   
+   .. code-block:: python
+   
+      class MonteCarloRunner:
+          def __init__(self, base_seed=None):
+              self.base_seed = base_seed or np.random.randint(2**32)
+              
+          def run_parallel(self, func, n_jobs, n_samples_per_job):
+              """Run Monte Carlo in parallel with reproducible seeds."""
+              from joblib import Parallel, delayed
+              
+              def worker(job_id):
+                  # Create independent RNG for this job
+                  rng = np.random.RandomState(self.base_seed + job_id)
+                  return func(n_samples_per_job, rng)
+              
+              results = Parallel(n_jobs=n_jobs)(
+                  delayed(worker)(i) for i in range(n_jobs)
+              )
+              
+              return self.combine_results(results)
+
+Adaptive Sample Size Determination
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def adaptive_monte_carlo(h_func, sampler, target_error=0.01, 
+                           initial_n=1000, max_n=10**7):
+       """
+       Adaptively determine sample size to achieve target error.
+       """
+       current_n = initial_n
+       all_samples = []
+       
+       while current_n <= max_n:
+           # Generate new batch
+           new_samples = [h_func(sampler()) for _ in range(initial_n)]
+           all_samples.extend(new_samples)
+           
+           # Current estimate and error
+           estimate = np.mean(all_samples)
+           std_error = np.std(all_samples) / np.sqrt(len(all_samples))
+           
+           # Check if target accuracy achieved
+           if std_error < target_error:
+               return estimate, std_error, len(all_samples)
+           
+           current_n = len(all_samples)
+       
+       # Max samples reached
+       return estimate, std_error, len(all_samples)
+
+Bringing It All Together
+-------------------------
+
+Monte Carlo methods provide a universal computational framework for solving problems involving uncertainty, integration, and optimization. Their power lies in transforming deterministic problems into stochastic simulations where the law of large numbers guarantees convergence.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: Represent any quantity as an expectation E[h(X)] and approximate via sampling
+   2. **Computational insight**: Error decreases as O(1/√n) independent of dimension
+   3. **Practical application**: Essential for high-dimensional problems where deterministic methods fail
+   4. **Connection**: Foundation for all simulation-based methods including MCMC and particle filters
+
+Exercises
+~~~~~~~~~
+
+1. **Conceptual Understanding**: Prove that the Monte Carlo estimator is unbiased and derive its variance. Show that the variance of the sample variance estimator is O(1/n).
+
+2. **Implementation**: Implement Monte Carlo integration for the Gaussian integral:
+   
+   .. math::
+      
+      I = \int_{-\infty}^{\infty} e^{-x^2/2} dx = \sqrt{2\pi}
+   
+   Use importance sampling with a Cauchy distribution and compare with naive sampling. Plot the convergence for both methods.
+
+3. **Analysis**: The Genz test functions are standard benchmarks for multidimensional integration. Implement Monte Carlo integration for the oscillatory Genz function:
+   
+   .. math::
+      
+      f(x) = \cos\left(2\pi u_1 + \sum_{i=1}^d a_i x_i\right)
+   
+   over [0,1]^d. Study how the variance depends on dimension d and frequency parameters a_i.
+
+4. **Extension**: Implement a quasi-Monte Carlo method using Sobol sequences instead of pseudo-random numbers. Compare convergence rates with standard Monte Carlo for:
+   a) Integration over the unit cube in various dimensions
+   b) Option pricing using the Black-Scholes model
+   
+   Explain when quasi-Monte Carlo outperforms standard Monte Carlo.

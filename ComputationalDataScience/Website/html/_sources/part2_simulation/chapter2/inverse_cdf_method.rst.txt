@@ -1,0 +1,445 @@
+.. _inverse-cdf-method:
+
+Inverse CDF Method
+==================
+
+When we need to generate random numbers from a specific probability distribution, the inverse CDF method provides an elegant solution that leverages uniform random numbers—the only type of randomness computers can truly generate. This fundamental technique underlies many sophisticated sampling algorithms and connects the abstract mathematics of probability theory with practical computation.
+
+The method builds on a remarkable property: if U follows a uniform distribution on [0,1], then F⁻¹(U) follows the distribution with CDF F. This seemingly simple observation powers random number generation across scientific computing, from Monte Carlo simulations in physics to risk modeling in finance.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand** why uniform random numbers are sufficient for generating any distribution
+   • **Implement** the inverse CDF algorithm for continuous and discrete distributions
+   • **Analyze** computational efficiency and numerical stability issues
+   • **Apply** the method to generate samples from exponential, Weibull, and custom distributions
+
+Theoretical Foundation
+----------------------
+
+The inverse CDF method, also known as the inverse transform method or quantile method, is based on a fundamental relationship between uniform random variables and arbitrary distributions.
+
+Mathematical Framework
+~~~~~~~~~~~~~~~~~~~~~~
+
+Consider a random variable X with cumulative distribution function (CDF) F_X. The key insight is that we can generate samples from X using only uniform random numbers.
+
+.. math::
+
+   F_X(x) = P(X \leq x)
+
+For continuous distributions with strictly increasing CDFs, we define the inverse function:
+
+.. math::
+
+   F_X^{-1}(u) = \{x \in \mathbb{R} : F_X(x) = u\}, \quad \forall u \in (0, 1)
+
+**Fundamental Theorem**: If U ~ Uniform(0,1), then X = F_X^{-1}(U) has CDF F_X.
+
+**Proof**: For any x ∈ ℝ:
+
+.. math::
+
+   P(X \leq x) &= P(F_X^{-1}(U) \leq x) \\
+               &= P(U \leq F_X(x)) \\
+               &= F_X(x)
+
+The second equality holds because F_X is monotonically increasing, allowing us to apply it to both sides of the inequality.
+
+Computational Perspective
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The inverse CDF method transforms the problem of sampling from complex distributions into:
+1. Generating uniform random numbers (solved by PRNGs)
+2. Computing or approximating the inverse CDF
+
+**Algorithm**: Inverse CDF Sampling
+
+.. code-block:: text
+
+   Input: CDF F_X and its inverse F_X^{-1}
+   Output: Sample x from distribution with CDF F_X
+   
+   1. Generate u ~ Uniform(0, 1)
+   2. Compute x = F_X^{-1}(u)
+   3. Return x
+
+**Computational Complexity**: O(1) for closed-form inverses, O(log n) for numerical inversion
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+   
+   def inverse_cdf_sample(inverse_cdf_func, size=1):
+       """
+       Generate random samples using the inverse CDF method.
+       
+       Parameters
+       ----------
+       inverse_cdf_func : callable
+           Function that computes F^{-1}(u)
+       size : int
+           Number of samples to generate
+       
+       Returns
+       -------
+       array
+           Random samples from the target distribution
+       """
+       # Generate uniform random numbers
+       u = np.random.uniform(0, 1, size)
+       
+       # Apply inverse CDF transformation
+       samples = inverse_cdf_func(u)
+       
+       return samples
+
+Discrete Distributions
+----------------------
+
+For discrete distributions, the inverse CDF method requires a modified approach since the CDF is a step function.
+
+Discrete Inverse CDF Algorithm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a discrete random variable X with PMF p(k) and CDF F(k):
+
+.. math::
+
+   F(k) = \sum_{i=1}^{k} p(i)
+
+We use the generalized inverse:
+
+.. math::
+
+   F^{-}(u) = \inf\{k : F(k) \geq u\}
+
+.. code-block:: python
+
+   def discrete_inverse_cdf(probs, size=1):
+       """
+       Sample from discrete distribution using inverse CDF method.
+       
+       Parameters
+       ----------
+       probs : array-like
+           Probability mass function values
+       size : int
+           Number of samples
+       
+       Returns
+       -------
+       array
+           Random samples from discrete distribution
+       """
+       # Normalize probabilities
+       probs = np.array(probs) / np.sum(probs)
+       
+       # Compute cumulative distribution
+       cdf = np.cumsum(probs)
+       
+       # Generate uniform random numbers
+       u = np.random.uniform(0, 1, size)
+       
+       # Find indices using searchsorted (binary search)
+       samples = np.searchsorted(cdf, u)
+       
+       return samples
+
+.. admonition:: Example 💡: Sampling from a Custom Discrete Distribution
+   :class: note
+
+   Consider sampling from a shorebird egg distribution where birds lay 2-5 eggs with probabilities [0.15, 0.20, 0.60, 0.05].
+   
+   **Given**: PMF with support {2, 3, 4, 5}
+   
+   **Find**: Generate 1000 samples
+   
+   **Solution**:
+   
+   Mathematical approach:
+   
+   .. math::
+      
+      F(2) = 0.15, \quad F(3) = 0.35, \quad F(4) = 0.95, \quad F(5) = 1.00
+   
+   Python implementation:
+   
+   .. code-block:: python
+   
+      # Define the PMF
+      eggs = [2, 3, 4, 5]
+      probs = [0.15, 0.20, 0.60, 0.05]
+      
+      # Generate samples
+      samples = discrete_inverse_cdf(probs, size=1000)
+      actual_eggs = np.array(eggs)[samples]
+      
+      # Verify distribution
+      unique, counts = np.unique(actual_eggs, return_counts=True)
+      empirical_probs = counts / 1000
+      print(f"Empirical: {empirical_probs}")
+      print(f"Expected:  {probs}")
+   
+   **Result**: Empirical probabilities converge to theoretical values as sample size increases.
+
+Continuous Distributions Examples
+----------------------------------
+
+The inverse CDF method is particularly elegant for distributions with closed-form inverse CDFs.
+
+Exponential Distribution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+For X ~ Exponential(λ):
+
+.. math::
+
+   F_X(x) = 1 - e^{-\lambda x}, \quad x \geq 0
+
+The inverse CDF:
+
+.. math::
+
+   F_X^{-1}(u) = -\frac{1}{\lambda} \ln(1 - u)
+
+Since 1 - U ~ Uniform(0,1) when U ~ Uniform(0,1), we can simplify:
+
+.. code-block:: python
+
+   def exponential_inverse_cdf(lam, size=1):
+       """Generate exponential random variables."""
+       u = np.random.uniform(0, 1, size)
+       return -np.log(u) / lam
+   
+   # Example: Generate samples with rate λ = 2
+   np.random.seed(42)
+   samples = exponential_inverse_cdf(lam=2, size=10000)
+   
+   # Verify against theoretical mean = 1/λ
+   print(f"Sample mean: {np.mean(samples):.4f}")
+   print(f"Theoretical: {1/2:.4f}")
+
+Weibull Distribution
+~~~~~~~~~~~~~~~~~~~~
+
+For X ~ Weibull(k, λ):
+
+.. math::
+
+   F_X(x) = 1 - \exp\left(-\left(\frac{x}{\lambda}\right)^k\right)
+
+The inverse CDF:
+
+.. math::
+
+   F_X^{-1}(u) = \lambda \cdot (-\ln(1-u))^{1/k}
+
+.. code-block:: python
+
+   def weibull_inverse_cdf(k, lam, size=1):
+       """Generate Weibull random variables."""
+       u = np.random.uniform(0, 1, size)
+       return lam * (-np.log(1 - u))**(1/k)
+
+Advanced Search Algorithms for Discrete Sampling
+-------------------------------------------------
+
+When dealing with large discrete distributions, the choice of search algorithm significantly impacts performance.
+
+Binary Search Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def binary_search_sample(probs, size=1):
+       """
+       Optimized discrete sampling using binary search.
+       
+       Complexity: O(log K) per sample where K = len(probs)
+       """
+       probs = np.array(probs) / np.sum(probs)
+       cdf = np.cumsum(probs)
+       samples = []
+       
+       for _ in range(size):
+           u = np.random.uniform()
+           # Binary search
+           left, right = 0, len(cdf) - 1
+           while left < right:
+               mid = (left + right) // 2
+               if u <= cdf[mid]:
+                   right = mid
+               else:
+                   left = mid + 1
+           samples.append(left)
+       
+       return np.array(samples)
+
+Walker-Vose Alias Method
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For repeated sampling from the same distribution, the alias method achieves O(1) sampling after O(K) preprocessing:
+
+.. code-block:: python
+
+   class AliasMethod:
+       """Walker-Vose Alias Method for O(1) discrete sampling."""
+       
+       def __init__(self, probs):
+           """
+           Setup alias tables.
+           
+           Parameters
+           ----------
+           probs : array-like
+               Unnormalized probabilities
+           """
+           n = len(probs)
+           self.n = n
+           
+           # Normalize and scale
+           total = sum(probs)
+           scaled = [p * n / total for p in probs]
+           
+           # Initialize tables
+           self.prob = [0] * n
+           self.alias = [0] * n
+           
+           # Separate into small and large
+           small = []
+           large = []
+           for i, p in enumerate(scaled):
+               if p < 1:
+                   small.append(i)
+               else:
+                   large.append(i)
+           
+           # Build alias table
+           while small and large:
+               l = small.pop()
+               g = large.pop()
+               
+               self.prob[l] = scaled[l]
+               self.alias[l] = g
+               
+               scaled[g] = scaled[g] + scaled[l] - 1
+               
+               if scaled[g] < 1:
+                   small.append(g)
+               else:
+                   large.append(g)
+           
+           # Handle remaining
+           while large:
+               self.prob[large.pop()] = 1
+           while small:
+               self.prob[small.pop()] = 1
+       
+       def sample(self, size=1):
+           """Generate samples in O(1) time each."""
+           samples = []
+           for _ in range(size):
+               i = np.random.randint(0, self.n)
+               if np.random.uniform() < self.prob[i]:
+                   samples.append(i)
+               else:
+                   samples.append(self.alias[i])
+           return np.array(samples)
+
+Practical Considerations
+------------------------
+
+When implementing the inverse CDF method in production systems, several practical issues arise.
+
+Numerical Stability
+~~~~~~~~~~~~~~~~~~~
+
+For distributions with extreme parameters, direct computation can lead to numerical issues:
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   Computing F⁻¹(u) when u is very close to 0 or 1 can cause underflow/overflow. For example, in the exponential distribution, -log(u) → ∞ as u → 0.
+   
+   **Solution**: Use specialized libraries that handle edge cases, or implement guards:
+   
+   .. code-block:: python
+   
+      u = np.clip(u, np.finfo(float).eps, 1 - np.finfo(float).eps)
+
+When Inverse CDF is Not Available
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Many distributions lack closed-form inverse CDFs (e.g., Normal distribution). Options include:
+
+1. **Numerical root-finding**: Solve F(x) = u iteratively
+2. **Approximations**: Use polynomial or rational approximations
+3. **Alternative methods**: Consider rejection sampling or transformation methods
+
+Performance Optimization
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Vectorized implementation for better performance
+   def vectorized_exponential(lam, size):
+       """Fully vectorized exponential sampling."""
+       return -np.log(np.random.uniform(0, 1, size)) / lam
+   
+   # Performance comparison
+   import time
+   
+   size = 1_000_000
+   lam = 2.0
+   
+   # Vectorized approach
+   start = time.time()
+   samples_vec = vectorized_exponential(lam, size)
+   vec_time = time.time() - start
+   
+   print(f"Vectorized: {vec_time:.4f} seconds")
+   print(f"Samples/second: {size/vec_time:,.0f}")
+
+Bringing It All Together
+-------------------------
+
+The inverse CDF method elegantly solves the fundamental problem of random number generation by transforming uniform randomness into any desired distribution. Its theoretical simplicity—just one function evaluation per sample—makes it the gold standard when the inverse CDF is available.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: Transform U ~ Uniform(0,1) using X = F⁻¹(U) to get X ~ F
+   2. **Computational insight**: Trade complex sampling for CDF inversion
+   3. **Practical application**: Use for distributions with closed-form inverses; consider alternatives otherwise
+   4. **Connection**: Foundation for understanding more complex methods like rejection sampling
+
+Exercises
+~~~~~~~~~
+
+1. **Conceptual Understanding**: Prove that if X has CDF F and Y = F(X), then Y ~ Uniform(0,1).
+   
+2. **Implementation**: Implement inverse CDF sampling for the Pareto distribution with CDF:
+   
+   .. math::
+      
+      F(x) = 1 - \left(\frac{x_m}{x}\right)^\alpha, \quad x \geq x_m
+   
+   .. code-block:: python
+   
+      def pareto_inverse_cdf(alpha, x_m, size=1):
+          # Your implementation here
+          pass
+   
+   a) Derive the inverse CDF formula
+   b) Implement the sampling function
+   c) Verify your implementation by comparing sample moments with theoretical values
+   
+3. **Analysis**: Compare the performance of linear search, binary search, and alias method for sampling from a Zipf distribution with K = 1000 categories. Plot execution time vs number of samples.
+
+4. **Extension**: The Box-Muller transform generates normal random variables from uniforms. Research this method and explain why it's preferred over inverse CDF for the normal distribution. Implement both approaches and compare their speed and accuracy.
