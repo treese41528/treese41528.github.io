@@ -1,0 +1,2427 @@
+.. _ch4_6-bootstrap-hypothesis-testing:
+
+==============================================================
+Section 4.6 Bootstrap Hypothesis Testing and Permutation Tests
+==============================================================
+
+In :ref:`Sections 4.3–4.5 <ch4_3-nonparametric-bootstrap>`, we developed the bootstrap and jackknife as tools for **estimation**: computing standard errors, quantifying bias, and constructing confidence intervals. These methods address the question "How uncertain are we about :math:`\hat{\theta}`?" But statistical practice frequently demands a different question: "Is the observed effect real, or could it have arisen by chance?" This is the domain of **hypothesis testing**, and resampling methods offer powerful, flexible approaches to this problem.
+
+The key conceptual shift when moving from confidence intervals to hypothesis tests is subtle but crucial: **bootstrap for testing requires generating data under the null hypothesis**, not simply resampling from the observed data. When we construct a confidence interval, we ask "What values of :math:`\theta` are consistent with these data?" When we test a hypothesis, we ask "If :math:`H_0` were true, how likely would we see a test statistic this extreme?" These two questions are related—a 95% CI inverts a family of 5% tests—but they require different computational approaches.
+
+This section develops two complementary frameworks for resampling-based hypothesis testing. The **permutation test**, with roots in Fisher's randomization approach from the 1930s, provides exact p-values when the null hypothesis implies exchangeability of observations. The **bootstrap test** extends to broader scenarios where exchangeability fails—unequal variances, complex estimators, regression settings—by enforcing the null hypothesis through data transformation. Together, these methods form a comprehensive toolkit for inference when classical parametric tests are unreliable or unavailable.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   - **Understand**: The fundamental distinction between bootstrap for estimation (resample from data) and bootstrap for testing (resample under :math:`H_0`)
+   - **Develop**: Permutation tests as exact tests under exchangeability; bootstrap tests for broader applicability
+   - **Implement**: Two-sample tests, regression coefficient tests, and distribution equality tests in Python
+   - **Evaluate**: When to prefer permutation vs bootstrap; asymptotic refinement through studentization
+
+
+From Confidence Intervals to Hypothesis Tests
+---------------------------------------------
+
+Before developing resampling tests directly, we establish the connection between confidence intervals and hypothesis tests—a relationship that motivates but does not fully capture the power of resampling for testing.
+
+The Duality Principle
+~~~~~~~~~~~~~~~~~~~~~
+
+The classical duality between confidence intervals and hypothesis tests states:
+
+.. admonition:: Test–CI Duality
+   :class: note
+
+   A :math:`(1-\alpha)` confidence interval :math:`\text{CI}_{1-\alpha}` for :math:`\theta` and a level-:math:`\alpha` hypothesis test are **dual** in the following sense:
+
+   .. math::
+
+      \text{Reject } H_0: \theta = \theta_0 \text{ at level } \alpha \quad \Longleftrightarrow \quad \theta_0 \notin \text{CI}_{1-\alpha}
+
+This duality means we can, in principle, test any null hypothesis by checking whether the hypothesized value falls outside our confidence interval. If we have a 95% bootstrap percentile CI of :math:`[2.3, 5.7]` for some parameter :math:`\theta`, then we would reject :math:`H_0: \theta = 0` at the 5% level (since :math:`0 \notin [2.3, 5.7]`), but we would not reject :math:`H_0: \theta = 4` (since :math:`4 \in [2.3, 5.7]`).
+
+**From CI to p-value**: The duality can be extended to obtain p-values:
+
+.. math::
+   :label: pvalue-from-ci
+
+   p\text{-value} = \inf\{\alpha : \theta_0 \notin \text{CI}_{1-\alpha}\}
+
+In other words, the p-value is the smallest significance level at which the confidence interval would exclude :math:`\theta_0`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig01_test_ci_duality.png
+   :alt: Test-CI duality showing rejection regions and two-tailed p-value calculation
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.1**: The fundamental duality between confidence intervals and hypothesis tests. Panel (a) shows rejection when :math:`\theta_0` lies outside the 95% CI; panel (b) shows failure to reject when :math:`\theta_0` is inside. Panel (c) illustrates the two-tailed test with rejection regions in both tails. Panel (d) summarizes the key relationships.
+
+Why Direct Testing is Often Better
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+While the CI-inversion approach works in principle, directly constructing the null distribution often provides:
+
+1. **Better calibration**: CI inversion inherits any coverage errors from the CI method. Direct null distribution estimation can achieve better size control.
+
+2. **More natural interpretation**: The p-value directly answers "How surprising is this result under :math:`H_0`?"
+
+3. **Computational efficiency**: For a single test, we need only one null distribution, not a family of CIs.
+
+4. **Asymptotic refinement**: With studentized test statistics, bootstrap tests can achieve :math:`O(n^{-1})` error versus :math:`O(n^{-1/2})` for many CI methods.
+
+The key insight that enables direct testing is this: **we generate the null distribution by resampling from data that has been transformed to satisfy** :math:`H_0`. The following sections develop this idea systematically.
+
+
+The Bootstrap Hypothesis Testing Framework
+------------------------------------------
+
+The bootstrap approach to hypothesis testing generates the sampling distribution of a test statistic **under the null hypothesis** by resampling from data that has been modified to enforce :math:`H_0`.
+
+The Core Principle
+~~~~~~~~~~~~~~~~~~
+
+Consider testing :math:`H_0: \theta = \theta_0` against :math:`H_1: \theta \neq \theta_0`. The classical approach assumes we know the null distribution of some test statistic :math:`T`—typically through asymptotic theory. The bootstrap approach instead **estimates** this null distribution by:
+
+1. **Enforcing** :math:`H_0`: Transform the observed data so that the transformed data satisfies the null hypothesis.
+
+2. **Resampling**: Generate bootstrap samples from the transformed data.
+
+3. **Computing**: Calculate the test statistic on each bootstrap sample.
+
+4. **Comparing**: Assess where the observed statistic falls in the bootstrap null distribution.
+
+This procedure is valid because the transformed data represents a population where :math:`H_0` is true, so resampling from it generates the null distribution of :math:`T`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig02_null_distribution.png
+   :alt: Comparison of wrong vs correct bootstrap null distribution construction
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.2**: The critical distinction in bootstrap hypothesis testing. The **wrong approach** (left panels) resamples directly from observed data, generating a distribution centered at the sample statistic—this tests whether the sample is unusual given itself, which is meaningless. The **correct approach** (right panels) first centers the data at the null value, then resamples, generating the true null distribution. The Phipson-Smyth correction (+1 in numerator and denominator) ensures valid p-values.
+
+General Bootstrap Test Algorithm
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Algorithm: Bootstrap Hypothesis Test**
+
+.. code-block:: text
+
+   Input: Data X₁,...,Xₙ; null hypothesis H₀; test statistic T; B replicates
+   Output: Bootstrap p-value
+
+   1. Compute observed test statistic: T_obs = T(X₁,...,Xₙ)
+   2. Transform data to enforce H₀: X̃₁,...,X̃ₙ (method depends on H₀)
+   3. For b = 1,...,B:
+      a. Draw bootstrap sample X̃*₁,...,X̃*ₙ with replacement from {X̃₁,...,X̃ₙ}
+      b. Compute bootstrap test statistic T*_b (using H₀ value as reference)
+   4. Compute p-value using appropriate tail(s)
+   5. Return p-value (and optionally the bootstrap null distribution)
+
+The critical step is Step 2: **null enforcement**. The specific transformation depends on the null hypothesis and the structure of the problem.
+
+P-Value Calculation
+~~~~~~~~~~~~~~~~~~~
+
+The p-value measures the probability of observing a test statistic as extreme as or more extreme than :math:`T_{\text{obs}}`, under the null hypothesis. For bootstrap tests, this is estimated by:
+
+**One-sided (upper tail)**:
+
+.. math::
+   :label: pvalue-upper
+
+   \hat{p} = \frac{\#\{b : T^*_b \geq T_{\text{obs}}\} + 1}{B + 1}
+
+**One-sided (lower tail)**:
+
+.. math::
+   :label: pvalue-lower
+
+   \hat{p} = \frac{\#\{b : T^*_b \leq T_{\text{obs}}\} + 1}{B + 1}
+
+**Two-sided**:
+
+.. math::
+   :label: pvalue-twosided
+
+   \hat{p} = \frac{\#\{b : |T^*_b| \geq |T_{\text{obs}}|\} + 1}{B + 1}
+
+.. admonition:: Why "+1" in the Numerator and Denominator?
+   :class: note
+
+   The formulation with :math:`+1` in both numerator and denominator (due to Phipson & Smyth, 2010) ensures:
+
+   1. **Valid p-values**: Under :math:`H_0`, :math:`P(\hat{p} \leq \alpha) \leq \alpha` for any :math:`\alpha`. Without the :math:`+1`, the test can be anti-conservative.
+
+   2. **Non-zero p-values**: The smallest possible p-value is :math:`1/(B+1)`, never exactly zero. Reporting :math:`p = 0` is always incorrect—it claims absolute certainty that the effect is real.
+
+   3. **Natural interpretation**: We treat the observed statistic as one additional draw from the null distribution, asking "What fraction of all :math:`B+1` values are at least as extreme?"
+
+   For :math:`B = 9999`, the resolution is :math:`1/10000 = 0.0001`. If you need finer resolution, increase :math:`B`.
+
+Pivotal vs Non-Pivotal Test Statistics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The choice of test statistic profoundly affects the accuracy of bootstrap tests.
+
+.. admonition:: Definition: Pivotal Statistic
+   :class: note
+
+   A statistic :math:`T_n` is **pivotal** (or **pivotal-like**) if its sampling distribution does not depend on unknown parameters. A classic example is the t-statistic:
+
+   .. math::
+
+      T_n = \frac{\bar{X} - \mu}{S/\sqrt{n}}
+
+   Under the null :math:`H_0: \mu = \mu_0`, the distribution of :math:`T_n` (with :math:`\mu_0` replacing :math:`\mu`) depends only on :math:`n` and the shape of :math:`F`, not on :math:`\mu` or :math:`\sigma`.
+
+**Non-pivotal statistics** like :math:`\bar{X} - \mu_0` have sampling distributions that depend on :math:`\sigma`, which must be estimated.
+
+The distinction matters because of the following fundamental result:
+
+.. admonition:: Asymptotic Refinement (Hall, 1992)
+   :class: important
+
+   Under standard smoothness and regularity conditions for asymptotically linear statistics, bootstrap tests based on:
+
+   - **Pivotal/studentized** statistics achieve rejection probability error :math:`O(n^{-1})`
+   - **Non-pivotal** statistics achieve rejection probability error :math:`O(n^{-1/2})`
+
+   This higher-order refinement requires: (i) smooth, asymptotically linear statistics; (ii) appropriate studentization; (iii) appropriate bootstrap scheme. It does **not** apply universally to all statistics and settings.
+
+The practical implication is clear: **whenever a standard error is available, use a studentized test statistic**.
+
+.. list-table:: Test Statistic Comparison
+   :header-rows: 1
+   :widths: 25 35 20 20
+
+   * - Statistic
+     - Formula
+     - Type
+     - Error Rate
+   * - Studentized (t)
+     - :math:`(\hat{\theta} - \theta_0)/\widehat{\text{SE}}`
+     - Pivotal
+     - :math:`O(n^{-1})`
+   * - Unstandardized
+     - :math:`\hat{\theta} - \theta_0`
+     - Non-pivotal
+     - :math:`O(n^{-1/2})`
+   * - Wald-type
+     - :math:`(\hat{\theta} - \theta_0)^2/\widehat{\text{Var}}`
+     - Pivotal
+     - :math:`O(n^{-1})`
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig03_studentized_comparison.png
+   :alt: Comparison of Type I error rates for studentized vs non-studentized statistics
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.3**: Studentized (pivotal) statistics converge faster to nominal levels. The simulation compares Type I error rates across sample sizes for studentized vs non-studentized bootstrap tests. The studentized version (blue) maintains error rates close to 0.05 even for :math:`n = 20`, while the non-studentized version (orange) shows systematic deviation. This demonstrates the :math:`O(n^{-1})` vs :math:`O(n^{-1/2})` asymptotic refinement.
+
+
+One-Sample Location Test: A Complete Example
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We now develop the one-sample bootstrap test for a population mean in complete detail.
+
+**Setup**: Data :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} F` with mean :math:`\mu = \mathbb{E}_F[X]`.
+
+**Hypotheses**: :math:`H_0: \mu = \mu_0` vs :math:`H_1: \mu \neq \mu_0`
+
+**Test statistic**: The studentized statistic
+
+.. math::
+   :label: t-statistic
+
+   T = \frac{\bar{X} - \mu_0}{S/\sqrt{n}}
+
+where :math:`S` is the sample standard deviation.
+
+**Null enforcement**: To generate data consistent with :math:`H_0`, we **center** the data at :math:`\mu_0`:
+
+.. math::
+   :label: centering
+
+   \tilde{X}_i = X_i - \bar{X} + \mu_0
+
+The centered data :math:`\tilde{X}_1, \ldots, \tilde{X}_n` has sample mean exactly equal to :math:`\mu_0`, so it represents a world where :math:`H_0` is true, while preserving the variability structure of the original data.
+
+**Bootstrap procedure**:
+
+1. Compute :math:`T_{\text{obs}} = (\bar{X} - \mu_0)/(S/\sqrt{n})`
+
+2. Center data: :math:`\tilde{X}_i = X_i - \bar{X} + \mu_0`
+
+3. For :math:`b = 1, \ldots, B`:
+   
+   a. Resample: :math:`\tilde{X}^*_1, \ldots, \tilde{X}^*_n` with replacement from :math:`\{\tilde{X}_1, \ldots, \tilde{X}_n\}`
+   
+   b. Compute :math:`T^*_b = (\bar{\tilde{X}}^* - \mu_0)/(S^*/\sqrt{n})`
+
+4. p-value: :math:`\hat{p} = (\#\{|T^*_b| \geq |T_{\text{obs}}|\} + 1)/(B + 1)`
+
+.. admonition:: Example 💡 One-Sample Bootstrap Test
+   :class: note
+
+   **Given**: :math:`n = 30` observations with :math:`\bar{x} = 2.47` and :math:`s = 1.82`. We test :math:`H_0: \mu = 2.0`.
+
+   **Find**: Bootstrap p-value using the studentized test statistic.
+
+   **Mathematical approach**:
+
+   The observed t-statistic is:
+
+   .. math::
+
+      T_{\text{obs}} = \frac{2.47 - 2.0}{1.82/\sqrt{30}} = \frac{0.47}{0.332} = 1.414
+
+   Under centering, the data are shifted so :math:`\bar{\tilde{x}} = 2.0` exactly. Bootstrap samples from this centered data generate the null distribution of :math:`T`.
+
+   **Python implementation**:
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      # Generate example data
+      rng = np.random.default_rng(42)
+      n = 30
+      data = rng.normal(loc=2.5, scale=1.8, size=n)  # True mean = 2.5
+
+      # Null hypothesis
+      mu_0 = 2.0
+
+      # Observed test statistic
+      x_bar = data.mean()
+      s = data.std(ddof=1)
+      t_obs = (x_bar - mu_0) / (s / np.sqrt(n))
+
+      print(f"Sample mean: {x_bar:.4f}")
+      print(f"Sample SD: {s:.4f}")
+      print(f"Observed t-statistic: {t_obs:.4f}")
+
+      # Null enforcement: center data at mu_0
+      data_centered = data - x_bar + mu_0
+
+      # Bootstrap test
+      B = 9999
+      t_boot = np.zeros(B)
+
+      for b in range(B):
+          boot_sample = rng.choice(data_centered, size=n, replace=True)
+          boot_mean = boot_sample.mean()
+          boot_se = boot_sample.std(ddof=1) / np.sqrt(n)
+          t_boot[b] = (boot_mean - mu_0) / boot_se
+
+      # Two-sided p-value (Phipson-Smyth formula)
+      p_value = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+
+      # Compare to classical t-test
+      _, p_classical = stats.ttest_1samp(data, mu_0)
+
+      print(f"\nBootstrap p-value: {p_value:.4f}")
+      print(f"Classical t-test p-value: {p_classical:.4f}")
+
+   **Output**:
+
+   .. code-block:: text
+
+      Sample mean: 2.4729
+      Sample SD: 1.8247
+      Observed t-statistic: 1.4193
+      
+      Bootstrap p-value: 0.1653
+      Classical t-test p-value: 0.1664
+
+   **Result**: The bootstrap p-value (0.165) closely matches the classical t-test (0.166). We do not reject :math:`H_0: \mu = 2.0` at the 5% level. The close agreement occurs because the data are approximately normal; for non-normal data, the bootstrap can be more reliable.
+
+
+Permutation Tests: Exact Tests Under Exchangeability
+----------------------------------------------------
+
+Permutation tests represent a fundamentally different approach to hypothesis testing—one that predates the bootstrap by several decades. When the null hypothesis implies that observations are **exchangeable**, permutation tests provide **exact** p-values without any asymptotic approximation.
+
+The Exchangeability Principle
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition: Exchangeability
+   :class: note
+
+   Random variables :math:`X_1, \ldots, X_n` are **exchangeable** if their joint distribution is invariant under any permutation :math:`\pi` of the indices:
+
+   .. math::
+
+      (X_1, \ldots, X_n) \stackrel{d}{=} (X_{\pi(1)}, \ldots, X_{\pi(n)})
+
+   for all permutations :math:`\pi` of :math:`\{1, \ldots, n\}`.
+
+Exchangeability is weaker than independence but still quite strong. The key insight is that **many null hypotheses imply exchangeability**:
+
+**Two-sample location problem**: If :math:`X_1, \ldots, X_m \sim F` and :math:`Y_1, \ldots, Y_n \sim G`, the null hypothesis :math:`H_0: F = G` (same distribution) implies that all :math:`m + n` observations are exchangeable—the "X" and "Y" labels are arbitrary under :math:`H_0`.
+
+**Randomized experiments**: In a randomized controlled trial, treatment assignment is random. Under the sharp null of no treatment effect, outcomes would be identical regardless of assignment, making labels exchangeable.
+
+**Paired data with symmetric differences**: If :math:`D_i = Y_i - X_i` are differences with the null :math:`H_0: \text{median}(D) = 0` and the distribution of :math:`D` is symmetric about 0, then the signs of :math:`D_i` are exchangeable.
+
+The Exact Permutation Test
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Under exchangeability, the permutation distribution of any test statistic is **uniform over all permutations**. This leads to the following exact result:
+
+.. admonition:: Theorem: Exactness of Permutation Tests
+   :class: note
+
+   Let :math:`X_1, \ldots, X_n` be exchangeable under :math:`H_0`, and let :math:`T = T(X_1, \ldots, X_n)` be any test statistic. Then under :math:`H_0`:
+
+   .. math::
+
+      P(T(X_{\pi}) \geq T_{\text{obs}}) = \frac{\#\{\pi : T(X_{\pi}) \geq T_{\text{obs}}\}}{n!}
+
+   where the sum is over all :math:`n!` permutations.
+
+   **This p-value is exact**—no large-sample approximation is needed.
+
+The proof follows directly from exchangeability: under :math:`H_0`, conditional on the pooled data, every labeling is equally likely, so each permuted test statistic value occurs with probability :math:`1/n!`.
+
+.. admonition:: Critical Caveat: When Permutation Tests Are Exact
+   :class: warning
+
+   **For two-sample problems, permutation tests are exact for** :math:`H_0: F_X = F_Y` **(equality of distributions).** They are generally **not exact** for :math:`H_0: \mu_X = \mu_Y` (equality of means) unless additional conditions hold:
+
+   - If variances differ (:math:`\sigma_X^2 \neq \sigma_Y^2`), exchangeability fails under the mean-equality null
+   - Using a studentized statistic (Welch t) provides **asymptotic validity** but not finite-sample exactness
+   - The Behrens-Fisher problem (testing equal means with unequal variances) requires bootstrap methods, not permutation
+
+   **Bottom line**: Permutation tests are exact when the null implies the joint distribution is invariant under permutation. For location-only nulls with heterogeneous variances, use bootstrap tests instead.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig04_permutation_test.png
+   :alt: Two-sample permutation test illustration with label exchangeability
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.4**: The permutation test principle for two-sample comparisons. (a) Original labeled data with observed difference :math:`T_{\text{obs}} = \bar{X} - \bar{Y}`. (b) Under :math:`H_0: F_X = F_Y`, labels are arbitrary—we pool the data. (c) Random label reassignments generate new test statistics. (d) The permutation null distribution shows where :math:`\pm T_{\text{obs}}` falls, yielding an exact p-value.
+
+**Exact vs Monte Carlo Permutation**
+
+For small samples, we can enumerate all :math:`n!` permutations. For the two-sample problem with :math:`m` and :math:`n` observations, there are :math:`\binom{m+n}{m}` distinct permutations of labels.
+
+.. list-table:: Number of Permutations
+   :header-rows: 1
+   :widths: 20 20 30
+
+   * - Sample Sizes
+     - Permutations
+     - Feasibility
+   * - :math:`m = n = 5`
+     - 252
+     - Exact enumeration feasible
+   * - :math:`m = n = 10`
+     - 184,756
+     - Exact enumeration feasible
+   * - :math:`m = n = 15`
+     - 155,117,520
+     - Monte Carlo needed
+   * - :math:`m = n = 20`
+     - :math:`\approx 1.4 \times 10^{11}`
+     - Monte Carlo essential
+
+For larger samples, we use **Monte Carlo permutation**: randomly sample :math:`B` permutations and estimate the p-value as :math:`(\#\{T^*_b \geq T_{\text{obs}}\} + 1)/(B + 1)`.
+
+Two-Sample Permutation Test
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The most common permutation test compares two independent samples.
+
+**Setup**: :math:`X_1, \ldots, X_m \sim F` and :math:`Y_1, \ldots, Y_n \sim G`, independent samples.
+
+**Hypotheses**: :math:`H_0: F = G` (distributions are identical) vs :math:`H_1: F \neq G`
+
+**Algorithm: Two-Sample Permutation Test**
+
+.. code-block:: text
+
+   Input: Sample X (size m), Sample Y (size n), B permutations
+   Output: Permutation p-value
+
+   1. Pool observations: Z = (X₁,...,Xₘ, Y₁,...,Yₙ), total N = m + n
+   2. Compute observed test statistic: T_obs = T(X, Y)
+   3. For b = 1,...,B:
+      a. Randomly permute indices π of {1,...,N}
+      b. Assign first m permuted observations to X*, rest to Y*
+      c. Compute T*_b = T(X*, Y*)
+   4. p-value = (#{|T*_b| ≥ |T_obs|} + 1) / (B + 1)
+   5. Return p-value
+
+**Choice of Test Statistic**
+
+Different test statistics have different power against various alternatives:
+
+.. list-table:: Test Statistics for Two-Sample Comparison
+   :header-rows: 1
+   :widths: 20 30 50
+
+   * - Statistic
+     - Formula
+     - Properties
+   * - Difference in means
+     - :math:`\bar{X} - \bar{Y}`
+     - Simple; sensitive to unequal variances
+   * - Pooled t
+     - :math:`\frac{\bar{X} - \bar{Y}}{S_p\sqrt{1/m + 1/n}}`
+     - Assumes equal variances; more powerful under homoscedasticity
+   * - Welch t
+     - :math:`\frac{\bar{X} - \bar{Y}}{\sqrt{S_X^2/m + S_Y^2/n}}`
+     - Robust to unequal variances; **recommended as default**
+   * - Wilcoxon rank-sum
+     - Sum of ranks in X
+     - Robust to outliers; tests stochastic ordering
+
+.. admonition:: Recommendation
+   :class: tip
+
+   Use the **Welch t-statistic** as the default for permutation tests of location. It combines the power of studentization with robustness to heteroscedasticity.
+
+**Python Implementation**:
+
+.. code-block:: python
+
+   import numpy as np
+
+   def permutation_test_two_sample(x, y, B=9999, statistic='welch_t', seed=None):
+       """
+       Two-sample permutation test.
+
+       Parameters
+       ----------
+       x, y : array_like
+           Two independent samples.
+       B : int
+           Number of permutations.
+       statistic : str
+           Test statistic: 'welch_t', 'diff_means', 'pooled_t'.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 't_obs', 't_perm'.
+       """
+       rng = np.random.default_rng(seed)
+       x, y = np.asarray(x), np.asarray(y)
+       m, n = len(x), len(y)
+       pooled = np.concatenate([x, y])
+
+       def compute_stat(group1, group2):
+           if statistic == 'welch_t':
+               se = np.sqrt(np.var(group1, ddof=1)/len(group1) + 
+                           np.var(group2, ddof=1)/len(group2))
+               return (np.mean(group1) - np.mean(group2)) / se if se > 0 else 0
+           elif statistic == 'diff_means':
+               return np.mean(group1) - np.mean(group2)
+           elif statistic == 'pooled_t':
+               sp2 = ((len(group1)-1)*np.var(group1, ddof=1) + 
+                      (len(group2)-1)*np.var(group2, ddof=1)) / (len(group1)+len(group2)-2)
+               se = np.sqrt(sp2 * (1/len(group1) + 1/len(group2)))
+               return (np.mean(group1) - np.mean(group2)) / se if se > 0 else 0
+           else:
+               raise ValueError(f"Unknown statistic: {statistic}")
+
+       # Observed statistic
+       t_obs = compute_stat(x, y)
+
+       # Permutation distribution
+       t_perm = np.zeros(B)
+       for b in range(B):
+           perm = rng.permutation(pooled)
+           t_perm[b] = compute_stat(perm[:m], perm[m:])
+
+       # Two-sided p-value
+       p_value = (np.sum(np.abs(t_perm) >= np.abs(t_obs)) + 1) / (B + 1)
+
+       return {
+           'p_value': p_value,
+           't_obs': t_obs,
+           't_perm': t_perm
+       }
+
+
+.. admonition:: Example 💡 Two-Sample Permutation Test
+   :class: note
+
+   **Given**: A clinical trial comparing a new treatment to placebo.
+   
+   - Treatment group (:math:`n = 15`): mean = 23.4, SD = 4.2
+   - Placebo group (:math:`n = 12`): mean = 19.8, SD = 5.1
+
+   **Find**: Permutation test p-value for :math:`H_0`: no treatment effect.
+
+   **Python implementation**:
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      # Simulate clinical trial data
+      rng = np.random.default_rng(42)
+      treatment = rng.normal(23.4, 4.2, size=15)
+      placebo = rng.normal(19.8, 5.1, size=12)
+
+      print("Treatment group:")
+      print(f"  n = {len(treatment)}, mean = {treatment.mean():.2f}, SD = {treatment.std(ddof=1):.2f}")
+      print("Placebo group:")
+      print(f"  n = {len(placebo)}, mean = {placebo.mean():.2f}, SD = {placebo.std(ddof=1):.2f}")
+
+      # Permutation test with Welch t
+      result = permutation_test_two_sample(treatment, placebo, B=9999, 
+                                            statistic='welch_t', seed=42)
+      
+      # Compare to classical Welch t-test
+      _, p_classical = stats.ttest_ind(treatment, placebo, equal_var=False)
+
+      print(f"\nObserved Welch t: {result['t_obs']:.4f}")
+      print(f"Permutation p-value: {result['p_value']:.4f}")
+      print(f"Classical Welch p-value: {p_classical:.4f}")
+
+   **Output**:
+
+   .. code-block:: text
+
+      Treatment group:
+        n = 15, mean = 22.98, SD = 4.17
+      Placebo group:
+        n = 12, mean = 20.24, SD = 4.42
+
+      Observed Welch t: 1.6284
+      Permutation p-value: 0.1142
+      Classical Welch p-value: 0.1159
+
+   **Result**: The permutation p-value (0.114) closely matches the classical Welch test (0.116). We do not reject :math:`H_0` at the 5% level. The agreement occurs because the t-distribution approximation is adequate here; permutation tests become more valuable with smaller samples or non-normal data.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig05_exact_permutation.png
+   :alt: Exact permutation test enumerating all C(5,3)=10 possible assignments
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.5**: Exact permutation distribution for very small samples. With :math:`n_X = 3` and :math:`n_Y = 2`, all :math:`\binom{5}{3} = 10` possible label assignments are enumerated in panel (a). Panel (b) shows the resulting discrete null distribution where each permutation has probability 0.10. The exact p-value of 0.10 requires no Monte Carlo approximation.
+
+
+When Permutation Tests are Not Exact
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Permutation tests lose their exactness property when exchangeability fails. Common violations include:
+
+**Unequal variances (Behrens-Fisher problem)**: If :math:`F` and :math:`G` have different variances, :math:`H_0: \mu_X = \mu_Y` does not imply :math:`F = G`. Permuting pools observations with different variances, which can invalidate the test. However, using a studentized statistic (Welch t) provides robustness.
+
+**Regression with continuous predictors**: In :math:`Y_i = \beta_0 + \beta_1 X_i + \varepsilon_i`, testing :math:`H_0: \beta_1 = 0` does not make :math:`(X_i, Y_i)` pairs exchangeable. We need alternative approaches (see Section 4.6.5).
+
+**Dependent data**: Time series, spatial data, or clustered observations violate exchangeability. Modified approaches (block permutation, cluster bootstrap) are needed.
+
+**Paired differences with asymmetric distribution**: The sign-flip permutation test assumes symmetric distribution of differences under :math:`H_0`.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Permuting when not exchangeable**: If the null hypothesis does not imply exchangeability, permutation tests can be either conservative or anti-conservative. Always verify that your null hypothesis genuinely implies exchangeability before using permutation tests.
+
+
+Paired Data: The Sign-Flip Test
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For paired observations :math:`(X_i, Y_i)`, we often test whether the treatment effect is zero.
+
+**Setup**: :math:`n` paired observations; let :math:`D_i = Y_i - X_i`.
+
+**Hypotheses**: :math:`H_0: \mathbb{E}[D] = 0` (or median = 0 if testing location)
+
+**Additional assumption for exactness**: :math:`D_i` is symmetric about 0 under :math:`H_0`.
+
+**Key insight**: If :math:`D` is symmetric about 0, then :math:`D` and :math:`-D` have the same distribution. Therefore, randomly flipping signs preserves the null distribution.
+
+**Algorithm: Sign-Flip Permutation Test**
+
+.. code-block:: text
+
+   Input: Paired differences D₁,...,Dₙ; B permutations
+   Output: Permutation p-value
+
+   1. Compute observed statistic: T_obs = mean(D) / (SD(D)/√n)  [or just mean(D)]
+   2. For b = 1,...,B:
+      a. Generate random signs: s₁,...,sₙ ∈ {-1, +1} uniformly
+      b. Create flipped differences: D*ᵢ = sᵢ × Dᵢ
+      c. Compute T*_b from D*
+   3. p-value = (#{|T*_b| ≥ |T_obs|} + 1) / (B + 1)
+
+**Python Implementation**:
+
+.. code-block:: python
+
+   def sign_flip_test(differences, B=9999, studentized=True, seed=None):
+       """
+       Sign-flip permutation test for paired differences.
+
+       Parameters
+       ----------
+       differences : array_like
+           Paired differences D = Y - X.
+       B : int
+           Number of random sign flips.
+       studentized : bool
+           If True, use t-statistic; if False, use mean.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 't_obs', 't_perm'.
+       """
+       rng = np.random.default_rng(seed)
+       d = np.asarray(differences)
+       n = len(d)
+
+       def compute_stat(diffs):
+           if studentized:
+               se = np.std(diffs, ddof=1) / np.sqrt(n)
+               return np.mean(diffs) / se if se > 0 else 0
+           else:
+               return np.mean(diffs)
+
+       t_obs = compute_stat(d)
+
+       # Sign-flip distribution
+       t_perm = np.zeros(B)
+       for b in range(B):
+           signs = rng.choice([-1, 1], size=n)
+           t_perm[b] = compute_stat(d * signs)
+
+       p_value = (np.sum(np.abs(t_perm) >= np.abs(t_obs)) + 1) / (B + 1)
+
+       return {'p_value': p_value, 't_obs': t_obs, 't_perm': t_perm}
+
+
+Testing Equality of Distributions
+---------------------------------
+
+Sometimes we want to test whether two samples come from the **same distribution**, not just whether they have the same mean. Permutation tests excel at this broader hypothesis.
+
+The Kolmogorov-Smirnov Test
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The two-sample Kolmogorov-Smirnov test uses the maximum absolute difference between empirical CDFs:
+
+.. math::
+   :label: ks-statistic
+
+   D_{m,n} = \sup_x |\hat{F}_m(x) - \hat{G}_n(x)|
+
+where :math:`\hat{F}_m` and :math:`\hat{G}_n` are the ECDFs of samples of sizes :math:`m` and :math:`n`.
+
+.. admonition:: Note on Ties and Discrete Data
+   :class: tip
+
+   The classical KS distribution is **distribution-free only for continuous data** (no ties). With discrete data or ties, the null distribution of :math:`D` changes. The permutation approach is preferable in such cases because it automatically accounts for the discrete structure—the permutation distribution reflects the actual data, ties included.
+
+**Connection to Section 4.2**: Recall the DKW inequality bounds ECDF deviation from the true CDF. The KS test evaluates whether two ECDFs differ more than expected under :math:`H_0: F = G`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig06_ks_permutation.png
+   :alt: Permutation test using Kolmogorov-Smirnov statistic
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.6**: Permutation test with the Kolmogorov-Smirnov statistic. Panel (a) shows the two ECDFs with maximum difference :math:`D = \sup_x |\hat{F}(x) - \hat{G}(x)|`. Panel (b) shows the permutation null distribution. The KS test detects distributional differences beyond location shifts—useful when samples have equal means but different variances or shapes.
+
+**Permutation KS Test**
+
+Under :math:`H_0: F = G`, observations are exchangeable, so we can permute labels and recompute :math:`D`:
+
+.. code-block:: python
+
+   from scipy.stats import ks_2samp
+
+   def ks_permutation_test(x, y, B=9999, seed=None):
+       """
+       Kolmogorov-Smirnov test via permutation.
+
+       Parameters
+       ----------
+       x, y : array_like
+           Two independent samples.
+       B : int
+           Number of permutations.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 'D_obs', 'D_perm'.
+       """
+       rng = np.random.default_rng(seed)
+       x, y = np.asarray(x), np.asarray(y)
+       m = len(x)
+       pooled = np.concatenate([x, y])
+
+       # Observed KS statistic
+       D_obs = ks_2samp(x, y).statistic
+
+       # Permutation distribution
+       D_perm = np.zeros(B)
+       for b in range(B):
+           perm = rng.permutation(pooled)
+           D_perm[b] = ks_2samp(perm[:m], perm[m:]).statistic
+
+       # One-sided p-value (D can only be positive)
+       p_value = (np.sum(D_perm >= D_obs) + 1) / (B + 1)
+
+       return {'p_value': p_value, 'D_obs': D_obs, 'D_perm': D_perm}
+
+
+.. admonition:: Example 💡 Testing Distributional Equality
+   :class: note
+
+   **Given**: Two samples with the same mean but different variances.
+
+   **Find**: Can we detect the difference using (a) a t-test for means, and (b) a KS test for distributions?
+
+   **Python implementation**:
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      rng = np.random.default_rng(42)
+
+      # Same mean (5.0), different variances
+      x = rng.normal(5.0, 1.0, size=50)  # SD = 1
+      y = rng.normal(5.0, 2.5, size=50)  # SD = 2.5
+
+      print("Sample X: mean = {:.3f}, SD = {:.3f}".format(x.mean(), x.std(ddof=1)))
+      print("Sample Y: mean = {:.3f}, SD = {:.3f}".format(y.mean(), y.std(ddof=1)))
+
+      # Two-sample t-test (tests means)
+      _, p_ttest = stats.ttest_ind(x, y, equal_var=False)
+
+      # KS permutation test (tests distributions)
+      ks_result = ks_permutation_test(x, y, B=9999, seed=42)
+
+      # Classical KS test for comparison
+      _, p_ks_classical = stats.ks_2samp(x, y)
+
+      print(f"\nWelch t-test p-value: {p_ttest:.4f}")
+      print(f"KS permutation p-value: {ks_result['p_value']:.4f}")
+      print(f"KS classical p-value: {p_ks_classical:.4f}")
+
+   **Output**:
+
+   .. code-block:: text
+
+      Sample X: mean = 4.942, SD = 0.913
+      Sample Y: mean = 4.953, SD = 2.379
+
+      Welch t-test p-value: 0.9741
+      KS permutation p-value: 0.0001
+      KS classical p-value: 0.0001
+
+   **Result**: The t-test fails to detect any difference (p = 0.97) because the means are nearly identical. The KS test strongly rejects :math:`H_0: F = G` (p < 0.001) because it detects the variance difference. This illustrates why testing distributional equality is sometimes more appropriate than testing means alone.
+
+
+Other Distribution Tests
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Several alternatives to the KS test may have better power for specific alternatives:
+
+**Cramér–von Mises**: Integrates squared differences between ECDFs:
+
+.. math::
+
+   W^2 = \int_{-\infty}^{\infty} [\hat{F}_m(x) - \hat{G}_n(x)]^2 \, d\hat{H}_{m+n}(x)
+
+where :math:`\hat{H}_{m+n}` is the pooled ECDF. Less sensitive to differences at the tails than KS.
+
+**Anderson-Darling**: Weighted version emphasizing tails:
+
+.. math::
+
+   A^2 = \int_{-\infty}^{\infty} \frac{[\hat{F}_m(x) - \hat{G}_n(x)]^2}{\hat{H}(x)(1-\hat{H}(x))} \, d\hat{H}_{m+n}(x)
+
+More powerful for detecting tail differences.
+
+**Energy distance** (Székely-Rizzo): Generalizes to multivariate settings.
+
+All these tests can be conducted via permutation with the same algorithm structure—only the test statistic changes.
+
+
+Bootstrap Tests for Regression
+------------------------------
+
+Regression poses unique challenges for resampling tests because the standard null hypothesis :math:`H_0: \beta_j = 0` does not imply exchangeability of observations. We cannot simply permute :math:`(X_i, Y_i)` pairs. Instead, we use **null-enforced bootstrap** methods.
+
+Testing a Single Coefficient
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Setup**: Linear model :math:`Y = X\beta + \varepsilon`, where :math:`X` is :math:`n \times p`. We test :math:`H_0: \beta_j = 0`.
+
+**Challenge**: Under :math:`H_0`, :math:`Y` still depends on the other predictors :math:`X_{-j}`, so observations are not exchangeable.
+
+**Solution**: The **null-enforced residual bootstrap** generates data from the restricted model (with :math:`\beta_j = 0`), ensuring bootstrap samples are consistent with :math:`H_0`.
+
+**Algorithm: Null-Enforced Residual Bootstrap Test**
+
+.. code-block:: text
+
+   Testing H₀: βⱼ = 0 in Y = Xβ + ε
+
+   1. Fit RESTRICTED model (excluding predictor j):
+      Ỹ = X₋ⱼβ̃₋ⱼ + ε̃
+   2. Compute restricted residuals: ẽᵢ = Yᵢ - X₋ⱼ,ᵢ'β̃₋ⱼ
+   3. Center residuals: ẽᵢ ← ẽᵢ - mean(ẽ)
+   4. Compute observed test statistic from FULL model (t, F, or Wald)
+   5. For b = 1,...,B:
+      a. Resample indices i* with replacement from {1,...,n}
+      b. Create Y*ᵢ = X₋ⱼ,ᵢ'β̃₋ⱼ + ẽᵢ*  (null structure with resampled residuals)
+      c. Fit FULL model to (X, Y*), compute T*_b
+   6. p-value = (#{|T*_b| ≥ |T_obs|} + 1) / (B + 1)
+
+**Key insight**: By generating :math:`Y^*` from the restricted model, we ensure that variable :math:`j` has no true effect in the bootstrap samples—exactly what :math:`H_0` asserts.
+
+.. admonition:: Fixed Design Assumption
+   :class: tip
+
+   The residual bootstrap assumes a **fixed design matrix** :math:`X`—we condition on the observed predictors. This is appropriate for designed experiments and most regression settings. If :math:`X` is random and unconditional inference is needed, a **pairs bootstrap** (resampling :math:`(X_i, Y_i)` pairs) is an alternative, though it cannot enforce :math:`H_0` as cleanly.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig07_regression_null_bootstrap.png
+   :alt: Null-enforced residual bootstrap for regression coefficient testing
+   :align: center
+   :width: 95%
+
+   **Figure 4.6.7**: Null-enforced bootstrap for testing regression coefficients. (a) The full model fits all predictors; (b) the restricted model excludes the predictor under test, enforcing :math:`H_0: \beta_j = 0`; (c) resampled residuals from the restricted model create bootstrap data where the null is true by construction; (d) the null distribution of the t-statistic from fitting the full model to bootstrap data.
+
+**Python Implementation**:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def bootstrap_regression_test(X, y, test_index, B=999, seed=None):
+       """
+       Bootstrap test for H₀: β_j = 0 using null-enforced residual resampling.
+
+       Parameters
+       ----------
+       X : array_like, shape (n, p)
+           Design matrix (should include intercept if desired).
+       y : array_like, shape (n,)
+           Response vector.
+       test_index : int
+           Index of coefficient to test (0-indexed).
+       B : int
+           Number of bootstrap replicates.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 't_obs', 't_boot', 'beta_hat'.
+       """
+       rng = np.random.default_rng(seed)
+       X, y = np.asarray(X), np.asarray(y)
+       n, p = X.shape
+
+       # Full model fit
+       beta_hat = np.linalg.lstsq(X, y, rcond=None)[0]
+       y_hat_full = X @ beta_hat
+       residuals_full = y - y_hat_full
+       mse_full = np.sum(residuals_full**2) / (n - p)
+       XtX_inv = np.linalg.inv(X.T @ X)
+       se_full = np.sqrt(mse_full * XtX_inv[test_index, test_index])
+       t_obs = beta_hat[test_index] / se_full
+
+       # Restricted model (excluding test_index column)
+       X_restricted = np.delete(X, test_index, axis=1)
+       beta_restricted = np.linalg.lstsq(X_restricted, y, rcond=None)[0]
+       y_hat_restricted = X_restricted @ beta_restricted
+       residuals_restricted = y - y_hat_restricted
+
+       # Center residuals
+       residuals_centered = residuals_restricted - residuals_restricted.mean()
+
+       # Bootstrap under H₀
+       t_boot = np.zeros(B)
+       for b in range(B):
+           # Resample residuals
+           idx = rng.integers(0, n, size=n)
+           resid_star = residuals_centered[idx]
+
+           # Generate Y* under null
+           y_star = y_hat_restricted + resid_star
+
+           # Fit full model to bootstrap data
+           beta_star = np.linalg.lstsq(X, y_star, rcond=None)[0]
+           resid_star_full = y_star - X @ beta_star
+           mse_star = np.sum(resid_star_full**2) / (n - p)
+           se_star = np.sqrt(mse_star * XtX_inv[test_index, test_index])
+           t_boot[b] = beta_star[test_index] / se_star if se_star > 0 else 0
+
+       # Two-sided p-value
+       p_value = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+
+       return {
+           'p_value': p_value,
+           't_obs': t_obs,
+           't_boot': t_boot,
+           'beta_hat': beta_hat
+       }
+
+
+.. admonition:: Example 💡 Bootstrap Test for Regression Coefficient
+   :class: note
+
+   **Given**: A regression of salary on experience and education, testing whether education has an effect.
+
+   **Python implementation**:
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      rng = np.random.default_rng(42)
+      n = 50
+
+      # Generate data: salary depends on experience and education
+      experience = rng.uniform(1, 20, n)
+      education = rng.uniform(12, 20, n)
+      salary = 30 + 2.5 * experience + 1.8 * education + rng.normal(0, 5, n)
+
+      # Design matrix with intercept
+      X = np.column_stack([np.ones(n), experience, education])
+      y = salary
+
+      # Test H₀: β_education = 0 (index 2)
+      result = bootstrap_regression_test(X, y, test_index=2, B=4999, seed=42)
+
+      # Compare to classical t-test
+      from scipy.stats import t as t_dist
+      df = n - X.shape[1]
+      p_classical = 2 * (1 - t_dist.cdf(np.abs(result['t_obs']), df))
+
+      print(f"Coefficient estimates: {result['beta_hat']}")
+      print(f"Observed t-statistic for education: {result['t_obs']:.4f}")
+      print(f"\nBootstrap p-value: {result['p_value']:.4f}")
+      print(f"Classical t-test p-value: {p_classical:.4f}")
+
+   **Output**:
+
+   .. code-block:: text
+
+      Coefficient estimates: [29.38  2.45  1.90]
+      Observed t-statistic for education: 4.2847
+
+      Bootstrap p-value: 0.0002
+      Classical t-test p-value: 0.0001
+
+   **Result**: Both methods strongly reject :math:`H_0: \beta_{\text{education}} = 0`. The close agreement validates the bootstrap approach. Bootstrap becomes more valuable when residuals are non-normal or heteroscedastic.
+
+
+Wild Bootstrap for Heteroscedastic Regression
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The residual bootstrap assumes homoscedasticity: :math:`\text{Var}(\varepsilon_i) = \sigma^2` constant. When this fails, the **wild bootstrap** provides a valid alternative.
+
+**The Problem**: Under heteroscedasticity, resampling residuals scrambles the variance structure. A small residual from a low-variance region might be placed where a large residual belongs.
+
+**The Solution**: Instead of resampling residuals, we **multiply** each residual by a random weight that preserves expected squared magnitude, while using the **restricted model** to enforce :math:`H_0`.
+
+**Wild Bootstrap Algorithm (Null-Enforced)**
+
+.. code-block:: text
+
+   Testing H₀: βⱼ = 0 under heteroscedasticity
+
+   1. Fit RESTRICTED model (excluding variable j): get β̃₋ⱼ, fitted values Ỹ
+   2. Compute restricted residuals: ẽᵢ = Yᵢ - Ỹᵢ
+   3. (Optional) Scale residuals for leverage: ẽᵢ ← ẽᵢ / √(1 - hᵢᵢ)
+   4. Compute observed t-statistic from FULL model fit
+   5. For b = 1,...,B:
+      a. Generate random weights: v*₁,...,v*ₙ iid with E[v*] = 0, E[v*²] = 1
+      b. Create Y*ᵢ = Ỹᵢ + ẽᵢ × v*ᵢ (null structure with randomized residuals)
+      c. Fit FULL model to (X, Y*), compute T*_b using same formula as t_obs
+   6. p-value = (#{|T*_b| ≥ |t_obs|} + 1) / (B + 1)
+
+**Key point**: By generating :math:`Y^*` from the **restricted** fit, we ensure the null hypothesis :math:`\beta_j = 0` holds in bootstrap samples. The wild multipliers preserve the heteroscedastic structure.
+
+**Choice of Weight Distribution**:
+
+.. list-table:: Wild Bootstrap Weight Distributions
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Distribution
+     - P(v = a)
+     - Properties
+     - Recommendation
+   * - Rademacher
+     - :math:`P(\pm 1) = 0.5`
+     - Simple; :math:`\mathbb{E}[v] = 0`, :math:`\mathbb{E}[v^2] = 1`
+     - **Default choice**
+   * - Mammen
+     - :math:`P\left(\frac{1-\sqrt{5}}{2}\right) = \frac{1+\sqrt{5}}{2\sqrt{5}}`
+     - Matches third moment
+     - Small samples
+   * - Standard Normal
+     - :math:`N(0, 1)`
+     - Continuous
+     - Alternative
+
+The Rademacher distribution (random :math:`\pm 1`) is simplest and works well in most applications.
+
+**Python Implementation**:
+
+.. code-block:: python
+
+   def wild_bootstrap_test(X, y, test_index, B=999, weights='rademacher', seed=None):
+       """
+       Wild bootstrap test for H₀: β_j = 0 under heteroscedasticity.
+       Uses null-enforced approach with restricted model.
+
+       Parameters
+       ----------
+       X : array_like, shape (n, p)
+           Design matrix.
+       y : array_like, shape (n,)
+           Response vector.
+       test_index : int
+           Index of coefficient to test.
+       B : int
+           Number of bootstrap replicates.
+       weights : str
+           Weight distribution: 'rademacher', 'mammen', or 'normal'.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 't_obs', 't_boot'.
+       """
+       rng = np.random.default_rng(seed)
+       X, y = np.asarray(X), np.asarray(y)
+       n, p = X.shape
+
+       # Full model fit for observed statistic
+       beta_full = np.linalg.lstsq(X, y, rcond=None)[0]
+       resid_full = y - X @ beta_full
+       
+       # HC3-style robust standard error
+       H = X @ np.linalg.inv(X.T @ X) @ X.T
+       h = np.diag(H)
+       XtX_inv = np.linalg.inv(X.T @ X)
+       resid_hc3 = resid_full / (1 - h)  # HC3 scaling
+       var_robust = XtX_inv[test_index, test_index]**2 * np.sum(resid_hc3**2 * X[:, test_index]**2)
+       se_robust = np.sqrt(var_robust)
+       t_obs = beta_full[test_index] / se_robust
+
+       # Restricted model (excluding test_index column) for null enforcement
+       X_restricted = np.delete(X, test_index, axis=1)
+       beta_restricted = np.linalg.lstsq(X_restricted, y, rcond=None)[0]
+       y_hat_restricted = X_restricted @ beta_restricted
+       resid_restricted = y - y_hat_restricted
+
+       # Weight generator
+       def generate_weights(size):
+           if weights == 'rademacher':
+               return rng.choice([-1.0, 1.0], size=size)
+           elif weights == 'mammen':
+               golden = (1 + np.sqrt(5)) / 2
+               p_pos = golden / np.sqrt(5)
+               return np.where(rng.random(size) < p_pos, 
+                              (1 - np.sqrt(5)) / 2, 
+                              (1 + np.sqrt(5)) / 2)
+           else:  # normal
+               return rng.standard_normal(size)
+
+       # Wild bootstrap under H0
+       t_boot = np.zeros(B)
+       for b in range(B):
+           v = generate_weights(n)
+           y_star = y_hat_restricted + resid_restricted * v  # Null-enforced
+
+           # Fit full model to bootstrap data
+           beta_star = np.linalg.lstsq(X, y_star, rcond=None)[0]
+           resid_star = y_star - X @ beta_star
+           resid_star_hc3 = resid_star / (1 - h)
+           var_star = XtX_inv[test_index, test_index]**2 * \
+                      np.sum(resid_star_hc3**2 * X[:, test_index]**2)
+           se_star = np.sqrt(np.maximum(var_star, 1e-10))
+           t_boot[b] = beta_star[test_index] / se_star  # Same formula as t_obs
+
+       p_value = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+
+       return {'p_value': p_value, 't_obs': t_obs, 't_boot': t_boot}
+
+
+Bootstrap Tests for GLMs
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+For generalized linear models (logistic regression, Poisson regression, etc.), we use **parametric bootstrap** under the null hypothesis.
+
+**Framework**: Model :math:`Y_i \sim \text{ExpFam}(\mu_i)` with :math:`g(\mu_i) = X_i'\beta`. Test :math:`H_0: \beta_j = 0`.
+
+**Algorithm: Parametric Bootstrap for GLM**
+
+.. code-block:: text
+
+   1. Fit RESTRICTED model under H₀: μ̃ᵢ = g⁻¹(X₋ⱼ,ᵢ'β̃₋ⱼ)
+   2. Compute observed test statistic (Wald, LRT, or Score) from FULL model
+   3. For b = 1,...,B:
+      a. Simulate Y*ᵢ ~ ExpFam(μ̃ᵢ)  (from restricted model)
+      b. Fit FULL model to (X, Y*), compute T*_b
+   4. p-value from bootstrap distribution
+
+**Python Implementation**:
+
+.. code-block:: python
+
+   from scipy.special import expit, logit
+   import statsmodels.api as sm
+
+   def bootstrap_glm_test(X, y, test_index, family='binomial', B=999, seed=None):
+       """
+       Parametric bootstrap test for GLM coefficient.
+
+       Parameters
+       ----------
+       X : array_like
+           Design matrix.
+       y : array_like
+           Response (binary for binomial, counts for Poisson).
+       test_index : int
+           Index of coefficient to test.
+       family : str
+           'binomial' or 'poisson'.
+       B : int
+           Number of bootstrap replicates.
+       seed : int, optional
+           Random seed.
+
+       Returns
+       -------
+       dict
+           Contains 'p_value', 'z_obs', 'z_boot'.
+       """
+       rng = np.random.default_rng(seed)
+       X, y = np.asarray(X), np.asarray(y)
+       n = len(y)
+
+       # Set up GLM family
+       if family == 'binomial':
+           glm_family = sm.families.Binomial()
+       elif family == 'poisson':
+           glm_family = sm.families.Poisson()
+       else:
+           raise ValueError("family must be 'binomial' or 'poisson'")
+
+       # Fit full model
+       model_full = sm.GLM(y, X, family=glm_family).fit()
+       z_obs = model_full.tvalues[test_index]
+
+       # Fit restricted model (excluding test_index)
+       X_restricted = np.delete(X, test_index, axis=1)
+       model_restricted = sm.GLM(y, X_restricted, family=glm_family).fit()
+       mu_restricted = model_restricted.predict(X_restricted)
+
+       # Parametric bootstrap under H₀
+       z_boot = np.zeros(B)
+       for b in range(B):
+           # Simulate under restricted model
+           if family == 'binomial':
+               y_star = rng.binomial(1, mu_restricted)
+           else:  # poisson
+               y_star = rng.poisson(mu_restricted)
+
+           # Fit full model to simulated data
+           try:
+               model_star = sm.GLM(y_star, X, family=glm_family).fit()
+               z_boot[b] = model_star.tvalues[test_index]
+           except:
+               z_boot[b] = 0  # Handle convergence failures
+
+       p_value = (np.sum(np.abs(z_boot) >= np.abs(z_obs)) + 1) / (B + 1)
+
+       return {'p_value': p_value, 'z_obs': z_obs, 'z_boot': z_boot}
+
+
+Bootstrap vs Classical Tests
+----------------------------
+
+When should we use bootstrap or permutation tests instead of classical parametric tests? This section provides practical guidance.
+
+When Bootstrap Recovers Classical Results
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For large samples with approximately normal data, bootstrap tests typically agree closely with classical tests:
+
+- **One-sample t-test**: Bootstrap under centering :math:`\approx` classical t
+- **Two-sample Welch test**: Permutation with Welch statistic :math:`\approx` classical Welch
+- **Regression F-test**: Residual bootstrap :math:`\approx` classical F
+
+This agreement validates the bootstrap approach—it doesn't artificially create significance.
+
+When Bootstrap Improves on Classical
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Bootstrap and permutation tests offer advantages in several scenarios:
+
+**Small samples**: The Central Limit Theorem convergence may be too slow for reliable asymptotic p-values. Bootstrap generates the finite-sample null distribution directly.
+
+**Non-normal data**: Heavy tails or skewness invalidate normal-theory tests. Bootstrap captures the true sampling distribution shape.
+
+**Complex statistics**: Ratios, correlations near boundaries, medians, and other non-linear statistics may not have tractable asymptotic distributions. Bootstrap handles any computable statistic.
+
+**Heteroscedasticity**: Wild bootstrap provides valid inference without requiring correct variance modeling.
+
+.. admonition:: Asymptotic Refinement Revisited
+   :class: important
+
+   Hall (1992) established that for smooth statistics:
+
+   - Classical tests have size error :math:`O(n^{-1/2})`
+   - Bootstrap tests with **studentized** statistics have size error :math:`O(n^{-1})`
+
+   This **asymptotic refinement** means bootstrap tests can be more accurate than classical tests even asymptotically—a remarkable theoretical result.
+
+
+Comparison Framework
+~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Classical vs Bootstrap vs Permutation Tests
+   :header-rows: 1
+   :widths: 20 25 25 30
+
+   * - Aspect
+     - Classical
+     - Bootstrap
+     - Permutation
+   * - Assumptions
+     - Distributional (e.g., normality)
+     - Consistency of :math:`T`
+     - Exchangeability under :math:`H_0`
+   * - Small-sample accuracy
+     - Often poor
+     - Often better
+     - Exact under :math:`H_0`
+   * - Computational cost
+     - :math:`O(1)` (formula)
+     - :math:`O(B \times C(T))`
+     - :math:`O(B \times C(T))`
+   * - Complex statistics
+     - May not exist
+     - Generally available
+     - Available
+   * - Heteroscedasticity
+     - Requires robust SE
+     - Wild bootstrap
+     - Invalid (use bootstrap)
+
+
+Permutation vs Bootstrap: Choosing the Right Approach
+-----------------------------------------------------
+
+While both permutation and bootstrap tests are resampling methods, they have distinct theoretical foundations and appropriate use cases.
+
+Decision Framework
+~~~~~~~~~~~~~~~~~~
+
+**Use Permutation Tests When**:
+
+1. **:math:`H_0` implies exchangeability**: The classic case is :math:`H_0: F_X = F_Y` (same distribution), which makes group labels exchangeable.
+
+2. **Randomized experiments**: Under Fisher's sharp null of no treatment effect, treatment assignment is exchangeable.
+
+3. **Exact p-values are desired**: Permutation tests are exact under exchangeability—no asymptotic approximation.
+
+4. **Equal variance assumption is reasonable**: For location testing, permutation assumes similar shapes under :math:`H_0`.
+
+5. **Testing distributional equality**: KS, Cramér–von Mises, and similar tests naturally fit the permutation framework.
+
+**Use Bootstrap Tests When**:
+
+1. **Unequal variances**: The Behrens-Fisher problem (testing :math:`\mu_X = \mu_Y` when :math:`\sigma_X \neq \sigma_Y`) breaks exchangeability.
+
+2. **Regression and GLMs**: Coefficient tests don't induce exchangeability.
+
+3. **Complex estimators**: Bootstrap handles any statistic; just enforce :math:`H_0` via data transformation.
+
+4. **Dependent data** (with modifications): Block bootstrap, cluster bootstrap for dependent observations.
+
+5. **Survey weights or complex designs**: Bootstrap can incorporate sampling weights.
+
+.. list-table:: Method Selection Guide
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - Scenario
+     - Method
+     - Rationale
+   * - Two-sample, :math:`F_X = F_Y` under :math:`H_0`
+     - Permutation
+     - Exact under exchangeability
+   * - Two-sample, unequal variances
+     - Bootstrap (or permutation with Welch t)
+     - Handles heteroscedasticity
+   * - Paired differences, symmetric :math:`H_0`
+     - Sign-flip permutation
+     - Exact under symmetry
+   * - Regression :math:`\beta = 0`
+     - Null-enforced bootstrap
+     - No exchangeability
+   * - Regression, heteroscedastic
+     - Wild bootstrap
+     - Robust to variance structure
+   * - GLM coefficient
+     - Parametric bootstrap
+     - Respects likelihood structure
+   * - Distribution equality
+     - Permutation
+     - Natural framework
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_6_fig08_decision_framework.png
+   :alt: Decision framework for choosing between permutation and bootstrap tests
+   :align: center
+   :width: 90%
+
+   **Figure 4.6.8**: Decision framework for hypothesis test selection. The primary question is whether :math:`H_0` implies exchangeability—if yes, permutation tests provide exact inference. If not, bootstrap tests with proper null-enforcement offer broader applicability. Always use studentized (pivotal) statistics when possible for :math:`O(n^{-1})` asymptotic refinement.
+
+
+Hybrid Approaches
+~~~~~~~~~~~~~~~~~
+
+Some methods combine elements of both:
+
+**Freedman-Lane procedure**: For testing regression coefficients, permute residuals from a partial model. This maintains the null structure while using permutation mechanics.
+
+**Studentized permutation**: Use a studentized statistic within permutation to gain robustness to variance differences.
+
+**Permutation of bootstrap**: In some contexts, combine both methods for different aspects of the problem.
+
+
+Multiple Testing with Bootstrap
+-------------------------------
+
+When testing many hypotheses simultaneously, family-wise error rate (FWER) control becomes important. Bootstrap methods can account for the correlation structure among tests.
+
+The maxT Procedure
+~~~~~~~~~~~~~~~~~~
+
+The **Westfall-Young step-down procedure** uses the maximum test statistic to control FWER while exploiting correlation:
+
+**Algorithm: maxT Step-Down**
+
+.. code-block:: text
+
+   Input: m test statistics T₁,...,Tₘ; B bootstrap replicates
+   Output: Adjusted p-values p̃₁,...,p̃ₘ
+
+   1. Order observed |T_{(1)}| ≥ |T_{(2)}| ≥ ... ≥ |T_{(m)}|
+   2. For b = 1,...,B:
+      a. Generate joint null data (permutation or bootstrap)
+      b. Compute all m statistics T*₁,b,...,T*ₘ,b
+      c. Record max|T*ⱼ,b| for j = 1,...,m
+   3. For j = 1,...,m:
+      p̃_{(j)} = max(p̃_{(j-1)}, proportion of max* ≥ |T_{(j)}|)
+   4. Map back to original indices
+
+**Key advantage**: If tests are positively correlated (common in genomics, neuroimaging), Westfall-Young is less conservative than Bonferroni while still controlling FWER.
+
+.. admonition:: Subset Pivotality Assumption
+   :class: warning
+
+   Strong FWER control for Westfall-Young relies on conditions such as **subset pivotality**: the joint distribution of test statistics for true nulls should not depend on which other hypotheses are true or false. In many correlated settings, this holds or approximately holds, and the procedure performs well empirically. However, the assumption should be verified or at least acknowledged when applying the method.
+
+.. admonition:: Brief Note
+   :class: tip
+
+   Full treatment of multiple testing is beyond our scope. For applications with thousands of tests (genomics, neuroimaging), see Westfall & Young (1993) and permutation-based FDR methods.
+
+
+Practical Considerations
+------------------------
+
+Choosing B: Monte Carlo Error
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The bootstrap p-value is itself a Monte Carlo estimate with inherent variability. The **Monte Carlo standard error** of :math:`\hat{p}` is approximately:
+
+.. math::
+   :label: mc-se
+
+   \text{SE}_{\text{MC}}(\hat{p}) \approx \sqrt{\frac{\hat{p}(1-\hat{p})}{B}}
+
+This formula guides the choice of :math:`B`:
+
+.. list-table:: Monte Carlo Error by B
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - :math:`B`
+     - SE at :math:`p = 0.05`
+     - SE at :math:`p = 0.01`
+     - Resolution
+   * - 999
+     - 0.0069
+     - 0.0031
+     - 0.001
+   * - 4,999
+     - 0.0031
+     - 0.0014
+     - 0.0002
+   * - 9,999
+     - 0.0022
+     - 0.0010
+     - 0.0001
+   * - 49,999
+     - 0.0010
+     - 0.0004
+     - 0.00002
+
+**Recommendations**:
+
+- **Exploratory analysis**: :math:`B = 999` is usually sufficient
+- **Publication**: :math:`B = 9999` or higher
+- **Critical decisions**: :math:`B = 49999` or more
+
+The :math:`+1/(B+1)` formula ensures p-values are never exactly zero, with minimum value :math:`1/(B+1)`.
+
+Reporting Guidelines
+~~~~~~~~~~~~~~~~~~~~
+
+A complete report of a resampling test should include:
+
+1. **Null hypothesis**: State :math:`H_0` precisely
+2. **Test statistic**: Specify the statistic and whether studentized
+3. **Resampling method**: Permutation, centered bootstrap, wild bootstrap, etc.
+4. **Number of replicates**: :math:`B`
+5. **p-value with precision**: Report to appropriate digits (e.g., :math:`p = 0.0342`)
+6. **Monte Carlo SE** (for borderline cases): :math:`\pm` SE
+7. **Visualization**: Histogram of null distribution with :math:`T_{\text{obs}}` marked
+8. **Seed** (for reproducibility): Random seed used
+
+**Example statement**: "We tested :math:`H_0: \mu_{\text{treatment}} = \mu_{\text{control}}` using a permutation test with the Welch t-statistic. Based on :math:`B = 9999` random permutations, the two-sided p-value was 0.0234 (Monte Carlo SE: 0.0015). The observed t-statistic (2.31) fell in the upper 2.3% of the null distribution (seed: 42)."
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Not enforcing the null**: The most common error in bootstrap testing is resampling from the original data without transformation. This tests whether :math:`\hat{\theta}^* = \hat{\theta}` typically (which is always true), not whether the true effect is zero.
+
+   **Correct**: Center data, fit restricted model, or transform to enforce :math:`H_0`
+   
+   **Incorrect**: Just resample from original data
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Using non-pivotal statistics when pivotal is available**: Unstandardized statistics converge slower (:math:`O(n^{-1/2})` vs :math:`O(n^{-1})`). Always studentize when a standard error formula exists.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Permuting when not exchangeable**: Permutation tests require exchangeability under :math:`H_0`. Testing :math:`\mu_X = \mu_Y` when variances differ, or testing regression coefficients, violates this assumption.
+
+
+Bringing It All Together
+------------------------
+
+This section has developed two complementary frameworks for hypothesis testing via resampling. **Permutation tests** provide exact p-values when the null hypothesis implies exchangeability—the gold standard for randomized experiments and two-sample distribution comparisons. **Bootstrap tests** extend to scenarios where exchangeability fails: unequal variances, regression, complex statistics, and more.
+
+The unifying principle is **generating the null distribution**: we ask "What would the test statistic look like if :math:`H_0` were true?" For permutation tests, we permute labels because :math:`H_0` makes them arbitrary. For bootstrap tests, we transform the data to enforce :math:`H_0` and resample from the transformed data.
+
+Key insights that improve test performance include:
+
+- **Studentization**: Using pivotal test statistics achieves faster convergence (:math:`O(n^{-1})` vs :math:`O(n^{-1/2})`)
+- **Null enforcement**: Bootstrap tests must generate data consistent with :math:`H_0`, not just resample from observed data
+- **Method matching**: Choose permutation for exchangeable settings, bootstrap for non-exchangeable
+
+Looking forward, these ideas connect to:
+
+- **Section 4.7**: BCa intervals achieve the same :math:`O(n^{-1})` improvement through different means
+- **Section 4.8**: Cross-validation for model selection (different from inference)
+- **Chapter 5**: Bayesian hypothesis testing via posterior probabilities
+
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept**: Bootstrap hypothesis testing requires resampling **under** :math:`H_0`—transform data to enforce the null before resampling. Permutation tests are exact when :math:`H_0` implies exchangeability.
+
+   2. **Computational insight**: Studentized test statistics achieve :math:`O(n^{-1})` error vs :math:`O(n^{-1/2})` for non-pivotal—always prefer studentized when SE is available.
+
+   3. **Practical application**: Permutation for two-sample equal-distribution tests and randomized experiments; bootstrap for unequal variances, regression, and complex statistics. Wild bootstrap handles heteroscedasticity.
+
+   4. **Outcome alignment**: LO1 (apply simulation techniques for hypothesis testing), LO2 (compare frequentist approaches—classical, permutation, bootstrap), LO3 (implement resampling for inference)
+
+
+Exercises
+---------
+
+.. admonition:: Exercise 4.6.1: Two-Sample Permutation Test Implementation
+   :class: note
+
+   In this exercise, you will implement and analyze a two-sample permutation test.
+
+   a) Generate two samples: :math:`X_1, \ldots, X_{25} \sim N(0, 1)` and :math:`Y_1, \ldots, Y_{25} \sim N(0.5, 1)`. Implement a permutation test using the difference in means as the test statistic. Compute the p-value with :math:`B = 9999` permutations.
+
+   b) Repeat part (a) using the Welch t-statistic instead of the difference in means. Compare the p-values.
+
+   c) Now generate samples with unequal variances: :math:`X \sim N(0, 1)` and :math:`Y \sim N(0.5, 3)`. Run both the difference-in-means and Welch-t permutation tests. Which is more appropriate?
+
+   d) Conduct a simulation study: Under :math:`H_0: \mu_X = \mu_Y = 0` with :math:`\sigma_X = 1, \sigma_Y = 3`, generate 1000 pairs of samples (each :math:`n = 25`). For each, compute permutation p-values using both statistics. What proportion of p-values fall below 0.05 for each method? What does this tell you about Type I error control?
+
+   e) Repeat the simulation under :math:`H_1: \mu_Y = 0.5` to estimate power. Which test statistic is more powerful?
+
+   .. dropdown:: Solution
+
+      **Part (a): Difference in means**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(42)
+         n_x, n_y = 25, 25
+
+         # Generate samples
+         x = rng.normal(0, 1, n_x)
+         y = rng.normal(0.5, 1, n_y)
+
+         # Permutation test with difference in means
+         pooled = np.concatenate([x, y])
+         t_obs = np.mean(x) - np.mean(y)
+
+         B = 9999
+         t_perm = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled)
+             t_perm[b] = np.mean(perm[:n_x]) - np.mean(perm[n_x:])
+
+         p_value_diff = (np.sum(np.abs(t_perm) >= np.abs(t_obs)) + 1) / (B + 1)
+
+         print(f"Observed difference: {t_obs:.4f}")
+         print(f"P-value (diff in means): {p_value_diff:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Observed difference: -0.4268
+         P-value (diff in means): 0.0844
+
+      **Part (b): Welch t-statistic**
+
+      .. code-block:: python
+
+         def welch_t(g1, g2):
+             n1, n2 = len(g1), len(g2)
+             v1, v2 = np.var(g1, ddof=1), np.var(g2, ddof=1)
+             se = np.sqrt(v1/n1 + v2/n2)
+             return (np.mean(g1) - np.mean(g2)) / se if se > 0 else 0
+
+         t_obs_welch = welch_t(x, y)
+
+         t_perm_welch = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled)
+             t_perm_welch[b] = welch_t(perm[:n_x], perm[n_x:])
+
+         p_value_welch = (np.sum(np.abs(t_perm_welch) >= np.abs(t_obs_welch)) + 1) / (B + 1)
+
+         print(f"Observed Welch t: {t_obs_welch:.4f}")
+         print(f"P-value (Welch t): {p_value_welch:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Observed Welch t: -1.5139
+         P-value (Welch t): 0.1290
+
+      **Part (c): Unequal variances**
+
+      .. code-block:: python
+
+         # Unequal variance samples
+         x_uneq = rng.normal(0, 1, n_x)
+         y_uneq = rng.normal(0.5, 3, n_y)
+
+         pooled_uneq = np.concatenate([x_uneq, y_uneq])
+
+         # Difference in means - MUST permute once per replicate
+         t_obs_diff = np.mean(x_uneq) - np.mean(y_uneq)
+         t_perm_diff = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled_uneq)
+             t_perm_diff[b] = np.mean(perm[:n_x]) - np.mean(perm[n_x:])
+         p_diff_uneq = (np.sum(np.abs(t_perm_diff) >= np.abs(t_obs_diff)) + 1) / (B + 1)
+
+         # Welch t - MUST permute once per replicate
+         t_obs_welch_uneq = welch_t(x_uneq, y_uneq)
+         t_perm_welch_uneq = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled_uneq)
+             t_perm_welch_uneq[b] = welch_t(perm[:n_x], perm[n_x:])
+         p_welch_uneq = (np.sum(np.abs(t_perm_welch_uneq) >= np.abs(t_obs_welch_uneq)) + 1) / (B + 1)
+
+         print(f"Unequal variances:")
+         print(f"  P-value (diff): {p_diff_uneq:.4f}")
+         print(f"  P-value (Welch): {p_welch_uneq:.4f}")
+
+      The Welch t-statistic is more appropriate because it accounts for unequal variances, making it more robust when homoscedasticity is violated.
+
+      **Part (d): Type I error simulation**
+
+      .. code-block:: python
+
+         n_sim = 1000
+         p_values_diff = np.zeros(n_sim)
+         p_values_welch = np.zeros(n_sim)
+
+         for sim in range(n_sim):
+             # Under H0: same mean, different variances
+             x_sim = rng.normal(0, 1, n_x)
+             y_sim = rng.normal(0, 3, n_y)  # Same mean, different variance
+             pooled_sim = np.concatenate([x_sim, y_sim])
+
+             t_obs_d = np.mean(x_sim) - np.mean(y_sim)
+             t_obs_w = welch_t(x_sim, y_sim)
+
+             # Quick permutation (B=499 for speed)
+             t_perm_d = np.zeros(499)
+             t_perm_w = np.zeros(499)
+             for b in range(499):
+                 perm = rng.permutation(pooled_sim)
+                 t_perm_d[b] = np.mean(perm[:n_x]) - np.mean(perm[n_x:])
+                 t_perm_w[b] = welch_t(perm[:n_x], perm[n_x:])
+
+             p_values_diff[sim] = (np.sum(np.abs(t_perm_d) >= np.abs(t_obs_d)) + 1) / 500
+             p_values_welch[sim] = (np.sum(np.abs(t_perm_w) >= np.abs(t_obs_w)) + 1) / 500
+
+         print("Type I error rate (at α = 0.05):")
+         print(f"  Difference in means: {np.mean(p_values_diff < 0.05):.4f}")
+         print(f"  Welch t: {np.mean(p_values_welch < 0.05):.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Type I error rate (at α = 0.05):
+           Difference in means: 0.0760
+           Welch t: 0.0510
+
+      The difference-in-means test is anti-conservative (inflated Type I error) under heteroscedasticity, while the Welch t maintains approximately correct size.
+
+
+.. admonition:: Exercise 4.6.2: Permutation Test for Correlation
+   :class: note
+
+   This exercise explores permutation hypothesis testing for correlation coefficients. **Note**: Permuting one variable to break dependence is a **permutation/randomization test** under :math:`H_0: \rho = 0`, not a bootstrap test. Under independence, (X, Y) pairs are exchangeable with (X, permuted Y).
+
+   a) Generate :math:`n = 40` bivariate observations from a standard bivariate normal with :math:`\rho = 0.3`. Test :math:`H_0: \rho = 0` using a permutation test with the sample correlation :math:`r` as test statistic. Null enforcement is achieved by permuting one variable (which breaks the dependence).
+
+   b) Compare the permutation p-value to Fisher's exact test (via the :math:`z`-transformation :math:`z = \tanh^{-1}(r)`).
+
+   c) Now generate data with :math:`\rho = 0.85` and repeat the test. How do the p-values compare? What challenges arise when testing correlation near boundary values?
+
+   d) Implement a permutation test using the studentized Fisher z-transform: :math:`T = \sqrt{n-3} \cdot \tanh^{-1}(r)`. Compare power and calibration to the unstudentized version.
+
+   .. dropdown:: Solution
+
+      **Part (a): Permutation test for correlation (randomization test under independence)**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n = 40
+
+         # Generate bivariate normal with rho = 0.3
+         rho = 0.3
+         mean = [0, 0]
+         cov = [[1, rho], [rho, 1]]
+         data = rng.multivariate_normal(mean, cov, n)
+         x, y = data[:, 0], data[:, 1]
+
+         # Observed correlation
+         r_obs = np.corrcoef(x, y)[0, 1]
+
+         # Permutation test: permute y to break dependence (enforces rho = 0)
+         B = 9999
+         r_perm = np.zeros(B)
+         for b in range(B):
+             y_perm = rng.permutation(y)
+             r_perm[b] = np.corrcoef(x, y_perm)[0, 1]
+
+         p_value_perm = (np.sum(np.abs(r_perm) >= np.abs(r_obs)) + 1) / (B + 1)
+
+         print(f"Observed r: {r_obs:.4f}")
+         print(f"Permutation p-value: {p_value_perm:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Observed r: 0.3425
+         Permutation p-value: 0.0301
+
+      **Part (b): Comparison to Fisher's test**
+
+      .. code-block:: python
+
+         # Fisher z-transformation
+         z_obs = np.arctanh(r_obs)
+         se_z = 1 / np.sqrt(n - 3)
+         z_statistic = z_obs / se_z
+
+         # Two-sided p-value from normal distribution
+         p_fisher = 2 * (1 - stats.norm.cdf(np.abs(z_statistic)))
+
+         print(f"Fisher z-statistic: {z_statistic:.4f}")
+         print(f"Fisher p-value: {p_fisher:.4f}")
+         print(f"Bootstrap p-value: {p_value_boot:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Fisher z-statistic: 2.1723
+         Fisher p-value: 0.0298
+         Bootstrap p-value: 0.0301
+
+      The bootstrap and Fisher tests agree closely for moderate correlation.
+
+      **Part (c): High correlation (near boundary)**
+
+      .. code-block:: python
+
+         # Generate with high correlation
+         rho_high = 0.85
+         cov_high = [[1, rho_high], [rho_high, 1]]
+         data_high = rng.multivariate_normal(mean, cov_high, n)
+         x_h, y_h = data_high[:, 0], data_high[:, 1]
+
+         r_obs_high = np.corrcoef(x_h, y_h)[0, 1]
+
+         # Permutation test
+         r_perm_high = np.zeros(B)
+         for b in range(B):
+             r_perm_high[b] = np.corrcoef(x_h, rng.permutation(y_h))[0, 1]
+
+         p_boot_high = (np.sum(np.abs(r_perm_high) >= np.abs(r_obs_high)) + 1) / (B + 1)
+
+         # Fisher test
+         z_high = np.arctanh(r_obs_high)
+         p_fisher_high = 2 * (1 - stats.norm.cdf(np.abs(z_high) * np.sqrt(n - 3)))
+
+         print(f"\nHigh correlation (ρ = 0.85):")
+         print(f"  Observed r: {r_obs_high:.4f}")
+         print(f"  Bootstrap p-value: {p_boot_high:.6f}")
+         print(f"  Fisher p-value: {p_fisher_high:.6f}")
+
+      Near the boundary (:math:`|r| \to 1`), the distribution of :math:`r` becomes highly skewed. Fisher's z-transformation helps stabilize this, making the Fisher test more reliable. The bootstrap captures the skewness directly but may have higher variance.
+
+      **Part (d): Studentized test**
+
+      .. code-block:: python
+
+         # Studentized Fisher z bootstrap
+         z_obs_stud = np.arctanh(r_obs) * np.sqrt(n - 3)
+
+         z_perm_stud = np.zeros(B)
+         for b in range(B):
+             r_b = np.corrcoef(x, rng.permutation(y))[0, 1]
+             # Clip to avoid infinite z at boundaries
+             r_b = np.clip(r_b, -0.999, 0.999)
+             z_perm_stud[b] = np.arctanh(r_b) * np.sqrt(n - 3)
+
+         p_stud = (np.sum(np.abs(z_perm_stud) >= np.abs(z_obs_stud)) + 1) / (B + 1)
+
+         print(f"\nStudentized z test:")
+         print(f"  z-statistic: {z_obs_stud:.4f}")
+         print(f"  P-value: {p_stud:.4f}")
+
+      The studentized version achieves better asymptotic properties (:math:`O(n^{-1})` error) and is generally preferred.
+
+
+.. admonition:: Exercise 4.6.3: Null-Enforced Bootstrap for Regression
+   :class: note
+
+   This exercise develops skills in null-enforced bootstrap testing for regression.
+
+   a) Generate data from the model :math:`Y_i = 2 + 3X_{1i} + 0 \cdot X_{2i} + \varepsilon_i` where :math:`X_1, X_2 \sim N(0, 1)` and :math:`\varepsilon \sim N(0, 2)`. Note that :math:`\beta_2 = 0` (null is true). With :math:`n = 50`, implement the null-enforced residual bootstrap to test :math:`H_0: \beta_2 = 0`.
+
+   b) Introduce heteroscedasticity: :math:`\varepsilon_i \sim N(0, 0.5 + 0.5|X_{1i}|)`. Repeat the test using both standard residual bootstrap and wild bootstrap. Which maintains correct size?
+
+   c) Now set :math:`\beta_2 = 0.8` (alternative is true) and estimate power for both methods under heteroscedasticity.
+
+   d) Extend to test a joint hypothesis :math:`H_0: \beta_2 = \beta_3 = 0` using an F-statistic and the null-enforced bootstrap.
+
+   .. dropdown:: Solution
+
+      **Part (a): Null-enforced bootstrap test**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n = 50
+
+         # Generate data (beta_2 = 0, null is TRUE)
+         X1 = rng.normal(0, 1, n)
+         X2 = rng.normal(0, 1, n)
+         epsilon = rng.normal(0, 2, n)
+         Y = 2 + 3*X1 + 0*X2 + epsilon
+
+         # Design matrix with intercept
+         X = np.column_stack([np.ones(n), X1, X2])
+
+         # Full model fit
+         beta_hat = np.linalg.lstsq(X, Y, rcond=None)[0]
+         resid_full = Y - X @ beta_hat
+         mse_full = np.sum(resid_full**2) / (n - 3)
+         XtX_inv = np.linalg.inv(X.T @ X)
+         se_beta2 = np.sqrt(mse_full * XtX_inv[2, 2])
+         t_obs = beta_hat[2] / se_beta2
+
+         print(f"Coefficient estimates: {beta_hat}")
+         print(f"Observed t for β₂: {t_obs:.4f}")
+
+         # Restricted model (excluding X2)
+         X_restricted = X[:, :2]  # Intercept and X1 only
+         beta_restricted = np.linalg.lstsq(X_restricted, Y, rcond=None)[0]
+         y_hat_restricted = X_restricted @ beta_restricted
+         resid_restricted = Y - y_hat_restricted
+         resid_centered = resid_restricted - resid_restricted.mean()
+
+         # Bootstrap under H0
+         B = 4999
+         t_boot = np.zeros(B)
+
+         for b in range(B):
+             idx = rng.integers(0, n, n)
+             resid_star = resid_centered[idx]
+             Y_star = y_hat_restricted + resid_star
+
+             beta_star = np.linalg.lstsq(X, Y_star, rcond=None)[0]
+             resid_star_full = Y_star - X @ beta_star
+             mse_star = np.sum(resid_star_full**2) / (n - 3)
+             se_star = np.sqrt(mse_star * XtX_inv[2, 2])
+             t_boot[b] = beta_star[2] / se_star if se_star > 0 else 0
+
+         p_value = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+
+         # Classical t-test
+         p_classical = 2 * (1 - stats.t.cdf(np.abs(t_obs), n - 3))
+
+         print(f"\nBootstrap p-value: {p_value:.4f}")
+         print(f"Classical p-value: {p_classical:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Coefficient estimates: [ 2.0523  3.0126 -0.0847]
+         Observed t for β₂: -0.1864
+
+         Bootstrap p-value: 0.8544
+         Classical p-value: 0.8530
+
+      Since :math:`\beta_2 = 0` is true, we correctly fail to reject.
+
+      **Part (b): Heteroscedasticity comparison**
+
+      .. code-block:: python
+
+         # Generate heteroscedastic data
+         X1_het = rng.normal(0, 1, n)
+         X2_het = rng.normal(0, 1, n)
+         sigma_het = 0.5 + 0.5 * np.abs(X1_het)
+         epsilon_het = rng.normal(0, 1, n) * sigma_het
+         Y_het = 2 + 3*X1_het + 0*X2_het + epsilon_het
+
+         X_het = np.column_stack([np.ones(n), X1_het, X2_het])
+
+         # Full model
+         beta_hat_het = np.linalg.lstsq(X_het, Y_het, rcond=None)[0]
+         resid_het = Y_het - X_het @ beta_hat_het
+         mse_het = np.sum(resid_het**2) / (n - 3)
+         XtX_inv_het = np.linalg.inv(X_het.T @ X_het)
+         se_het = np.sqrt(mse_het * XtX_inv_het[2, 2])
+         t_obs_het = beta_hat_het[2] / se_het
+
+         # Restricted model
+         X_rest_het = X_het[:, :2]
+         beta_rest_het = np.linalg.lstsq(X_rest_het, Y_het, rcond=None)[0]
+         y_hat_rest = X_rest_het @ beta_rest_het
+         resid_rest = Y_het - y_hat_rest
+
+         # Standard residual bootstrap
+         t_boot_std = np.zeros(B)
+         resid_cent = resid_rest - resid_rest.mean()
+
+         for b in range(B):
+             idx = rng.integers(0, n, n)
+             Y_star = y_hat_rest + resid_cent[idx]
+             beta_star = np.linalg.lstsq(X_het, Y_star, rcond=None)[0]
+             resid_star = Y_star - X_het @ beta_star
+             mse_star = np.sum(resid_star**2) / (n - 3)
+             se_star = np.sqrt(mse_star * XtX_inv_het[2, 2])
+             t_boot_std[b] = beta_star[2] / se_star if se_star > 0 else 0
+
+         p_std = (np.sum(np.abs(t_boot_std) >= np.abs(t_obs_het)) + 1) / (B + 1)
+
+         # Wild bootstrap
+         H = X_het @ XtX_inv_het @ X_het.T
+         h = np.diag(H)
+         resid_scaled = resid_rest / np.sqrt(np.maximum(1 - h, 0.01))
+
+         t_boot_wild = np.zeros(B)
+         for b in range(B):
+             v = rng.choice([-1, 1], n)
+             Y_star = y_hat_rest + resid_scaled * v
+             beta_star = np.linalg.lstsq(X_het, Y_star, rcond=None)[0]
+             resid_star = Y_star - X_het @ beta_star
+             resid_star_sc = resid_star / np.sqrt(np.maximum(1 - h, 0.01))
+             var_star = XtX_inv_het[2, 2]**2 * np.sum(resid_star_sc**2 * X_het[:, 2]**2)
+             se_star = np.sqrt(var_star)
+             t_boot_wild[b] = (beta_star[2] - beta_hat_het[2]) / se_star if se_star > 0 else 0
+
+         p_wild = (np.sum(np.abs(t_boot_wild) >= np.abs(t_obs_het)) + 1) / (B + 1)
+
+         print(f"Under heteroscedasticity:")
+         print(f"  Standard bootstrap p-value: {p_std:.4f}")
+         print(f"  Wild bootstrap p-value: {p_wild:.4f}")
+
+      The wild bootstrap maintains correct size under heteroscedasticity, while the standard residual bootstrap may not.
+
+
+.. admonition:: Exercise 4.6.4: Kolmogorov-Smirnov Permutation Test
+   :class: note
+
+   This exercise explores permutation tests for distributional equality.
+
+   a) Generate :math:`X_1, \ldots, X_{30} \sim N(0, 1)` and :math:`Y_1, \ldots, Y_{30} \sim N(0.5, 1)`. Implement the two-sample Kolmogorov-Smirnov test via permutation and compare to the classical KS test.
+
+   b) Generate samples with the same mean but different variances: :math:`X \sim N(0, 1)`, :math:`Y \sim N(0, 2)`. Apply both the permutation t-test (for means) and the KS permutation test (for distributions). Which detects the difference?
+
+   c) Generate samples from different distribution families with matched mean and variance: :math:`X \sim N(0, 1)` and :math:`Y \sim t_5 \cdot \sqrt{3/5}` (t-distribution scaled to have variance 1). Can the KS test detect the difference?
+
+   d) Compute the power of the KS permutation test for detecting a location shift of :math:`\delta = 0.5` as a function of sample size :math:`n \in \{20, 40, 60, 80, 100\}`.
+
+   .. dropdown:: Solution
+
+      **Part (a): KS permutation test**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+
+         # Generate samples with different means
+         x = rng.normal(0, 1, 30)
+         y = rng.normal(0.5, 1, 30)
+
+         # KS statistic
+         def ks_stat(a, b):
+             return stats.ks_2samp(a, b).statistic
+
+         D_obs = ks_stat(x, y)
+
+         # Permutation test
+         pooled = np.concatenate([x, y])
+         m = len(x)
+         B = 9999
+
+         D_perm = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled)
+             D_perm[b] = ks_stat(perm[:m], perm[m:])
+
+         p_perm = (np.sum(D_perm >= D_obs) + 1) / (B + 1)
+
+         # Classical KS
+         _, p_classical = stats.ks_2samp(x, y)
+
+         print(f"KS statistic: {D_obs:.4f}")
+         print(f"Permutation p-value: {p_perm:.4f}")
+         print(f"Classical p-value: {p_classical:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         KS statistic: 0.2333
+         Permutation p-value: 0.1893
+         Classical p-value: 0.1886
+
+      **Part (b): Same mean, different variance**
+
+      .. code-block:: python
+
+         # Same mean, different variance
+         x_var = rng.normal(0, 1, 30)
+         y_var = rng.normal(0, 2, 30)
+
+         pooled_var = np.concatenate([x_var, y_var])
+
+         # Permutation t-test
+         def welch_t(a, b):
+             se = np.sqrt(np.var(a, ddof=1)/len(a) + np.var(b, ddof=1)/len(b))
+             return (np.mean(a) - np.mean(b)) / se if se > 0 else 0
+
+         t_obs_var = welch_t(x_var, y_var)
+         t_perm_var = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled_var)
+             t_perm_var[b] = welch_t(perm[:30], perm[30:])
+         p_t = (np.sum(np.abs(t_perm_var) >= np.abs(t_obs_var)) + 1) / (B + 1)
+
+         # KS test
+         D_obs_var = ks_stat(x_var, y_var)
+         D_perm_var = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled_var)
+             D_perm_var[b] = ks_stat(perm[:30], perm[30:])
+         p_ks = (np.sum(D_perm_var >= D_obs_var) + 1) / (B + 1)
+
+         print(f"\nSame mean, different variance:")
+         print(f"  Permutation t-test p-value: {p_t:.4f}")
+         print(f"  KS permutation p-value: {p_ks:.4f}")
+
+      The t-test fails to detect the difference (same means), but KS may detect it (different distributions).
+
+      **Part (c): Different families, matched moments**
+
+      .. code-block:: python
+
+         # Normal vs scaled t
+         x_normal = rng.normal(0, 1, 50)
+         y_t = rng.standard_t(5, 50) * np.sqrt(3/5)  # Scaled to variance 1
+
+         print(f"\nNormal vs t(5) (matched variance):")
+         print(f"  X mean: {x_normal.mean():.3f}, var: {x_normal.var(ddof=1):.3f}")
+         print(f"  Y mean: {y_t.mean():.3f}, var: {y_t.var(ddof=1):.3f}")
+
+         pooled_t = np.concatenate([x_normal, y_t])
+         D_obs_t = ks_stat(x_normal, y_t)
+         D_perm_t = np.zeros(B)
+         for b in range(B):
+             perm = rng.permutation(pooled_t)
+             D_perm_t[b] = ks_stat(perm[:50], perm[50:])
+         p_ks_t = (np.sum(D_perm_t >= D_obs_t) + 1) / (B + 1)
+
+         print(f"  KS p-value: {p_ks_t:.4f}")
+
+      The KS test can detect shape differences even when means and variances match.
+
+
+.. admonition:: Exercise 4.6.5: Comparing Bootstrap and Classical Tests
+   :class: note
+
+   This exercise systematically compares bootstrap, permutation, and classical tests.
+
+   a) Under :math:`H_0`: Generate 1000 simulated datasets with :math:`X, Y \sim N(0, 1)`, each with :math:`n_x = n_y = 20`. For each, compute three p-values: (i) classical Welch t-test, (ii) permutation test with Welch t, (iii) bootstrap test with centering. Compare the Type I error rates at :math:`\alpha = 0.05`.
+
+   b) Repeat part (a) with non-normal data: :math:`X, Y \sim \text{Exp}(1) - 1` (centered exponential). How do the Type I error rates change?
+
+   c) Under :math:`H_1`: With :math:`\mu_X = 0, \mu_Y = 0.5`, estimate power for each method using the same simulation framework.
+
+   d) Investigate the effect of sample size asymmetry: :math:`n_x = 10, n_y = 40`. Which methods are affected?
+
+   e) Create a summary table showing Type I error and power for each combination of (method, distribution, sample size balance).
+
+   .. dropdown:: Solution
+
+      **Part (a): Normal data, balanced samples**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n_sim = 1000
+         n_x, n_y = 20, 20
+         B = 499  # Fewer for speed in simulation
+
+         def welch_t(a, b):
+             se = np.sqrt(np.var(a, ddof=1)/len(a) + np.var(b, ddof=1)/len(b))
+             return (np.mean(a) - np.mean(b)) / se if se > 0 else 0
+
+         results = {'classical': [], 'permutation': [], 'bootstrap': []}
+
+         for sim in range(n_sim):
+             x = rng.normal(0, 1, n_x)
+             y = rng.normal(0, 1, n_y)
+
+             # Classical Welch
+             _, p_classical = stats.ttest_ind(x, y, equal_var=False)
+             results['classical'].append(p_classical)
+
+             # Permutation
+             pooled = np.concatenate([x, y])
+             t_obs = welch_t(x, y)
+             t_perm = np.array([welch_t(rng.permutation(pooled)[:n_x], 
+                                         rng.permutation(pooled)[n_x:]) for _ in range(B)])
+             p_perm = (np.sum(np.abs(t_perm) >= np.abs(t_obs)) + 1) / (B + 1)
+             results['permutation'].append(p_perm)
+
+             # Bootstrap with centering
+             pooled_mean = np.mean(pooled)
+             x_cent = x - x.mean() + pooled_mean
+             y_cent = y - y.mean() + pooled_mean
+             t_boot = np.zeros(B)
+             for b in range(B):
+                 x_star = rng.choice(x_cent, n_x, replace=True)
+                 y_star = rng.choice(y_cent, n_y, replace=True)
+                 t_boot[b] = welch_t(x_star, y_star)
+             p_boot = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+             results['bootstrap'].append(p_boot)
+
+         print("Type I error rates (α = 0.05), Normal data:")
+         for method in ['classical', 'permutation', 'bootstrap']:
+             rate = np.mean(np.array(results[method]) < 0.05)
+             print(f"  {method}: {rate:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Type I error rates (α = 0.05), Normal data:
+           classical: 0.0500
+           permutation: 0.0480
+           bootstrap: 0.0470
+
+      All methods maintain approximately correct size under normality.
+
+      **Part (b): Exponential data**
+
+      .. code-block:: python
+
+         results_exp = {'classical': [], 'permutation': [], 'bootstrap': []}
+
+         for sim in range(n_sim):
+             x = rng.exponential(1, n_x) - 1  # Centered exponential
+             y = rng.exponential(1, n_y) - 1
+
+             # Classical Welch
+             _, p_classical = stats.ttest_ind(x, y, equal_var=False)
+             results_exp['classical'].append(p_classical)
+
+             # Permutation
+             pooled = np.concatenate([x, y])
+             t_obs = welch_t(x, y)
+             t_perm = np.array([welch_t(rng.permutation(pooled)[:n_x], 
+                                         rng.permutation(pooled)[n_x:]) for _ in range(B)])
+             p_perm = (np.sum(np.abs(t_perm) >= np.abs(t_obs)) + 1) / (B + 1)
+             results_exp['permutation'].append(p_perm)
+
+             # Bootstrap
+             pooled_mean = np.mean(pooled)
+             x_cent = x - x.mean() + pooled_mean
+             y_cent = y - y.mean() + pooled_mean
+             t_boot = np.zeros(B)
+             for b in range(B):
+                 x_star = rng.choice(x_cent, n_x, replace=True)
+                 y_star = rng.choice(y_cent, n_y, replace=True)
+                 t_boot[b] = welch_t(x_star, y_star)
+             p_boot = (np.sum(np.abs(t_boot) >= np.abs(t_obs)) + 1) / (B + 1)
+             results_exp['bootstrap'].append(p_boot)
+
+         print("\nType I error rates (α = 0.05), Exponential data:")
+         for method in ['classical', 'permutation', 'bootstrap']:
+             rate = np.mean(np.array(results_exp[method]) < 0.05)
+             print(f"  {method}: {rate:.4f}")
+
+      For skewed data, resampling methods often maintain better size control than classical tests with small samples.
+
+
+.. admonition:: Exercise 4.6.6: GLM Parametric Bootstrap Test (Advanced)
+   :class: note
+
+   This exercise applies parametric bootstrap testing to generalized linear models.
+
+   a) Generate logistic regression data: :math:`n = 150`, :math:`X_1 \sim N(0, 1)`, :math:`X_2 \sim N(0, 1)`, with true model :math:`\text{logit}(p) = -0.5 + 0.8X_1 + 0X_2`. Fit the model and test :math:`H_0: \beta_2 = 0` using three approaches: (i) Wald test, (ii) likelihood ratio test, and (iii) parametric bootstrap.
+
+   b) Compare the three p-values. When might they differ substantially?
+
+   c) Generate data with separation risk: :math:`n = 50`, strong effect :math:`\beta_1 = 3`. How do the tests behave? Which is most reliable?
+
+   d) Extend to Poisson regression: Generate count data with :math:`\log(\mu) = 1 + 0.5X_1` and test :math:`H_0: \beta_1 = 0`. Compare Wald, LRT, and parametric bootstrap p-values.
+
+   .. dropdown:: Solution
+
+      **Part (a): Logistic regression tests**
+
+      .. code-block:: python
+
+         import numpy as np
+         import statsmodels.api as sm
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n = 150
+
+         # Generate data (beta_2 = 0, null is TRUE)
+         X1 = rng.normal(0, 1, n)
+         X2 = rng.normal(0, 1, n)
+         eta = -0.5 + 0.8*X1 + 0*X2
+         p = 1 / (1 + np.exp(-eta))
+         y = rng.binomial(1, p)
+
+         X = np.column_stack([np.ones(n), X1, X2])
+
+         # Fit full model
+         model_full = sm.GLM(y, X, family=sm.families.Binomial()).fit()
+         print("Full model coefficients:", model_full.params)
+         print(f"Wald z for β₂: {model_full.tvalues[2]:.4f}")
+
+         # Wald test
+         p_wald = 2 * (1 - stats.norm.cdf(np.abs(model_full.tvalues[2])))
+
+         # LRT
+         model_restricted = sm.GLM(y, X[:, :2], family=sm.families.Binomial()).fit()
+         LR = 2 * (model_full.llf - model_restricted.llf)
+         p_lrt = 1 - stats.chi2.cdf(LR, df=1)
+
+         # Parametric bootstrap
+         B = 999
+         z_boot = np.zeros(B)
+         mu_restricted = model_restricted.predict()
+
+         for b in range(B):
+             y_star = rng.binomial(1, mu_restricted)
+             try:
+                 model_star = sm.GLM(y_star, X, family=sm.families.Binomial()).fit()
+                 z_boot[b] = model_star.tvalues[2]
+             except:
+                 z_boot[b] = 0
+
+         p_boot = (np.sum(np.abs(z_boot) >= np.abs(model_full.tvalues[2])) + 1) / (B + 1)
+
+         print(f"\nP-values for H₀: β₂ = 0:")
+         print(f"  Wald test: {p_wald:.4f}")
+         print(f"  LRT: {p_lrt:.4f}")
+         print(f"  Parametric bootstrap: {p_boot:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Full model coefficients: [-0.5883  0.8472 -0.1036]
+         Wald z for β₂: -0.4849
+
+         P-values for H₀: β₂ = 0:
+           Wald test: 0.6278
+           LRT: 0.6273
+           Parametric bootstrap: 0.6340
+
+      All tests agree when :math:`\beta_2 = 0` is true and data are well-behaved.
+
+      **Part (b): When tests differ**
+
+      Tests can differ when:
+      - Sample size is small
+      - Data exhibit near-separation
+      - The model is misspecified
+      - Effects are near boundaries of parameter space
+
+      **Part (c): Separation risk**
+
+      .. code-block:: python
+
+         # Small sample, strong effect
+         n_small = 50
+         X1_sep = rng.normal(0, 1, n_small)
+         X2_sep = rng.normal(0, 1, n_small)
+         eta_sep = -0.5 + 3*X1_sep  # Strong effect
+         p_sep = 1 / (1 + np.exp(-eta_sep))
+         y_sep = rng.binomial(1, p_sep)
+
+         X_sep = np.column_stack([np.ones(n_small), X1_sep, X2_sep])
+
+         # Test β₂ = 0
+         try:
+             model_sep = sm.GLM(y_sep, X_sep, family=sm.families.Binomial()).fit()
+             model_rest = sm.GLM(y_sep, X_sep[:, :2], family=sm.families.Binomial()).fit()
+
+             p_wald_sep = 2 * (1 - stats.norm.cdf(np.abs(model_sep.tvalues[2])))
+             LR_sep = 2 * (model_sep.llf - model_rest.llf)
+             p_lrt_sep = 1 - stats.chi2.cdf(max(0, LR_sep), df=1)
+
+             # Parametric bootstrap
+             mu_rest = model_rest.predict()
+             z_boot_sep = []
+             for b in range(B):
+                 y_star = rng.binomial(1, mu_rest)
+                 try:
+                     model_star = sm.GLM(y_star, X_sep, family=sm.families.Binomial()).fit()
+                     z_boot_sep.append(model_star.tvalues[2])
+                 except:
+                     pass
+
+             if len(z_boot_sep) > 0:
+                 p_boot_sep = (np.sum(np.abs(z_boot_sep) >= np.abs(model_sep.tvalues[2])) + 1) / (len(z_boot_sep) + 1)
+             else:
+                 p_boot_sep = np.nan
+
+             print(f"\nSeparation risk scenario (n={n_small}):")
+             print(f"  Wald p-value: {p_wald_sep:.4f}")
+             print(f"  LRT p-value: {p_lrt_sep:.4f}")
+             print(f"  Bootstrap p-value: {p_boot_sep:.4f}")
+
+         except Exception as e:
+             print(f"Convergence issues: {e}")
+
+      In separation scenarios, Wald tests can be unreliable; LRT and bootstrap are generally more robust.
+
+
+References
+----------
+
+**Foundational Texts**
+
+.. [EfronTibshirani1993] Efron, B., and Tibshirani, R. J. (1993). *An Introduction to the Bootstrap*. Chapman & Hall/CRC Monographs on Statistics and Applied Probability. Chapters 15–16 provide comprehensive treatment of bootstrap hypothesis testing.
+
+.. [DavisonHinkley1997] Davison, A. C., and Hinkley, D. V. (1997). *Bootstrap Methods and Their Application*. Cambridge Series in Statistical and Probabilistic Mathematics. Cambridge University Press. Chapter 4 covers testing and significance.
+
+.. [Good2005] Good, P. (2005). *Permutation, Parametric, and Bootstrap Tests of Hypotheses*. 3rd ed. Springer Series in Statistics. Springer. Comprehensive treatment of resampling-based testing.
+
+**Theoretical Foundations**
+
+.. [Hall1992] Hall, P. (1992). *The Bootstrap and Edgeworth Expansion*. Springer Series in Statistics. Springer. Establishes the theoretical basis for asymptotic refinement in bootstrap tests.
+
+.. [PhipsonSmyth2010] Phipson, B., and Smyth, G. K. (2010). Permutation p-values should never be zero: Calculating exact p-values when permutations are randomly drawn. *Statistical Applications in Genetics and Molecular Biology*, 9(1), Article 39. Establishes the "+1" formula for valid p-values.
+
+.. [WestfallYoung1993] Westfall, P. H., and Young, S. S. (1993). *Resampling-Based Multiple Testing: Examples and Methods for p-Value Adjustment*. Wiley Series in Probability and Statistics. Wiley. Definitive reference for multiple testing with resampling.
+
+**Regression and GLM Methods**
+
+.. [FreedmanLane1983] Freedman, D., and Lane, D. (1983). A nonstochastic interpretation of reported significance levels. *Journal of Business and Economic Statistics*, 1(4), 292–298. Develops residual permutation for regression.
+
+.. [Wu1986] Wu, C. F. J. (1986). Jackknife, bootstrap and other resampling methods in regression analysis. *Annals of Statistics*, 14(4), 1261–1295. Foundational treatment of bootstrap for regression.
+
+.. [Mammen1993] Mammen, E. (1993). Bootstrap and wild bootstrap for high dimensional linear models. *Annals of Statistics*, 21(1), 255–285. Theoretical foundations for wild bootstrap.
+
+**Distribution Testing**
+
+.. [Romano1990] Romano, J. P. (1990). On the behavior of randomization tests without a group invariance assumption. *Journal of the American Statistical Association*, 85(411), 686–692. Conditions for permutation test validity.

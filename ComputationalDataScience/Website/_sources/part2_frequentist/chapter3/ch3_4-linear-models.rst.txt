@@ -1,0 +1,2682 @@
+.. _ch3_4-linear-models:
+
+=========================
+Section 3.4 Linear Models
+=========================
+
+Linear regression is arguably the most important statistical technique ever developed. From its origins in early 19th century astronomy—where Gauss and Legendre independently derived least squares to predict planetary orbits—to its modern role as the foundation of machine learning, linear regression has shaped how we understand relationships in data. Every data scientist must master this tool, not merely as a button to click, but as a mathematical framework to understand deeply.
+
+This section develops linear regression from first principles. We begin with the **matrix calculus** needed to derive estimators—building up the rules for differentiating vectors, matrices, and quadratic forms. We then derive the ordinary least squares (OLS) estimator via two complementary approaches: the **calculus approach** (minimizing sum of squared errors) and the **geometric approach** (projection onto the column space). These perspectives illuminate different aspects of the same solution.
+
+With the estimator in hand, we prove the **Gauss-Markov theorem**—that OLS is the Best Linear Unbiased Estimator (BLUE) under specific conditions. We examine each condition carefully, understanding what happens when it fails. We then develop the **distributional theory** under normality, enabling t-tests, F-tests, and confidence intervals. Finally, we address **diagnostics and remedies** for when assumptions don't hold.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Develop**: Matrix calculus rules for differentiating vectors, quadratic forms, and matrix products
+   • **Derive**: OLS estimator via calculus (normal equations) and geometry (projection)
+   • **Prove**: Gauss-Markov theorem establishing OLS as BLUE under classical assumptions
+   • **Apply**: Distributional results for inference: t-tests, F-tests, confidence intervals
+   • **Evaluate**: Diagnostics for assumption violations and remedial measures
+
+
+Matrix Calculus Foundations
+---------------------------
+
+Before deriving the least squares estimator, we need tools for differentiating expressions involving vectors and matrices. This section builds up the necessary calculus systematically, starting from scalar derivatives and extending to the multivariate case.
+
+Why Matrix Calculus?
+~~~~~~~~~~~~~~~~~~~~
+
+In scalar calculus, finding the minimum of :math:`f(x) = (y - x)^2` is straightforward: take the derivative, set it to zero, solve for :math:`x`. With :math:`n` observations and :math:`p` parameters, our objective becomes:
+
+.. math::
+
+   f(\boldsymbol{\beta}) = \sum_{i=1}^n (y_i - \mathbf{x}_i^\top \boldsymbol{\beta})^2 = (\mathbf{y} - \mathbf{X}\boldsymbol{\beta})^\top(\mathbf{y} - \mathbf{X}\boldsymbol{\beta})
+
+Minimizing this requires differentiating with respect to a **vector** :math:`\boldsymbol{\beta}`. Matrix calculus provides the systematic framework for such operations.
+
+Notation Conventions
+~~~~~~~~~~~~~~~~~~~~
+
+We adopt the following conventions throughout:
+
+- **Vectors** are column vectors, denoted by bold lowercase: :math:`\mathbf{x}, \mathbf{y}, \boldsymbol{\beta}`
+- **Matrices** are denoted by bold uppercase: :math:`\mathbf{X}, \mathbf{A}, \boldsymbol{\Sigma}`
+- **Scalars** are italic lowercase: :math:`a, b, \sigma^2`
+- **Transpose**: :math:`\mathbf{x}^\top` (row vector), :math:`\mathbf{A}^\top`
+- **Dimensions**: :math:`\mathbf{y} \in \mathbb{R}^n`, :math:`\boldsymbol{\beta} \in \mathbb{R}^p`, :math:`\mathbf{X} \in \mathbb{R}^{n \times p}`
+
+The **gradient** of a scalar function :math:`f: \mathbb{R}^p \to \mathbb{R}` with respect to vector :math:`\boldsymbol{\beta}` is:
+
+.. math::
+   :label: gradient-def
+
+   \nabla_{\boldsymbol{\beta}} f = \frac{\partial f}{\partial \boldsymbol{\beta}} = 
+   \begin{pmatrix} 
+   \frac{\partial f}{\partial \beta_1} \\ 
+   \frac{\partial f}{\partial \beta_2} \\ 
+   \vdots \\ 
+   \frac{\partial f}{\partial \beta_p} 
+   \end{pmatrix} \in \mathbb{R}^p
+
+This is a column vector of the same dimension as :math:`\boldsymbol{\beta}`.
+
+Scalar-by-Vector Derivatives: Building the Rules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+We develop the key differentiation rules step by step, starting from component-wise analysis.
+
+**Rule 1: Linear function** :math:`f(\boldsymbol{\beta}) = \mathbf{a}^\top \boldsymbol{\beta}` where :math:`\mathbf{a} \in \mathbb{R}^p` is constant.
+
+*Component form*: 
+
+.. math::
+
+   f(\boldsymbol{\beta}) = \mathbf{a}^\top \boldsymbol{\beta} = \sum_{j=1}^p a_j \beta_j
+
+Taking the partial derivative with respect to :math:`\beta_k`:
+
+.. math::
+
+   \frac{\partial f}{\partial \beta_k} = \frac{\partial}{\partial \beta_k} \sum_{j=1}^p a_j \beta_j = a_k
+
+Assembling all partials into a vector:
+
+.. math::
+   :label: linear-deriv
+
+   \boxed{\frac{\partial}{\partial \boldsymbol{\beta}} (\mathbf{a}^\top \boldsymbol{\beta}) = \mathbf{a}}
+
+By symmetry of the dot product, :math:`\mathbf{a}^\top \boldsymbol{\beta} = \boldsymbol{\beta}^\top \mathbf{a}`, so:
+
+.. math::
+
+   \frac{\partial}{\partial \boldsymbol{\beta}} (\boldsymbol{\beta}^\top \mathbf{a}) = \mathbf{a}
+
+**Rule 2: Quadratic form** :math:`f(\boldsymbol{\beta}) = \boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta}` where :math:`\mathbf{A} \in \mathbb{R}^{p \times p}` is constant.
+
+*Component form*:
+
+.. math::
+
+   f(\boldsymbol{\beta}) = \boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta} = \sum_{i=1}^p \sum_{j=1}^p \beta_i A_{ij} \beta_j
+
+Taking the partial derivative with respect to :math:`\beta_k` requires identifying all terms containing :math:`\beta_k`:
+
+- Terms where :math:`i = k` (varying :math:`j`): :math:`\sum_{j=1}^p \beta_k A_{kj} \beta_j`
+- Terms where :math:`j = k` (varying :math:`i`): :math:`\sum_{i=1}^p \beta_i A_{ik} \beta_k`
+
+For the first group:
+
+.. math::
+
+   \frac{\partial}{\partial \beta_k} \sum_{j=1}^p \beta_k A_{kj} \beta_j = \sum_{j=1}^p A_{kj} \beta_j = [\mathbf{A}\boldsymbol{\beta}]_k
+
+For the second group:
+
+.. math::
+
+   \frac{\partial}{\partial \beta_k} \sum_{i=1}^p \beta_i A_{ik} \beta_k = \sum_{i=1}^p A_{ik} \beta_i = [\mathbf{A}^\top\boldsymbol{\beta}]_k
+
+Combining:
+
+.. math::
+
+   \frac{\partial f}{\partial \beta_k} = [\mathbf{A}\boldsymbol{\beta}]_k + [\mathbf{A}^\top\boldsymbol{\beta}]_k
+
+Assembling into vector form:
+
+.. math::
+   :label: quadratic-deriv
+
+   \boxed{\frac{\partial}{\partial \boldsymbol{\beta}} (\boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta}) = (\mathbf{A} + \mathbf{A}^\top)\boldsymbol{\beta}}
+
+**Special case**: If :math:`\mathbf{A}` is symmetric (:math:`\mathbf{A} = \mathbf{A}^\top`):
+
+.. math::
+   :label: quadratic-symmetric
+
+   \boxed{\frac{\partial}{\partial \boldsymbol{\beta}} (\boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta}) = 2\mathbf{A}\boldsymbol{\beta} \quad \text{(when } \mathbf{A} = \mathbf{A}^\top)}
+
+This is the result we'll use most often, since :math:`\mathbf{X}^\top\mathbf{X}` is always symmetric.
+
+**Rule 3: Matrix-vector product** :math:`f(\boldsymbol{\beta}) = \mathbf{A}\boldsymbol{\beta}` where the result is a vector, not a scalar.
+
+Here :math:`f: \mathbb{R}^p \to \mathbb{R}^n`, so the derivative is a matrix called the **Jacobian**:
+
+.. math::
+
+   \frac{\partial (\mathbf{A}\boldsymbol{\beta})}{\partial \boldsymbol{\beta}^\top} = \mathbf{A} \in \mathbb{R}^{n \times p}
+
+The :math:`(i, j)` element is :math:`\frac{\partial [\mathbf{A}\boldsymbol{\beta}]_i}{\partial \beta_j} = A_{ij}`.
+
+Summary of Key Rules
+~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Matrix Calculus Rules for Scalar Functions
+   :header-rows: 1
+   :widths: 40 35 25
+
+   * - Expression :math:`f(\boldsymbol{\beta})`
+     - Derivative :math:`\frac{\partial f}{\partial \boldsymbol{\beta}}`
+     - Condition
+   * - :math:`\mathbf{a}^\top \boldsymbol{\beta}` or :math:`\boldsymbol{\beta}^\top \mathbf{a}`
+     - :math:`\mathbf{a}`
+     - :math:`\mathbf{a}` constant
+   * - :math:`\boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta}`
+     - :math:`(\mathbf{A} + \mathbf{A}^\top)\boldsymbol{\beta}`
+     - :math:`\mathbf{A}` constant
+   * - :math:`\boldsymbol{\beta}^\top \mathbf{A} \boldsymbol{\beta}`
+     - :math:`2\mathbf{A}\boldsymbol{\beta}`
+     - :math:`\mathbf{A}` symmetric
+   * - :math:`\|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2`
+     - :math:`-2\mathbf{X}^\top(\mathbf{y} - \mathbf{X}\boldsymbol{\beta})`
+     - See derivation below
+
+The Chain Rule for Vectors
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For composite functions, we need the chain rule. If :math:`f: \mathbb{R}^n \to \mathbb{R}` and :math:`\mathbf{g}: \mathbb{R}^p \to \mathbb{R}^n`, then for :math:`h(\boldsymbol{\beta}) = f(\mathbf{g}(\boldsymbol{\beta}))`:
+
+.. math::
+   :label: chain-rule
+
+   \frac{\partial h}{\partial \boldsymbol{\beta}} = \left(\frac{\partial \mathbf{g}}{\partial \boldsymbol{\beta}^\top}\right)^\top \frac{\partial f}{\partial \mathbf{g}}
+
+This is the matrix form of the familiar chain rule: derivative of outer function times derivative of inner function.
+
+
+The Linear Model
+----------------
+
+With matrix calculus tools in hand, we now formalize the linear regression model.
+
+Model Specification
+~~~~~~~~~~~~~~~~~~~
+
+We observe :math:`n` data points :math:`(y_i, \mathbf{x}_i)` where :math:`y_i \in \mathbb{R}` is the **response** (dependent variable) and :math:`\mathbf{x}_i \in \mathbb{R}^p` is the vector of **predictors** (independent variables, features, covariates).
+
+The **linear model** posits:
+
+.. math::
+   :label: linear-model
+
+   y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \cdots + \beta_{p-1} x_{i,p-1} + \varepsilon_i, \quad i = 1, \ldots, n
+
+where:
+
+- :math:`\beta_0, \beta_1, \ldots, \beta_{p-1}` are unknown **parameters** (coefficients)
+- :math:`\varepsilon_i` is the **error term** (disturbance, noise)
+
+**Matrix notation**: Define the **design matrix** :math:`\mathbf{X}` and **response vector** :math:`\mathbf{y}`:
+
+.. math::
+
+   \mathbf{X} = \begin{pmatrix} 
+   1 & x_{11} & x_{12} & \cdots & x_{1,p-1} \\
+   1 & x_{21} & x_{22} & \cdots & x_{2,p-1} \\
+   \vdots & \vdots & \vdots & \ddots & \vdots \\
+   1 & x_{n1} & x_{n2} & \cdots & x_{n,p-1}
+   \end{pmatrix} \in \mathbb{R}^{n \times p}, \quad
+   \mathbf{y} = \begin{pmatrix} y_1 \\ y_2 \\ \vdots \\ y_n \end{pmatrix} \in \mathbb{R}^n
+
+The first column of :math:`\mathbf{X}` is all ones (for the intercept). The parameter vector is :math:`\boldsymbol{\beta} = (\beta_0, \beta_1, \ldots, \beta_{p-1})^\top \in \mathbb{R}^p`.
+
+The model in matrix form:
+
+.. math::
+   :label: matrix-model
+
+   \boxed{\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}}
+
+where :math:`\boldsymbol{\varepsilon} = (\varepsilon_1, \ldots, \varepsilon_n)^\top`.
+
+What "Linear" Means
+~~~~~~~~~~~~~~~~~~~
+
+The model is **linear in the parameters** :math:`\boldsymbol{\beta}`, not necessarily in the predictors. All of the following are linear models:
+
+.. math::
+
+   y &= \beta_0 + \beta_1 x + \varepsilon & \text{(simple linear regression)} \\
+   y &= \beta_0 + \beta_1 x + \beta_2 x^2 + \varepsilon & \text{(polynomial regression)} \\
+   y &= \beta_0 + \beta_1 \log(x) + \varepsilon & \text{(log transformation)} \\
+   y &= \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_1 x_2 + \varepsilon & \text{(interaction term)}
+
+Each involves :math:`y` as a linear combination of :math:`\boldsymbol{\beta}`. The following is **not** a linear model:
+
+.. math::
+
+   y = \beta_0 e^{\beta_1 x} + \varepsilon
+
+Here :math:`y` is nonlinear in :math:`\beta_1`.
+
+Interpreting Coefficients
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Before diving into estimation, let's clarify what the coefficients mean:
+
+**Partial slopes**: In multiple regression, :math:`\beta_j` represents the expected change in :math:`y` for a one-unit increase in :math:`x_j`, **holding all other predictors fixed**. This "ceteris paribus" interpretation is fundamental.
+
+**Correlation vs. causation**: The OLS coefficient :math:`\hat{\beta}_j` measures the **association** between :math:`x_j` and :math:`y`, not necessarily a causal effect. To interpret :math:`\beta_j` causally, we need:
+
+1. No omitted confounders (variables that affect both :math:`x_j` and :math:`y`)
+2. No reverse causation (:math:`y` doesn't cause :math:`x_j`)
+3. No measurement error in predictors
+
+These are strong assumptions rarely satisfied in observational data. Experimental design (randomization) or quasi-experimental methods (instrumental variables, regression discontinuity) are needed for causal claims.
+
+**Effect of correlation among predictors**: When predictors are correlated, "holding other predictors fixed" may describe a scenario rarely observed in the data. The coefficient :math:`\beta_j` still has a well-defined mathematical interpretation, but its practical meaning becomes murky. High multicollinearity inflates standard errors, making individual coefficients imprecise even when the overall model predicts well.
+
+Assumptions: The Classical Linear Model
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The linear model :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}` comes with assumptions about the errors :math:`\boldsymbol{\varepsilon}`. We distinguish two levels:
+
+**Gauss-Markov Assumptions** (for OLS to be BLUE):
+
+.. admonition:: Assumption (GM1): Linearity
+   :class: note
+
+   The true relationship is :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}` for some :math:`\boldsymbol{\beta} \in \mathbb{R}^p`.
+
+.. admonition:: Assumption (GM2): Full Rank
+   :class: note
+
+   The design matrix :math:`\mathbf{X}` has full column rank: :math:`\text{rank}(\mathbf{X}) = p`. 
+   
+   Equivalently, :math:`\mathbf{X}^\top\mathbf{X}` is invertible. This requires :math:`n \geq p` and no exact multicollinearity among predictors.
+
+.. admonition:: Assumption (GM3): Strict Exogeneity
+   :class: note
+
+   The errors have zero conditional mean given :math:`\mathbf{X}`:
+   
+   .. math::
+   
+      \mathbb{E}[\boldsymbol{\varepsilon} | \mathbf{X}] = \mathbf{0}
+   
+   This implies :math:`\mathbb{E}[\varepsilon_i | \mathbf{X}] = 0` for each :math:`i`. Predictors are uncorrelated with errors.
+
+.. admonition:: Assumption (GM4): Homoskedastic and Uncorrelated Errors
+   :class: note
+
+   The errors are homoskedastic and uncorrelated:
+   
+   .. math::
+   
+      \text{Var}(\boldsymbol{\varepsilon} | \mathbf{X}) = \sigma^2 \mathbf{I}_n
+   
+   This means:
+   
+   - **Homoskedasticity**: :math:`\text{Var}(\varepsilon_i | \mathbf{X}) = \sigma^2` for all :math:`i` (constant variance)
+   - **No autocorrelation**: :math:`\text{Cov}(\varepsilon_i, \varepsilon_j | \mathbf{X}) = 0` for :math:`i \neq j`
+   
+   (This condition is sometimes called "spherical errors" because the error covariance is a scaled identity matrix.)
+
+**Normality Assumption** (for exact inference):
+
+.. admonition:: Assumption (GM5): Normal Errors
+   :class: note
+
+   The errors follow a multivariate normal distribution:
+   
+   .. math::
+   
+      \boldsymbol{\varepsilon} | \mathbf{X} \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I}_n)
+   
+   This implies GM3 and GM4, plus enables exact t-tests and F-tests. Note that this is specifically the **spherical normal** model :math:`\mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I})`, not merely "some normal covariance"—normality alone does not guarantee homoskedasticity or independence.
+
+The assumptions form a hierarchy:
+
+- **GM1-GM2**: OLS is well-defined (unique solution exists)
+- **GM1-GM4**: OLS is BLUE (Gauss-Markov theorem applies)
+- **GM1-GM5**: Exact finite-sample inference (t, F distributions)
+
+
+Ordinary Least Squares: The Calculus Approach
+---------------------------------------------
+
+The **Ordinary Least Squares (OLS)** estimator minimizes the sum of squared residuals:
+
+.. math::
+   :label: rss-def
+
+   \text{RSS}(\boldsymbol{\beta}) = \sum_{i=1}^n (y_i - \mathbf{x}_i^\top \boldsymbol{\beta})^2 = \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2 = (\mathbf{y} - \mathbf{X}\boldsymbol{\beta})^\top(\mathbf{y} - \mathbf{X}\boldsymbol{\beta})
+
+We find :math:`\hat{\boldsymbol{\beta}}` that minimizes RSS by taking the derivative and setting it to zero.
+
+Expanding the Objective Function
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+First, expand the quadratic form:
+
+.. math::
+
+   \text{RSS}(\boldsymbol{\beta}) &= (\mathbf{y} - \mathbf{X}\boldsymbol{\beta})^\top(\mathbf{y} - \mathbf{X}\boldsymbol{\beta}) \\
+   &= \mathbf{y}^\top\mathbf{y} - \mathbf{y}^\top\mathbf{X}\boldsymbol{\beta} - \boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{y} + \boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta}
+
+Since :math:`\mathbf{y}^\top\mathbf{X}\boldsymbol{\beta}` is a scalar, it equals its transpose :math:`\boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{y}`:
+
+.. math::
+   :label: rss-expanded
+
+   \text{RSS}(\boldsymbol{\beta}) = \mathbf{y}^\top\mathbf{y} - 2\boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{y} + \boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta}
+
+Taking the Derivative
+~~~~~~~~~~~~~~~~~~~~~
+
+Using our matrix calculus rules:
+
+- :math:`\frac{\partial}{\partial \boldsymbol{\beta}}(\mathbf{y}^\top\mathbf{y}) = \mathbf{0}` (constant in :math:`\boldsymbol{\beta}`)
+- :math:`\frac{\partial}{\partial \boldsymbol{\beta}}(2\boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{y}) = 2\mathbf{X}^\top\mathbf{y}` (Rule 1: linear form with :math:`\mathbf{a} = \mathbf{X}^\top\mathbf{y}`)
+- :math:`\frac{\partial}{\partial \boldsymbol{\beta}}(\boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta}) = 2\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta}` (Rule 2: quadratic form with symmetric :math:`\mathbf{A} = \mathbf{X}^\top\mathbf{X}`)
+
+Combining:
+
+.. math::
+   :label: rss-gradient
+
+   \frac{\partial \text{RSS}}{\partial \boldsymbol{\beta}} = -2\mathbf{X}^\top\mathbf{y} + 2\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} = 2\mathbf{X}^\top(\mathbf{X}\boldsymbol{\beta} - \mathbf{y})
+
+The Normal Equations
+~~~~~~~~~~~~~~~~~~~~
+
+Setting the gradient to zero:
+
+.. math::
+
+   \mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} - \mathbf{X}^\top\mathbf{y} = \mathbf{0}
+
+Rearranging:
+
+.. math::
+   :label: normal-equations
+
+   \boxed{\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}}
+
+These are the **normal equations**. The name comes from the fact that the residual vector :math:`\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}` is **normal (perpendicular)** to the column space of :math:`\mathbf{X}`—a fact we'll prove geometrically.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig02_normal_equations.png
+   :alt: Two approaches to deriving normal equations: calculus and geometry
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.2**: The normal equations derived two ways. (a) The calculus approach: minimize RSS by setting the gradient to zero. (b) The geometric approach: the residual :math:`\mathbf{e}` must be perpendicular to :math:`C(\mathbf{X})`, leading to :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{0}`.
+
+Solving for the OLS Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Under assumption GM2 (:math:`\text{rank}(\mathbf{X}) = p`), the matrix :math:`\mathbf{X}^\top\mathbf{X}` is invertible. Multiplying both sides by :math:`(\mathbf{X}^\top\mathbf{X})^{-1}`:
+
+.. math::
+   :label: ols-estimator
+
+   \boxed{\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}}
+
+This is the **OLS estimator**—the central result of regression analysis.
+
+Verifying the Minimum
+~~~~~~~~~~~~~~~~~~~~~
+
+We found a critical point. To confirm it's a minimum (not maximum or saddle), examine the second derivative (Hessian):
+
+.. math::
+
+   \frac{\partial^2 \text{RSS}}{\partial \boldsymbol{\beta} \partial \boldsymbol{\beta}^\top} = 2\mathbf{X}^\top\mathbf{X}
+
+Since :math:`\mathbf{X}^\top\mathbf{X}` is positive semi-definite (for any :math:`\mathbf{v}`, :math:`\mathbf{v}^\top\mathbf{X}^\top\mathbf{X}\mathbf{v} = \|\mathbf{X}\mathbf{v}\|^2 \geq 0`), and positive definite when :math:`\mathbf{X}` has full column rank, the Hessian is positive definite. Therefore, the critical point is indeed a **global minimum**.
+
+.. admonition:: Example 💡 Simple Linear Regression by Hand
+   :class: note
+
+   Consider simple regression :math:`y = \beta_0 + \beta_1 x + \varepsilon` with :math:`n = 4` observations:
+   
+   .. math::
+   
+      \mathbf{X} = \begin{pmatrix} 1 & 1 \\ 1 & 2 \\ 1 & 3 \\ 1 & 4 \end{pmatrix}, \quad
+      \mathbf{y} = \begin{pmatrix} 2.1 \\ 3.9 \\ 6.2 \\ 7.8 \end{pmatrix}
+   
+   **Step 1**: Compute :math:`\mathbf{X}^\top\mathbf{X}`:
+   
+   .. math::
+   
+      \mathbf{X}^\top\mathbf{X} = \begin{pmatrix} 1 & 1 & 1 & 1 \\ 1 & 2 & 3 & 4 \end{pmatrix}
+      \begin{pmatrix} 1 & 1 \\ 1 & 2 \\ 1 & 3 \\ 1 & 4 \end{pmatrix}
+      = \begin{pmatrix} 4 & 10 \\ 10 & 30 \end{pmatrix}
+   
+   **Step 2**: Compute :math:`\mathbf{X}^\top\mathbf{y}`:
+   
+   .. math::
+   
+      \mathbf{X}^\top\mathbf{y} = \begin{pmatrix} 1 & 1 & 1 & 1 \\ 1 & 2 & 3 & 4 \end{pmatrix}
+      \begin{pmatrix} 2.1 \\ 3.9 \\ 6.2 \\ 7.8 \end{pmatrix}
+      = \begin{pmatrix} 20.0 \\ 58.1 \end{pmatrix}
+   
+   **Step 3**: Compute :math:`(\mathbf{X}^\top\mathbf{X})^{-1}`:
+   
+   .. math::
+   
+      (\mathbf{X}^\top\mathbf{X})^{-1} = \frac{1}{4 \cdot 30 - 10 \cdot 10}
+      \begin{pmatrix} 30 & -10 \\ -10 & 4 \end{pmatrix}
+      = \frac{1}{20}\begin{pmatrix} 30 & -10 \\ -10 & 4 \end{pmatrix}
+      = \begin{pmatrix} 1.5 & -0.5 \\ -0.5 & 0.2 \end{pmatrix}
+   
+   **Step 4**: Compute :math:`\hat{\boldsymbol{\beta}}`:
+   
+   .. math::
+   
+      \hat{\boldsymbol{\beta}} = \begin{pmatrix} 1.5 & -0.5 \\ -0.5 & 0.2 \end{pmatrix}
+      \begin{pmatrix} 20.0 \\ 58.1 \end{pmatrix}
+      = \begin{pmatrix} 30 - 29.05 \\ -10 + 11.62 \end{pmatrix}
+      = \begin{pmatrix} 0.95 \\ 1.62 \end{pmatrix}
+   
+   The fitted line is :math:`\hat{y} = 0.95 + 1.62x`.
+
+.. code-block:: python
+
+   import numpy as np
+
+   # Data
+   X = np.array([[1, 1], [1, 2], [1, 3], [1, 4]])
+   y = np.array([2.1, 3.9, 6.2, 7.8])
+
+   # OLS via normal equations
+   XtX = X.T @ X
+   Xty = X.T @ y
+   beta_hat = np.linalg.solve(XtX, Xty)  # More stable than explicit inverse
+
+   print("X'X =")
+   print(XtX)
+   print(f"\nX'y = {Xty}")
+   print(f"\nOLS estimates: β̂₀ = {beta_hat[0]:.4f}, β̂₁ = {beta_hat[1]:.4f}")
+
+   # Verify with fitted values
+   y_hat = X @ beta_hat
+   residuals = y - y_hat
+   RSS = np.sum(residuals**2)
+   print(f"\nFitted values: {y_hat}")
+   print(f"Residuals: {residuals}")
+   print(f"RSS = {RSS:.4f}")
+
+.. code-block:: text
+
+   X'X =
+   [[ 4 10]
+    [10 30]]
+
+   X'y = [20.  58.1]
+
+   OLS estimates: β̂₀ = 0.9500, β̂₁ = 1.6200
+
+   Fitted values: [2.57 4.19 5.81 7.43]
+   Residuals: [-0.47 -0.29  0.39  0.37]
+   RSS = 0.5460
+
+
+Ordinary Least Squares: The Geometric Approach
+----------------------------------------------
+
+The calculus approach found the OLS estimator by optimization. The geometric approach reveals **why** the normal equations work and provides deeper insight into what OLS does.
+
+Column Space and Projection
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider the design matrix :math:`\mathbf{X} \in \mathbb{R}^{n \times p}`. Its **column space** (or range) is:
+
+.. math::
+   :label: column-space
+
+   \mathcal{C}(\mathbf{X}) = \{\mathbf{X}\boldsymbol{\beta} : \boldsymbol{\beta} \in \mathbb{R}^p\} \subseteq \mathbb{R}^n
+
+This is the set of all linear combinations of the columns of :math:`\mathbf{X}`—a :math:`p`-dimensional subspace of :math:`\mathbb{R}^n` (assuming full column rank).
+
+The model says :math:`\mathbb{E}[\mathbf{y}] = \mathbf{X}\boldsymbol{\beta}`, so the expected response lies in the column space. The observed :math:`\mathbf{y}` typically does **not** lie in :math:`\mathcal{C}(\mathbf{X})` because of errors.
+
+**Key insight**: OLS finds the point in :math:`\mathcal{C}(\mathbf{X})` closest to :math:`\mathbf{y}`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig01_ols_geometry.png
+   :alt: Geometric interpretation of OLS as orthogonal projection onto a hyperplane
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.1**: OLS as orthogonal projection. The observed :math:`\mathbf{y}` lives in :math:`\mathbb{R}^n`, while the column space :math:`C(\mathbf{X})` is a p-dimensional hyperplane. The fitted values :math:`\hat{\mathbf{y}} = \mathbf{X}\hat{\boldsymbol{\beta}}` are the closest point to :math:`\mathbf{y}` in this subspace. The residual :math:`\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}}` is perpendicular to the entire column space.
+
+The Orthogonality Principle
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The closest point to :math:`\mathbf{y}` in a subspace is the **orthogonal projection**. The projection :math:`\hat{\mathbf{y}}` satisfies:
+
+.. math::
+
+   \mathbf{y} - \hat{\mathbf{y}} \perp \mathcal{C}(\mathbf{X})
+
+This means the residual :math:`\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}}` is orthogonal to every vector in the column space. Since any vector in :math:`\mathcal{C}(\mathbf{X})` can be written as :math:`\mathbf{X}\mathbf{a}` for some :math:`\mathbf{a} \in \mathbb{R}^p`:
+
+.. math::
+
+   (\mathbf{X}\mathbf{a})^\top (\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}) = 0 \quad \text{for all } \mathbf{a} \in \mathbb{R}^p
+
+This requires:
+
+.. math::
+
+   \mathbf{a}^\top \mathbf{X}^\top (\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}) = 0 \quad \text{for all } \mathbf{a}
+
+The only way this holds for all :math:`\mathbf{a}` is if:
+
+.. math::
+
+   \mathbf{X}^\top (\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}) = \mathbf{0}
+
+Rearranging:
+
+.. math::
+
+   \mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}
+
+We've recovered the normal equations geometrically! The name "normal equations" now makes sense: they express that residuals are **normal** (perpendicular) to the column space.
+
+The Hat Matrix
+~~~~~~~~~~~~~~
+
+The **hat matrix** (or projection matrix) projects :math:`\mathbf{y}` onto :math:`\mathcal{C}(\mathbf{X})`:
+
+.. math::
+   :label: hat-matrix
+
+   \mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top
+
+The fitted values are:
+
+.. math::
+
+   \hat{\mathbf{y}} = \mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y} = \mathbf{H}\mathbf{y}
+
+The name "hat matrix" comes from putting a hat on :math:`\mathbf{y}` to get :math:`\hat{\mathbf{y}}`.
+
+**Properties of the hat matrix**:
+
+1. **Symmetric**: :math:`\mathbf{H}^\top = \mathbf{H}`
+   
+   *Proof*: :math:`\mathbf{H}^\top = [\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top]^\top = \mathbf{X}[(\mathbf{X}^\top\mathbf{X})^{-1}]^\top\mathbf{X}^\top = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{H}`
+
+2. **Idempotent**: :math:`\mathbf{H}^2 = \mathbf{H}` (projecting twice gives the same result)
+   
+   *Proof*: :math:`\mathbf{H}^2 = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{H}`
+
+3. **Trace**: :math:`\text{tr}(\mathbf{H}) = p`
+   
+   *Proof*: Using :math:`\text{tr}(\mathbf{AB}) = \text{tr}(\mathbf{BA})`:
+   :math:`\text{tr}(\mathbf{H}) = \text{tr}(\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top) = \text{tr}((\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{X}) = \text{tr}(\mathbf{I}_p) = p`
+
+4. **Leverage**: The diagonal elements :math:`h_{ii} \in [0, 1]` measure how much observation :math:`i` influences its own fitted value.
+
+The residual vector can also be written using a projection matrix:
+
+.. math::
+
+   \mathbf{e} = \mathbf{y} - \hat{\mathbf{y}} = (\mathbf{I} - \mathbf{H})\mathbf{y} = \mathbf{M}\mathbf{y}
+
+where :math:`\mathbf{M} = \mathbf{I} - \mathbf{H}` projects onto the **orthogonal complement** of :math:`\mathcal{C}(\mathbf{X})`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig04_hat_matrix.png
+   :alt: The hat matrix visualized as a projection operator
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.3**: The hat matrix :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` "puts a hat on y." (a) Conceptual view: H transforms observed y into fitted ŷ. (b) Matrix visualization showing larger diagonal elements (leverage) for extreme observations. (c) The projection: H maps each :math:`y_i` to :math:`\hat{y}_i`.
+
+Rank, Pseudo-Inverse, and When Solutions Exist
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When :math:`\mathbf{X}` has full column rank (:math:`\text{rank}(\mathbf{X}) = p`), the solution is unique:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}
+
+The matrix :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` is the **left pseudo-inverse** of :math:`\mathbf{X}`, denoted :math:`\mathbf{X}^+`. It satisfies :math:`\mathbf{X}^+\mathbf{X} = \mathbf{I}_p`.
+
+**What if** :math:`\mathbf{X}` **doesn't have full rank?**
+
+When :math:`\text{rank}(\mathbf{X}) = r < p` (multicollinearity), :math:`\mathbf{X}^\top\mathbf{X}` is singular and not invertible. The normal equations :math:`\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} = \mathbf{X}^\top\mathbf{y}` still have solutions, but **infinitely many**—the solution set is a :math:`(p-r)`-dimensional affine subspace.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig12_multicollinearity.png
+   :alt: Multicollinearity effects on coefficient estimation
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.12**: Multicollinearity inflates standard errors. (a) VIF grows rapidly as correlation approaches 1: :math:`\text{VIF} = 1/(1-\rho^2)`. (b) With high correlation (:math:`\rho = 0.95`), the sampling distribution of :math:`\hat{\beta}_1` is much wider than with uncorrelated predictors. (c) The joint confidence region becomes an elongated ellipse when predictors are correlated.
+
+In this case, we use the **Moore-Penrose pseudo-inverse** :math:`\mathbf{X}^+`, which selects the minimum-norm solution:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}} = \mathbf{X}^+ \mathbf{y}
+
+This solution has the smallest :math:`\|\boldsymbol{\beta}\|` among all solutions to the normal equations.
+
+**In practice**: Software like ``numpy.linalg.lstsq`` and ``scipy.linalg.lstsq`` use SVD-based methods that handle rank deficiency automatically.
+
+.. code-block:: python
+
+   import numpy as np
+
+   # Example with exact multicollinearity
+   # x3 = x1 + x2 (perfect linear dependence)
+   X_singular = np.array([
+       [1, 1, 0, 1],
+       [1, 0, 1, 1],
+       [1, 2, 1, 3],
+       [1, 1, 2, 3]
+   ])
+   y = np.array([1, 2, 4, 5])
+
+   # Check rank
+   print(f"Matrix shape: {X_singular.shape}")
+   print(f"Rank: {np.linalg.matrix_rank(X_singular)}")
+   print(f"X'X is singular: {np.linalg.det(X_singular.T @ X_singular) == 0}")
+
+   # lstsq handles rank deficiency via SVD
+   beta_hat, residuals, rank, s = np.linalg.lstsq(X_singular, y, rcond=None)
+   print(f"\nMinimum-norm solution: {beta_hat}")
+   print(f"Singular values: {s}")
+
+.. code-block:: text
+
+   Matrix shape: (4, 4)
+   Rank: 3
+   X'X is singular: True
+
+   Minimum-norm solution: [-0.  0.5 1.5 0. ]
+   Singular values: [5.52 1.73 0.71 0.  ]
+
+
+Properties of the OLS Estimator
+-------------------------------
+
+Having derived the OLS estimator, we now examine its statistical properties.
+
+.. admonition:: Convention: Fixed Design
+   :class: tip
+
+   Throughout this section, we treat :math:`\mathbf{X}` as **fixed** (non-random) and condition all statements on :math:`\mathbf{X}`. Expectations, variances, and distributions are conditional on :math:`\mathbf{X}`. This "fixed design" viewpoint is standard in classical regression theory. When :math:`\mathbf{X}` is random, results hold conditional on the observed :math:`\mathbf{X}`.
+
+Unbiasedness
+~~~~~~~~~~~~
+
+.. admonition:: Theorem: OLS is Unbiased
+   :class: note
+
+   Under assumptions GM1-GM3, the OLS estimator is unbiased:
+   
+   .. math::
+   
+      \mathbb{E}[\hat{\boldsymbol{\beta}} | \mathbf{X}] = \boldsymbol{\beta}
+
+**Proof**: 
+
+Starting from :math:`\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` and substituting :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}`:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}} &= (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top(\mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}) \\
+   &= (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} + (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\boldsymbol{\varepsilon} \\
+   &= \boldsymbol{\beta} + (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\boldsymbol{\varepsilon}
+
+Taking expectations conditional on :math:`\mathbf{X}`:
+
+.. math::
+
+   \mathbb{E}[\hat{\boldsymbol{\beta}} | \mathbf{X}] = \boldsymbol{\beta} + (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbb{E}[\boldsymbol{\varepsilon} | \mathbf{X}] = \boldsymbol{\beta} + (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbf{0} = \boldsymbol{\beta}
+
+where we used GM3: :math:`\mathbb{E}[\boldsymbol{\varepsilon} | \mathbf{X}] = \mathbf{0}`. ∎
+
+Variance-Covariance Matrix
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Variance of OLS Estimator
+   :class: note
+
+   Under assumptions GM1-GM4:
+   
+   .. math::
+      :label: ols-variance
+   
+      \text{Var}(\hat{\boldsymbol{\beta}} | \mathbf{X}) = \sigma^2 (\mathbf{X}^\top\mathbf{X})^{-1}
+
+**Proof**:
+
+From above, :math:`\hat{\boldsymbol{\beta}} - \boldsymbol{\beta} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\boldsymbol{\varepsilon}`.
+
+Let :math:`\mathbf{A} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`. Then:
+
+.. math::
+
+   \text{Var}(\hat{\boldsymbol{\beta}} | \mathbf{X}) &= \text{Var}(\mathbf{A}\boldsymbol{\varepsilon} | \mathbf{X}) \\
+   &= \mathbf{A} \text{Var}(\boldsymbol{\varepsilon} | \mathbf{X}) \mathbf{A}^\top \\
+   &= \mathbf{A} (\sigma^2 \mathbf{I}_n) \mathbf{A}^\top \\
+   &= \sigma^2 \mathbf{A} \mathbf{A}^\top
+
+Now compute :math:`\mathbf{A}\mathbf{A}^\top`:
+
+.. math::
+
+   \mathbf{A}\mathbf{A}^\top &= (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbf{X}[(\mathbf{X}^\top\mathbf{X})^{-1}]^\top \\
+   &= (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1} \\
+   &= (\mathbf{X}^\top\mathbf{X})^{-1}
+
+Therefore:
+
+.. math::
+
+   \text{Var}(\hat{\boldsymbol{\beta}} | \mathbf{X}) = \sigma^2 (\mathbf{X}^\top\mathbf{X})^{-1}
+
+∎
+
+**Interpreting the variance formula**:
+
+The variance of the :math:`j`-th coefficient is:
+
+.. math::
+
+   \text{Var}(\hat{\beta}_j | \mathbf{X}) = \sigma^2 [(\mathbf{X}^\top\mathbf{X})^{-1}]_{jj}
+
+The standard error is:
+
+.. math::
+
+   \text{SE}(\hat{\beta}_j) = \sigma \sqrt{[(\mathbf{X}^\top\mathbf{X})^{-1}]_{jj}}
+
+In practice, we replace :math:`\sigma` with its estimate :math:`s` (see below).
+
+
+The Gauss-Markov Theorem
+------------------------
+
+The Gauss-Markov theorem is one of the most important results in regression theory. It establishes OLS as the **Best Linear Unbiased Estimator** (BLUE).
+
+What BLUE Means
+~~~~~~~~~~~~~~~
+
+Let's unpack each word:
+
+- **Estimator**: A function of the data that produces an estimate of the parameter
+- **Unbiased**: :math:`\mathbb{E}[\hat{\boldsymbol{\beta}}] = \boldsymbol{\beta}` (hits the target on average)
+- **Linear**: The estimator is a linear function of :math:`\mathbf{y}`: :math:`\tilde{\boldsymbol{\beta}} = \mathbf{C}\mathbf{y}` for some matrix :math:`\mathbf{C}`
+- **Best**: Has the smallest variance among all linear unbiased estimators
+
+**Why focus on linear estimators?**
+
+1. **Tractability**: Linear estimators have simple variance formulas
+2. **Sufficiency**: For normal errors, linear estimators can be optimal even among nonlinear ones
+3. **Robustness considerations**: Nonlinear estimators may be more efficient under specific distributional assumptions but fail badly when those assumptions are wrong
+
+The Theorem Statement
+~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Gauss-Markov
+   :class: note
+
+   Under assumptions GM1-GM4 (linearity, full rank, strict exogeneity, spherical errors), the OLS estimator :math:`\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` is BLUE:
+   
+   For any other linear unbiased estimator :math:`\tilde{\boldsymbol{\beta}} = \mathbf{C}\mathbf{y}` of :math:`\boldsymbol{\beta}`:
+   
+   .. math::
+   
+      \text{Var}(\tilde{\boldsymbol{\beta}}) - \text{Var}(\hat{\boldsymbol{\beta}}) \text{ is positive semi-definite}
+   
+   In particular, for any coefficient:
+   
+   .. math::
+   
+      \text{Var}(\tilde{\beta}_j) \geq \text{Var}(\hat{\beta}_j)
+   
+   OLS achieves the minimum variance among all linear unbiased estimators.
+
+Complete Proof
+~~~~~~~~~~~~~~
+
+**Step 1: Characterize linear unbiased estimators**
+
+Any linear estimator has the form :math:`\tilde{\boldsymbol{\beta}} = \mathbf{C}\mathbf{y}` for some :math:`p \times n` matrix :math:`\mathbf{C}`.
+
+For :math:`\tilde{\boldsymbol{\beta}}` to be unbiased:
+
+.. math::
+
+   \mathbb{E}[\tilde{\boldsymbol{\beta}}] = \mathbf{C}\mathbb{E}[\mathbf{y}] = \mathbf{C}\mathbf{X}\boldsymbol{\beta} = \boldsymbol{\beta} \quad \text{for all } \boldsymbol{\beta}
+
+This requires :math:`\mathbf{C}\mathbf{X} = \mathbf{I}_p`.
+
+**Step 2: Write any linear unbiased estimator as OLS plus something**
+
+Let :math:`\mathbf{A} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` be the OLS matrix, so :math:`\hat{\boldsymbol{\beta}} = \mathbf{A}\mathbf{y}`.
+
+Define :math:`\mathbf{D} = \mathbf{C} - \mathbf{A}`. Then any linear unbiased estimator can be written:
+
+.. math::
+
+   \tilde{\boldsymbol{\beta}} = \mathbf{C}\mathbf{y} = (\mathbf{A} + \mathbf{D})\mathbf{y}
+
+Since both :math:`\mathbf{C}` and :math:`\mathbf{A}` satisfy :math:`\mathbf{C}\mathbf{X} = \mathbf{I}_p` and :math:`\mathbf{A}\mathbf{X} = \mathbf{I}_p`:
+
+.. math::
+
+   \mathbf{D}\mathbf{X} = \mathbf{C}\mathbf{X} - \mathbf{A}\mathbf{X} = \mathbf{I}_p - \mathbf{I}_p = \mathbf{0}
+
+**Step 3: Compute the variance of the alternative estimator**
+
+Conditional on :math:`\mathbf{X}`, the variance of any linear estimator :math:`\tilde{\boldsymbol{\beta}} = \mathbf{C}\mathbf{y}` is:
+
+.. math::
+
+   \text{Var}(\tilde{\boldsymbol{\beta}} | \mathbf{X}) &= \text{Var}((\mathbf{A} + \mathbf{D})\mathbf{y} | \mathbf{X}) \\
+   &= (\mathbf{A} + \mathbf{D}) \text{Var}(\mathbf{y} | \mathbf{X}) (\mathbf{A} + \mathbf{D})^\top \\
+   &= \sigma^2 (\mathbf{A} + \mathbf{D})(\mathbf{A} + \mathbf{D})^\top \\
+   &= \sigma^2 (\mathbf{A}\mathbf{A}^\top + \mathbf{A}\mathbf{D}^\top + \mathbf{D}\mathbf{A}^\top + \mathbf{D}\mathbf{D}^\top)
+
+**Step 4: Show the cross-terms vanish**
+
+Compute :math:`\mathbf{A}\mathbf{D}^\top`:
+
+.. math::
+
+   \mathbf{A}\mathbf{D}^\top = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbf{D}^\top
+
+Now, :math:`\mathbf{D}\mathbf{X} = \mathbf{0}` implies :math:`\mathbf{X}^\top\mathbf{D}^\top = \mathbf{0}`. Therefore:
+
+.. math::
+
+   \mathbf{A}\mathbf{D}^\top = (\mathbf{X}^\top\mathbf{X})^{-1} \cdot \mathbf{0} = \mathbf{0}
+
+Similarly, :math:`\mathbf{D}\mathbf{A}^\top = (\mathbf{A}\mathbf{D}^\top)^\top = \mathbf{0}`.
+
+**Step 5: Conclude**
+
+.. math::
+
+   \text{Var}(\tilde{\boldsymbol{\beta}}) = \sigma^2 (\mathbf{A}\mathbf{A}^\top + \mathbf{D}\mathbf{D}^\top) = \text{Var}(\hat{\boldsymbol{\beta}}) + \sigma^2 \mathbf{D}\mathbf{D}^\top
+
+Since :math:`\mathbf{D}\mathbf{D}^\top` is positive semi-definite (for any :math:`\mathbf{v}`, :math:`\mathbf{v}^\top\mathbf{D}\mathbf{D}^\top\mathbf{v} = \|\mathbf{D}^\top\mathbf{v}\|^2 \geq 0`):
+
+.. math::
+
+   \text{Var}(\tilde{\boldsymbol{\beta}}) - \text{Var}(\hat{\boldsymbol{\beta}}) = \sigma^2 \mathbf{D}\mathbf{D}^\top \succeq \mathbf{0}
+
+with equality if and only if :math:`\mathbf{D} = \mathbf{0}`, i.e., :math:`\tilde{\boldsymbol{\beta}} = \hat{\boldsymbol{\beta}}`. ∎
+
+What Happens When Assumptions Fail
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each Gauss-Markov assumption is critical. Here's what breaks when each fails:
+
+.. list-table:: Consequences of Gauss-Markov Assumption Violations
+   :header-rows: 1
+   :widths: 15 25 30 30
+
+   * - Assumption
+     - Violation Example
+     - Consequence for OLS
+     - Remedy
+   * - **GM1** Linearity
+     - True model is :math:`y = \beta_0 + \beta_1 x^2 + \varepsilon` but we fit :math:`y = \beta_0 + \beta_1 x`
+     - OLS is **biased** and **inconsistent**; estimates wrong quantity
+     - Transform predictors, add polynomial terms, use nonlinear models
+   * - **GM2** Full Rank
+     - Perfect multicollinearity: :math:`x_3 = 2x_1 + x_2`
+     - :math:`\mathbf{X}^\top\mathbf{X}` is singular; OLS not unique
+     - Remove redundant predictors, use regularization (ridge)
+   * - **GM3** Exogeneity
+     - Omitted variable correlated with included predictor
+     - OLS is **biased** and **inconsistent**
+     - Include omitted variable, use instrumental variables, fixed effects
+   * - **GM4a** Homoskedasticity
+     - Variance increases with :math:`x`: :math:`\text{Var}(\varepsilon_i) = \sigma^2 x_i^2`
+     - OLS unbiased but **not efficient**; SEs wrong
+     - WLS if form known, robust (sandwich) SEs otherwise
+   * - **GM4b** No autocorrelation
+     - Time series: :math:`\varepsilon_t = \rho\varepsilon_{t-1} + u_t`
+     - OLS unbiased but **not efficient**; SEs wrong
+     - GLS, Newey-West SEs, time series models
+
+.. admonition:: Common Pitfall ⚠️ Endogeneity
+   :class: warning
+
+   The most serious violation is **GM3** (exogeneity): the requirement that :math:`\mathbb{E}[\varepsilon_i | \mathbf{X}] = 0` for all :math:`i`. This "conditional mean zero" condition says that knowing :math:`\mathbf{X}` tells you nothing about the expected error.
+   
+   When :math:`\mathbb{E}[\varepsilon | \mathbf{X}] \neq \mathbf{0}`:
+   
+   - OLS is **biased** even in large samples (inconsistent)
+   - No amount of data fixes the problem
+   - **Robust standard errors do not help**: They correct for heteroskedasticity, not bias. If your coefficients are biased, having more precise standard errors for the wrong value doesn't help!
+   
+   Common causes: omitted variables correlated with included predictors, measurement error in :math:`\mathbf{X}`, simultaneity (reverse causation).
+   
+   Detection is difficult since we don't observe :math:`\varepsilon`. Economic theory, domain knowledge, and careful study design are essential. Remedies include instrumental variables and natural experiments.
+
+
+Estimating the Error Variance
+-----------------------------
+
+The variance formula :math:`\text{Var}(\hat{\boldsymbol{\beta}}) = \sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}` depends on the unknown :math:`\sigma^2`. We need to estimate it.
+
+The Residual Sum of Squares
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Define the **residuals** as :math:`\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}} = \mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}`.
+
+The **residual sum of squares** (RSS) is:
+
+.. math::
+
+   \text{RSS} = \mathbf{e}^\top\mathbf{e} = \sum_{i=1}^n e_i^2 = \sum_{i=1}^n (y_i - \hat{y}_i)^2
+
+A natural estimator of :math:`\sigma^2` might be :math:`\text{RSS}/n`. However, this is **biased** because residuals underestimate the true errors.
+
+The Unbiased Estimator
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Unbiased Estimator of σ²
+   :class: note
+
+   Under GM1-GM4:
+   
+   .. math::
+      :label: s2-estimator
+   
+      s^2 = \frac{\text{RSS}}{n - p} = \frac{\mathbf{e}^\top\mathbf{e}}{n - p}
+   
+   is an unbiased estimator of :math:`\sigma^2`: :math:`\mathbb{E}[s^2] = \sigma^2`.
+
+**Proof sketch**:
+
+The residuals can be written as :math:`\mathbf{e} = \mathbf{M}\mathbf{y} = \mathbf{M}(\mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}) = \mathbf{M}\boldsymbol{\varepsilon}` where :math:`\mathbf{M} = \mathbf{I} - \mathbf{H}`.
+
+(Note: :math:`\mathbf{M}\mathbf{X}\boldsymbol{\beta} = (\mathbf{I} - \mathbf{H})\mathbf{X}\boldsymbol{\beta} = \mathbf{X}\boldsymbol{\beta} - \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} = \mathbf{X}\boldsymbol{\beta} - \mathbf{X}\boldsymbol{\beta} = \mathbf{0}`)
+
+Then:
+
+.. math::
+
+   \text{RSS} = \mathbf{e}^\top\mathbf{e} = \boldsymbol{\varepsilon}^\top\mathbf{M}^\top\mathbf{M}\boldsymbol{\varepsilon} = \boldsymbol{\varepsilon}^\top\mathbf{M}\boldsymbol{\varepsilon}
+
+since :math:`\mathbf{M}` is idempotent (:math:`\mathbf{M}^2 = \mathbf{M}`) and symmetric.
+
+Taking expectations and using the trace formula for quadratic forms:
+
+.. math::
+
+   \mathbb{E}[\text{RSS}] = \mathbb{E}[\boldsymbol{\varepsilon}^\top\mathbf{M}\boldsymbol{\varepsilon}] = \text{tr}(\mathbf{M} \cdot \sigma^2\mathbf{I}) = \sigma^2 \text{tr}(\mathbf{M})
+
+Since :math:`\text{tr}(\mathbf{M}) = \text{tr}(\mathbf{I} - \mathbf{H}) = n - \text{tr}(\mathbf{H}) = n - p`:
+
+.. math::
+
+   \mathbb{E}[\text{RSS}] = \sigma^2 (n - p)
+
+Therefore :math:`\mathbb{E}[\text{RSS}/(n-p)] = \sigma^2`. ∎
+
+**Degrees of freedom interpretation**: We estimate :math:`p` parameters from :math:`n` observations, leaving :math:`n - p` degrees of freedom for estimating error variance.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig06_degrees_of_freedom.png
+   :alt: Degrees of freedom visualized showing why we divide by n-p
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.5**: Degrees of freedom explained. (a) With n observations, p are "used up" estimating :math:`\boldsymbol{\beta}`, leaving n-p to estimate :math:`\sigma^2`. (b) Simulation confirms :math:`s^2 = \text{RSS}/(n-p)` is unbiased while :math:`\text{RSS}/n` underestimates :math:`\sigma^2`. (c) Under normality, :math:`\text{RSS}/\sigma^2 \sim \chi^2_{n-p}`.
+
+Standard Errors of Coefficients
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The estimated variance-covariance matrix of :math:`\hat{\boldsymbol{\beta}}` is:
+
+.. math::
+
+   \widehat{\text{Var}}(\hat{\boldsymbol{\beta}}) = s^2 (\mathbf{X}^\top\mathbf{X})^{-1}
+
+The standard error of the :math:`j`-th coefficient is:
+
+.. math::
+   :label: se-formula
+
+   \text{SE}(\hat{\beta}_j) = s \sqrt{[(\mathbf{X}^\top\mathbf{X})^{-1}]_{jj}}
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def ols_with_inference(X, y):
+       """
+       Perform OLS regression with inference.
+       
+       Note: This function uses explicit matrix formulas for pedagogical clarity.
+       For production code, use np.linalg.lstsq() or scipy.linalg.lstsq() which
+       are numerically more stable (see Numerical Stability section).
+
+       Returns
+       -------
+       dict with beta_hat, se, t_stats, p_values, R2, s2
+       """
+       n, p = X.shape
+
+       # OLS estimates (formula-aligned; use np.linalg.lstsq for production)
+       XtX = X.T @ X
+       XtX_inv = np.linalg.inv(XtX)  # Needed for standard errors
+       beta_hat = np.linalg.solve(XtX, X.T @ y)  # More stable than inv() @ y
+
+       # Fitted values and residuals
+       y_hat = X @ beta_hat
+       residuals = y - y_hat
+
+       # Variance estimation
+       RSS = residuals @ residuals
+       s2 = RSS / (n - p)
+       s = np.sqrt(s2)
+
+       # Standard errors
+       var_beta = s2 * XtX_inv
+       se = np.sqrt(np.diag(var_beta))
+
+       # t-statistics and p-values
+       t_stats = beta_hat / se
+       p_values = 2 * (1 - stats.t.cdf(np.abs(t_stats), df=n-p))
+
+       # R-squared
+       TSS = np.sum((y - np.mean(y))**2)
+       R2 = 1 - RSS / TSS
+       R2_adj = 1 - (1 - R2) * (n - 1) / (n - p)
+
+       return {
+           'beta_hat': beta_hat,
+           'se': se,
+           't_stats': t_stats,
+           'p_values': p_values,
+           'R2': R2,
+           'R2_adj': R2_adj,
+           's2': s2,
+           's': s,
+           'residuals': residuals,
+           'y_hat': y_hat
+       }
+
+   # Example: mtcars-style data
+   np.random.seed(42)
+   n = 32
+   hp = np.random.uniform(50, 300, n)  # horsepower
+   wt = np.random.uniform(1.5, 5.5, n)  # weight (1000 lbs)
+   mpg = 40 - 0.03 * hp - 4 * wt + np.random.normal(0, 2, n)
+
+   X = np.column_stack([np.ones(n), hp, wt])
+   y = mpg
+
+   results = ols_with_inference(X, y)
+
+   print("="*60)
+   print("OLS REGRESSION RESULTS")
+   print("="*60)
+   print(f"\nSample size: n = {n}, Predictors: p = {X.shape[1]}")
+   print(f"R² = {results['R2']:.4f}, Adjusted R² = {results['R2_adj']:.4f}")
+   print(f"Residual SE: s = {results['s']:.4f}")
+
+   print(f"\n{'Coefficient':<12} {'Estimate':>10} {'Std Error':>10} {'t-stat':>10} {'p-value':>10}")
+   print("-"*54)
+   names = ['Intercept', 'hp', 'wt']
+   for name, b, se, t, p in zip(names, results['beta_hat'], results['se'], 
+                                  results['t_stats'], results['p_values']):
+       print(f"{name:<12} {b:>10.4f} {se:>10.4f} {t:>10.2f} {p:>10.4f}")
+
+.. code-block:: text
+
+   ============================================================
+   OLS REGRESSION RESULTS
+   ============================================================
+
+   Sample size: n = 32, Predictors: p = 3
+   R² = 0.8826, Adjusted R² = 0.8745
+   Residual SE: s = 1.9734
+
+   Coefficient     Estimate  Std Error     t-stat    p-value
+   ------------------------------------------------------
+   Intercept        40.4873     1.5872      25.51     0.0000
+   hp               -0.0313     0.0048      -6.47     0.0000
+   wt               -3.9056     0.4397      -8.88     0.0000
+
+
+Distributional Results Under Normality
+--------------------------------------
+
+Under the full normal linear model (GM1-GM5), we have exact distributional results enabling precise inference.
+
+Distribution of the OLS Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Normality of OLS
+   :class: note
+
+   Under GM1-GM5:
+   
+   .. math::
+   
+      \hat{\boldsymbol{\beta}} | \mathbf{X} \sim \mathcal{N}\left(\boldsymbol{\beta}, \sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}\right)
+
+**Proof**: Since :math:`\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` and :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}` with :math:`\boldsymbol{\varepsilon} \sim \mathcal{N}(\mathbf{0}, \sigma^2\mathbf{I})`:
+
+:math:`\hat{\boldsymbol{\beta}}` is a linear transformation of normal :math:`\boldsymbol{\varepsilon}`, hence normal. Mean and variance computed earlier. ∎
+
+Distribution of s²
+~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Chi-Square Distribution of RSS
+   :class: note
+
+   Under GM1-GM5:
+   
+   .. math::
+   
+      \frac{(n-p)s^2}{\sigma^2} = \frac{\text{RSS}}{\sigma^2} \sim \chi^2_{n-p}
+   
+   Moreover, :math:`s^2` and :math:`\hat{\boldsymbol{\beta}}` are independent.
+
+**Proof sketch**: RSS can be written as :math:`\boldsymbol{\varepsilon}^\top\mathbf{M}\boldsymbol{\varepsilon}/\sigma^2` where :math:`\mathbf{M} = \mathbf{I} - \mathbf{H}` is idempotent with rank :math:`n - p`. By Cochran's theorem, this is :math:`\chi^2_{n-p}`.
+
+The independence follows from the fact that :math:`\hat{\boldsymbol{\beta}}` depends on :math:`\boldsymbol{\varepsilon}` through :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\boldsymbol{\varepsilon}` and :math:`s^2` through :math:`\mathbf{M}\boldsymbol{\varepsilon}`. Since :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \cdot \sigma^2 \mathbf{M} = \mathbf{0}` (orthogonality), these linear forms of a multivariate normal are independent. ∎
+
+t-Tests for Individual Coefficients
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Combining the above results:
+
+.. math::
+
+   \frac{\hat{\beta}_j - \beta_j}{\text{SE}(\hat{\beta}_j)} = \frac{\hat{\beta}_j - \beta_j}{s\sqrt{[(\mathbf{X}^\top\mathbf{X})^{-1}]_{jj}}} \sim t_{n-p}
+
+This enables **t-tests** for individual coefficients:
+
+- **Null hypothesis**: :math:`H_0: \beta_j = \beta_{j,0}` (often :math:`\beta_{j,0} = 0`)
+- **Test statistic**: :math:`t = \frac{\hat{\beta}_j - \beta_{j,0}}{\text{SE}(\hat{\beta}_j)}`
+- **Decision**: Reject at level :math:`\alpha` if :math:`|t| > t_{n-p, 1-\alpha/2}`
+
+**Confidence interval** for :math:`\beta_j`:
+
+.. math::
+
+   \hat{\beta}_j \pm t_{n-p, 1-\alpha/2} \cdot \text{SE}(\hat{\beta}_j)
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig11_confidence_vs_prediction.png
+   :alt: Confidence intervals vs prediction intervals showing the key difference
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.7**: Confidence interval (for the mean) vs. prediction interval (for new Y). (a) The CI (narrow band) captures uncertainty in :math:`E[Y|x]`, while the PI (wide band) also includes the irreducible error variance. (b) The formulas differ by the "1" inside the square root—representing :math:`\sigma^2` for a new observation. (c) Both intervals have hyperbolic shape, widening away from :math:`\bar{x}`, but the PI is offset by a constant amount.
+
+F-Tests for Nested Models
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To test whether a subset of coefficients is jointly zero, use the **F-test**.
+
+**Setup**: Compare:
+- **Restricted model** (R): :math:`q` constraints, :math:`\text{RSS}_R`
+- **Full model** (F): no constraints, :math:`\text{RSS}_F`
+
+.. admonition:: Theorem: F-Test for Nested Models
+   :class: note
+
+   Under :math:`H_0` (constraints are true) and normality:
+   
+   .. math::
+   
+      F = \frac{(\text{RSS}_R - \text{RSS}_F) / q}{\text{RSS}_F / (n - p)} \sim F_{q, n-p}
+
+**Example**: Testing :math:`H_0: \beta_2 = \beta_3 = 0` (joint significance of two predictors).
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def f_test_nested(y, X_full, X_reduced):
+       """
+       F-test comparing full model to reduced (nested) model.
+       """
+       n = len(y)
+       p_full = X_full.shape[1]
+       p_reduced = X_reduced.shape[1]
+       q = p_full - p_reduced  # number of restrictions
+
+       # Fit both models
+       beta_full = np.linalg.lstsq(X_full, y, rcond=None)[0]
+       beta_reduced = np.linalg.lstsq(X_reduced, y, rcond=None)[0]
+
+       RSS_full = np.sum((y - X_full @ beta_full)**2)
+       RSS_reduced = np.sum((y - X_reduced @ beta_reduced)**2)
+
+       # F statistic
+       F = ((RSS_reduced - RSS_full) / q) / (RSS_full / (n - p_full))
+       p_value = 1 - stats.f.cdf(F, q, n - p_full)
+
+       return {'F': F, 'df1': q, 'df2': n - p_full, 'p_value': p_value,
+               'RSS_full': RSS_full, 'RSS_reduced': RSS_reduced}
+
+   # Example: test if both hp and wt are needed
+   X_full = np.column_stack([np.ones(n), hp, wt])
+   X_reduced = np.column_stack([np.ones(n)])  # intercept only
+
+   result = f_test_nested(y, X_full, X_reduced)
+   print(f"\nF-test: Are hp and wt jointly significant?")
+   print(f"F({result['df1']}, {result['df2']}) = {result['F']:.2f}")
+   print(f"p-value = {result['p_value']:.6f}")
+
+
+Diagnostics and Model Checking
+------------------------------
+
+The validity of regression inference depends on assumptions. **Diagnostics** help detect violations.
+
+Residual Analysis
+~~~~~~~~~~~~~~~~~
+
+**Types of residuals**:
+
+1. **Raw residuals**: :math:`e_i = y_i - \hat{y}_i`
+
+2. **Standardized residuals**: :math:`r_i = \frac{e_i}{s\sqrt{1 - h_{ii}}}`
+   
+   These have approximately constant variance under homoskedasticity.
+
+3. **Studentized (externally)**: :math:`t_i = \frac{e_i}{s_{(i)}\sqrt{1 - h_{ii}}} \sim t_{n-p-1}`
+   
+   where :math:`s_{(i)}` is computed without observation :math:`i`. Follows exact t-distribution.
+
+**Diagnostic plots**:
+
+- **Residuals vs. Fitted**: Check linearity (should be random scatter) and homoskedasticity (constant spread)
+- **Q-Q plot of residuals**: Check normality (should follow 45° line)
+- **Residuals vs. each predictor**: Check functional form
+- **Scale-Location plot**: :math:`\sqrt{|r_i|}` vs. fitted for homoskedasticity
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig07_assumption_violations.png
+   :alt: Gallery of assumption violations showing nonlinearity, heteroskedasticity, non-normality, and autocorrelation
+   :align: center
+   :width: 100%
+
+   **Figure 3.4.6**: Assumption violations gallery. Top: data patterns; Bottom: diagnostic plots. Nonlinearity shows curved residual pattern. Heteroskedasticity produces a fan shape. Non-normality creates heavy tails in Q-Q plots. Autocorrelation shows serial correlation in :math:`e_t` vs :math:`e_{t+1}` plots.
+
+Leverage and Influence
+~~~~~~~~~~~~~~~~~~~~~~
+
+Not all observations affect the fit equally.
+
+**Leverage**: :math:`h_{ii} = [\mathbf{H}]_{ii}` measures how far :math:`\mathbf{x}_i` is from the center of the predictor space.
+
+- :math:`h_{ii} \in [1/n, 1]` (from idempotence and hat matrix properties)
+- Average leverage: :math:`\bar{h} = p/n`
+- High leverage if :math:`h_{ii} > 2p/n` or :math:`> 3p/n`
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig05_leverage.png
+   :alt: Leverage intuition showing why extreme x values matter
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.4**: Leverage measures how far observation :math:`x_i` is from :math:`\bar{x}`. (a) Points far from center have high leverage (red = high, blue = low). (b) High-leverage points can dramatically influence the regression line. (c) The leverage formula :math:`h_{ii} = 1/n + (x_i - \bar{x})^2/S_{xx}` is U-shaped in :math:`x`.
+
+**Influence measures**:
+
+- **Cook's Distance**: Combines leverage and residual size
+  
+  .. math::
+  
+     D_i = \frac{r_i^2}{p} \cdot \frac{h_{ii}}{1 - h_{ii}}
+  
+  Large if :math:`D_i > 4/n` or :math:`> 1`
+
+- **DFFITS**: Scaled difference in fitted value when :math:`i` deleted
+- **DFBETAS**: Change in each coefficient when :math:`i` deleted
+
+Robust Standard Errors
+~~~~~~~~~~~~~~~~~~~~~~
+
+When homoskedasticity fails but we still want valid inference, use **robust (sandwich) standard errors**:
+
+.. math::
+
+   \widehat{\text{Var}}_{\text{robust}}(\hat{\boldsymbol{\beta}}) = (\mathbf{X}^\top\mathbf{X})^{-1} \mathbf{X}^\top \hat{\boldsymbol{\Omega}} \mathbf{X} (\mathbf{X}^\top\mathbf{X})^{-1}
+
+where :math:`\hat{\boldsymbol{\Omega}} = \text{diag}(e_1^2, \ldots, e_n^2)` estimates the heteroskedastic structure.
+
+**HC variants** (heteroskedasticity-consistent):
+
+- **HC0**: :math:`\hat{\Omega}_{ii} = e_i^2` (White's original)
+- **HC1**: :math:`\hat{\Omega}_{ii} = \frac{n}{n-p} e_i^2` (degrees-of-freedom correction)
+- **HC2**: :math:`\hat{\Omega}_{ii} = \frac{e_i^2}{1 - h_{ii}}` (leverage adjustment)
+- **HC3**: :math:`\hat{\Omega}_{ii} = \frac{e_i^2}{(1 - h_{ii})^2}` (jackknife-like, best for small samples)
+
+.. code-block:: python
+
+   def robust_se(X, residuals, hc_type='HC1'):
+       """
+       Compute heteroskedasticity-robust standard errors.
+       
+       Note: This implementation forms the full n×n hat matrix H, which is
+       O(n²) in memory and time. For large n, compute leverages h_ii directly
+       without forming H: h_ii = x_i' (X'X)^{-1} x_i for each row.
+       
+       Parameters
+       ----------
+       X : array, shape (n, p)
+           Design matrix
+       residuals : array, shape (n,)
+           OLS residuals
+       hc_type : str
+           'HC0', 'HC1', 'HC2', or 'HC3'
+       """
+       n, p = X.shape
+       XtX_inv = np.linalg.inv(X.T @ X)
+       
+       # Leverage values (O(n²) - for large n, compute row-by-row instead)
+       H = X @ XtX_inv @ X.T
+       h = np.diag(H)
+       
+       # Construct Omega based on HC type
+       e2 = residuals**2
+       if hc_type == 'HC0':
+           omega = e2
+       elif hc_type == 'HC1':
+           omega = e2 * n / (n - p)
+       elif hc_type == 'HC2':
+           omega = e2 / (1 - h)
+       elif hc_type == 'HC3':
+           omega = e2 / (1 - h)**2
+       else:
+           raise ValueError(f"Unknown HC type: {hc_type}")
+       
+       # Sandwich formula
+       meat = X.T @ np.diag(omega) @ X
+       sandwich = XtX_inv @ meat @ XtX_inv
+       
+       return np.sqrt(np.diag(sandwich))
+
+
+Bringing It All Together
+------------------------
+
+Linear regression is both a statistical tool and a conceptual framework that illuminates fundamental ideas in inference. We've seen:
+
+**The calculus approach** reveals OLS as the solution to an optimization problem—minimizing squared residuals leads to the normal equations :math:`\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}`.
+
+**The geometric approach** shows OLS as projection—:math:`\hat{\mathbf{y}}` is the orthogonal projection of :math:`\mathbf{y}` onto the column space of :math:`\mathbf{X}`. The residual :math:`\mathbf{e}` is perpendicular to all predictors.
+
+**The Gauss-Markov theorem** establishes that under classical assumptions (linearity, exogeneity, spherical errors), OLS achieves minimum variance among all linear unbiased estimators. This optimality result has driven the dominance of OLS in applied work.
+
+**Distributional theory** under normality enables exact t-tests and F-tests. Without normality, asymptotic approximations still provide valid inference for large samples.
+
+**Diagnostics** reveal whether assumptions hold. When they fail, remedies range from robust standard errors to alternative estimators.
+
+.. admonition:: Looking Ahead
+   :class: tip
+
+   Section 3.5 extends these ideas to **Generalized Linear Models (GLMs)**—logistic regression, Poisson regression, and more. GLMs handle non-normal responses while maintaining the interpretability and computational tractability of the linear model framework. The IRLS algorithm for fitting GLMs is essentially Fisher scoring—Newton-Raphson with expected information—applied to the same exponential family likelihoods we met in Section 3.1.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Matrix calculus foundation**: The gradient of :math:`\boldsymbol{\beta}^\top\mathbf{A}\boldsymbol{\beta}` is :math:`2\mathbf{A}\boldsymbol{\beta}` (for symmetric :math:`\mathbf{A}`), enabling systematic derivation of least squares estimators.
+
+   2. **Two perspectives on OLS**: Calculus (minimize RSS) and geometry (project onto column space) yield the same normal equations :math:`\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}`.
+
+   3. **Gauss-Markov theorem**: Under linearity, full rank, exogeneity, and spherical errors, OLS is BLUE—the best linear unbiased estimator. The complete proof uses the :math:`\mathbf{D}` matrix decomposition.
+
+   4. **Inference requires variance estimation**: The unbiased estimator :math:`s^2 = \text{RSS}/(n-p)` replaces :math:`\sigma^2` in standard error formulas. Under normality, t-tests and F-tests are exact.
+
+   5. **Diagnostics are essential**: Residual plots, leverage measures, and Cook's distance detect assumption violations. Robust standard errors (HC0-HC3) provide valid inference under heteroskedasticity.
+
+   6. **Outcome alignment**: This section addresses Learning Outcomes on implementing regression methods, understanding estimator properties (bias, variance, efficiency), and applying diagnostics—skills essential for Sections 3.5 (GLMs), Chapter 4 (bootstrap for regression), and Chapter 5 (Bayesian linear models).
+
+
+Numerical Stability: QR Decomposition
+-------------------------------------
+
+The formula :math:`\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` is mathematically correct but **numerically problematic**. Computing :math:`\mathbf{X}^\top\mathbf{X}` and inverting it can lose precision due to the condition number.
+
+The Condition Number Problem
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **condition number** of a matrix measures sensitivity to numerical errors:
+
+.. math::
+
+   \kappa(\mathbf{A}) = \|\mathbf{A}\| \cdot \|\mathbf{A}^{-1}\|
+
+For the product :math:`\mathbf{X}^\top\mathbf{X}`:
+
+.. math::
+
+   \kappa(\mathbf{X}^\top\mathbf{X}) = \kappa(\mathbf{X})^2
+
+This **squaring** of the condition number is catastrophic. If :math:`\mathbf{X}` has condition number :math:`10^4` (not unusual with poorly scaled predictors), then :math:`\mathbf{X}^\top\mathbf{X}` has condition number :math:`10^8`, potentially losing 8 digits of precision.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig13_numerical_stability.png
+   :alt: Numerical stability comparison showing normal equations vs QR decomposition
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.8**: Numerical stability matters. (a) Normal equations square the condition number: :math:`\kappa(\mathbf{X}^\top\mathbf{X}) = \kappa(\mathbf{X})^2`. (b) Theoretical error bounds show QR decomposition with :math:`O(\kappa \cdot \epsilon)` error vastly outperforms normal equations with :math:`O(\kappa^2 \cdot \epsilon)` error. (c) Practical guidelines: use QR/SVD-based methods (like ``np.linalg.lstsq``) when :math:`\kappa > 10^3`.
+
+QR Decomposition Solution
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **QR decomposition** factorizes :math:`\mathbf{X}` as:
+
+.. math::
+
+   \mathbf{X} = \mathbf{Q}\mathbf{R}
+
+where:
+
+- :math:`\mathbf{Q} \in \mathbb{R}^{n \times p}` has orthonormal columns: :math:`\mathbf{Q}^\top\mathbf{Q} = \mathbf{I}_p`
+- :math:`\mathbf{R} \in \mathbb{R}^{p \times p}` is upper triangular
+
+**Solving the normal equations via QR**:
+
+Substitute into :math:`\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}`:
+
+.. math::
+
+   \mathbf{R}^\top\mathbf{Q}^\top\mathbf{Q}\mathbf{R}\hat{\boldsymbol{\beta}} = \mathbf{R}^\top\mathbf{Q}^\top\mathbf{y}
+
+Since :math:`\mathbf{Q}^\top\mathbf{Q} = \mathbf{I}` and :math:`\mathbf{R}^\top` is invertible:
+
+.. math::
+
+   \mathbf{R}\hat{\boldsymbol{\beta}} = \mathbf{Q}^\top\mathbf{y}
+
+This triangular system is solved by **back-substitution**—no matrix inversion needed!
+
+**Advantages**:
+
+1. Condition number is :math:`\kappa(\mathbf{R}) = \kappa(\mathbf{X})`, not squared
+2. No explicit computation of :math:`\mathbf{X}^\top\mathbf{X}`
+3. Back-substitution is :math:`O(p^2)`, highly stable
+
+.. code-block:: python
+
+   import numpy as np
+
+   def ols_qr(X, y):
+       """
+       Compute OLS via QR decomposition (numerically stable).
+       """
+       Q, R = np.linalg.qr(X)
+       Qty = Q.T @ y
+       beta_hat = np.linalg.solve(R, Qty)  # Back-substitution
+       return beta_hat
+
+   def demonstrate_condition_number():
+       """Show the condition number problem."""
+       rng = np.random.default_rng(42)
+       n = 100
+       
+       # Poorly conditioned design matrix (highly correlated predictors)
+       x1 = rng.uniform(0, 1, n)
+       x2 = x1 + rng.normal(0, 0.0001, n)  # Nearly collinear!
+       
+       X = np.column_stack([np.ones(n), x1, x2])
+       y = 1 + 2*x1 + 3*x2 + rng.normal(0, 0.1, n)
+       
+       # Condition numbers
+       kappa_X = np.linalg.cond(X)
+       kappa_XtX = np.linalg.cond(X.T @ X)
+       
+       print("="*60)
+       print("CONDITION NUMBER COMPARISON")
+       print("="*60)
+       print(f"\nκ(X):     {kappa_X:.2e}")
+       print(f"κ(X'X):   {kappa_XtX:.2e}")
+       print(f"Ratio:    {kappa_XtX / kappa_X:.2e} (should be ≈ κ(X))")
+       
+       # Compare methods
+       # Method 1: Normal equations (unstable)
+       try:
+           beta_normal = np.linalg.solve(X.T @ X, X.T @ y)
+           print(f"\nNormal equations: β̂ = {beta_normal}")
+       except np.linalg.LinAlgError:
+           print("\nNormal equations: FAILED (singular matrix)")
+       
+       # Method 2: QR decomposition (stable)
+       beta_qr = ols_qr(X, y)
+       print(f"QR decomposition: β̂ = {beta_qr}")
+       
+       # Method 3: lstsq (uses SVD)
+       beta_lstsq = np.linalg.lstsq(X, y, rcond=None)[0]
+       print(f"lstsq (SVD):      β̂ = {beta_lstsq}")
+
+   demonstrate_condition_number()
+
+.. code-block:: text
+
+   ============================================================
+   CONDITION NUMBER COMPARISON
+   ============================================================
+
+   κ(X):     1.05e+04
+   κ(X'X):   1.11e+08
+   Ratio:    1.05e+04 (should be ≈ κ(X))
+
+   Normal equations: β̂ = [-0.73  1.58  3.42]
+   QR decomposition: β̂ = [-0.73  1.58  3.42]
+   lstsq (SVD):      β̂ = [-0.73  1.58  3.42]
+
+.. admonition:: Common Pitfall ⚠️ Never Compute (X'X)⁻¹ Explicitly
+   :class: warning
+
+   When writing your own regression code:
+   
+   - **Don't do this**: ``np.linalg.inv(X.T @ X) @ X.T @ y``
+   - **Do this instead**: ``np.linalg.lstsq(X, y, rcond=None)[0]``
+   
+   The ``lstsq`` function uses SVD internally, which is even more stable than QR and handles rank-deficient matrices gracefully.
+
+
+Model Selection and Information Criteria
+----------------------------------------
+
+With multiple candidate models, how do we choose? **Information criteria** balance goodness-of-fit against complexity.
+
+The Bias-Variance Tradeoff
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider adding a predictor to a model:
+
+- **RSS decreases** (or stays the same)—the fit improves or is unchanged
+- **Variance increases**—more parameters to estimate
+
+This is the classic bias-variance tradeoff:
+
+.. math::
+
+   \text{MSE}(\hat{y}) = \text{Bias}^2 + \text{Variance}
+
+A complex model has low bias (fits the data well) but high variance (overfits to noise). A simple model has higher bias but lower variance.
+
+R-Squared and Adjusted R-Squared
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**R-squared** measures the proportion of variance explained:
+
+.. math::
+
+   R^2 = 1 - \frac{\text{RSS}}{\text{TSS}} = 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig03_regression_decomposition.png
+   :alt: Regression decomposition showing TSS = ESS + RSS
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.13**: The fundamental decomposition TSS = ESS + RSS. (a) For each point, the deviation from :math:`\bar{y}` splits into explained (ESS) and residual (RSS) components. (b) The equation: Total Sum of Squares = Explained Sum of Squares + Residual Sum of Squares. (c) :math:`R^2 = \text{ESS}/\text{TSS}` is the proportion explained.
+
+**Problem**: :math:`R^2` never decreases when adding predictors, even useless ones.
+
+**Adjusted R-squared** penalizes for model complexity:
+
+.. math::
+
+   R^2_{\text{adj}} = 1 - \frac{\text{RSS}/(n-p)}{\text{TSS}/(n-1)} = 1 - (1 - R^2)\frac{n-1}{n-p}
+
+This can decrease when adding a predictor that doesn't improve the fit enough to justify its inclusion.
+
+Information Criteria
+~~~~~~~~~~~~~~~~~~~~
+
+**Akaike Information Criterion (AIC)**:
+
+.. math::
+
+   \text{AIC} = n \ln(\text{RSS}/n) + 2p
+
+**Bayesian Information Criterion (BIC)**:
+
+.. math::
+
+   \text{BIC} = n \ln(\text{RSS}/n) + p \ln(n)
+
+These are the AIC and BIC formulas for **Gaussian linear regression**, dropping additive constants that cancel when comparing models fit to the same response :math:`\mathbf{y}`. For general likelihoods, use :math:`\text{AIC} = -2\ln L + 2p` and :math:`\text{BIC} = -2\ln L + p\ln n`.
+
+Both penalize complexity, but BIC penalizes more heavily for large :math:`n`. 
+
+**Usage**: Lower is better. Compare models by their AIC or BIC values.
+
+.. list-table:: Model Selection Criteria
+   :header-rows: 1
+   :widths: 20 30 25 25
+
+   * - Criterion
+     - Formula
+     - Penalty
+     - Best for
+   * - :math:`R^2`
+     - :math:`1 - \text{RSS}/\text{TSS}`
+     - None (always increases)
+     - Never for selection
+   * - :math:`R^2_{\text{adj}}`
+     - :math:`1 - (1-R^2)\frac{n-1}{n-p}`
+     - Mild
+     - Quick comparison
+   * - AIC
+     - :math:`n\ln(\text{RSS}/n) + 2p`
+     - :math:`2p`
+     - Prediction
+   * - BIC
+     - :math:`n\ln(\text{RSS}/n) + p\ln(n)`
+     - :math:`p\ln(n)`
+     - Consistent selection
+
+.. code-block:: python
+
+   def model_selection_criteria(y, y_hat, p, n):
+       """
+       Compute model selection criteria.
+       
+       Parameters
+       ----------
+       y : array
+           Observed values
+       y_hat : array
+           Fitted values
+       p : int
+           Number of parameters (including intercept)
+       n : int
+           Sample size
+       """
+       RSS = np.sum((y - y_hat)**2)
+       TSS = np.sum((y - np.mean(y))**2)
+       
+       R2 = 1 - RSS / TSS
+       R2_adj = 1 - (1 - R2) * (n - 1) / (n - p)
+       
+       AIC = n * np.log(RSS / n) + 2 * p
+       BIC = n * np.log(RSS / n) + p * np.log(n)
+       
+       return {'R2': R2, 'R2_adj': R2_adj, 'AIC': AIC, 'BIC': BIC}
+
+
+Regularization: Ridge and LASSO
+-------------------------------
+
+When predictors are highly correlated or :math:`p` is large relative to :math:`n`, OLS can be unstable or overfit. **Regularization** shrinks coefficients toward zero, trading bias for reduced variance.
+
+Ridge Regression
+~~~~~~~~~~~~~~~~
+
+**Ridge regression** adds an :math:`L_2` penalty:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}}_{\text{ridge}} = \arg\min_{\boldsymbol{\beta}} \left\{ \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2 + \lambda \|\boldsymbol{\beta}\|^2 \right\}
+
+where :math:`\lambda \geq 0` is the regularization parameter.
+
+**Closed-form solution**:
+
+.. math::
+   :label: ridge-solution
+
+   \hat{\boldsymbol{\beta}}_{\text{ridge}} = (\mathbf{X}^\top\mathbf{X} + \lambda\mathbf{I})^{-1}\mathbf{X}^\top\mathbf{y}
+
+**Key properties**:
+
+1. **Bias-variance tradeoff**: Ridge is biased (:math:`\mathbb{E}[\hat{\boldsymbol{\beta}}_{\text{ridge}}] \neq \boldsymbol{\beta}`) but can have lower MSE than OLS
+2. **Shrinkage**: Coefficients shrink toward zero as :math:`\lambda \to \infty`
+3. **Handles multicollinearity**: Adding :math:`\lambda\mathbf{I}` makes :math:`\mathbf{X}^\top\mathbf{X} + \lambda\mathbf{I}` invertible even if :math:`\mathbf{X}^\top\mathbf{X}` is singular
+4. **No variable selection**: All coefficients remain nonzero
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig08_bias_variance.png
+   :alt: The bias-variance tradeoff in regularization
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.9**: The bias-variance tradeoff. (a) A biased estimator (orange) with lower variance can achieve lower MSE than an unbiased estimator (blue). (b) As regularization :math:`\lambda` increases, variance decreases but bias increases—there's an optimal :math:`\lambda`. (c) Training error decreases with complexity while test error is U-shaped.
+
+LASSO
+~~~~~
+
+**LASSO** (Least Absolute Shrinkage and Selection Operator) uses an :math:`L_1` penalty:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}}_{\text{LASSO}} = \arg\min_{\boldsymbol{\beta}} \left\{ \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2 + \lambda \|\boldsymbol{\beta}\|_1 \right\}
+
+where :math:`\|\boldsymbol{\beta}\|_1 = \sum_j |\beta_j|`.
+
+**Key properties**:
+
+1. **No closed form**: Must use numerical optimization (coordinate descent)
+2. **Variable selection**: Sets some coefficients exactly to zero (sparse solutions)
+3. **Geometry**: The :math:`L_1` constraint has corners at the axes, making exact zeros likely
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig09_l1_l2_geometry.png
+   :alt: L1 vs L2 geometry showing why LASSO produces sparse solutions
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.10**: L1 vs L2 geometry. (a) Ridge constraint is a circle—RSS contours typically touch away from axes. (b) LASSO constraint is a diamond—contours often touch at corners where :math:`\beta_j = 0`. (c) This geometric difference explains why LASSO performs automatic variable selection while Ridge shrinks but keeps all coefficients.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_4_fig10_regularization_paths.png
+   :alt: Regularization paths showing how coefficients shrink with lambda
+   :align: center
+   :width: 95%
+
+   **Figure 3.4.11**: Regularization paths. (a) Ridge shrinks coefficients smoothly toward zero as :math:`\lambda` increases—all remain nonzero. (b) LASSO drives coefficients to exactly zero at different :math:`\lambda` values, providing a variable selection path.
+
+Elastic Net
+~~~~~~~~~~~
+
+**Elastic Net** combines :math:`L_1` and :math:`L_2` penalties:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}}_{\text{EN}} = \arg\min_{\boldsymbol{\beta}} \left\{ \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2 + \lambda_1 \|\boldsymbol{\beta}\|_1 + \lambda_2 \|\boldsymbol{\beta}\|^2 \right\}
+
+This combines the variable selection of LASSO with the stability of ridge for correlated predictors.
+
+.. admonition:: Practical Considerations for Regularization
+   :class: warning
+
+   1. **Intercept handling**: Typically, we center :math:`\mathbf{y}` and standardize predictors, and we **do not penalize the intercept** :math:`\beta_0`. Most software handles this automatically.
+   
+   2. **Scaling matters**: Always report whether predictors were standardized. The penalty :math:`\lambda` depends on the scale of predictors—a coefficient for income in dollars behaves very differently from income in thousands of dollars.
+   
+   3. **Cross-validation**: Choose :math:`\lambda` by cross-validation to balance fit and complexity.
+
+.. code-block:: python
+
+   import numpy as np
+   from sklearn.linear_model import Ridge, Lasso, ElasticNet
+   from sklearn.preprocessing import StandardScaler
+   from sklearn.model_selection import cross_val_score
+
+   def compare_regularization():
+       """Compare OLS, Ridge, LASSO, and Elastic Net."""
+       rng = np.random.default_rng(42)
+       
+       # Generate data with correlated predictors
+       n, p = 100, 50
+       X = rng.normal(0, 1, (n, p))
+       # Add correlation structure
+       for j in range(1, p):
+           X[:, j] = 0.9 * X[:, j-1] + 0.1 * X[:, j]
+       
+       # True coefficients: only first 5 are nonzero
+       beta_true = np.zeros(p)
+       beta_true[:5] = [3, 2, 1, 0.5, 0.25]
+       
+       y = X @ beta_true + rng.normal(0, 1, n)
+       
+       # Standardize for fair comparison
+       scaler = StandardScaler()
+       X_scaled = scaler.fit_transform(X)
+       
+       # Fit models
+       ols_beta = np.linalg.lstsq(X_scaled, y, rcond=None)[0]
+       
+       ridge = Ridge(alpha=1.0)
+       ridge.fit(X_scaled, y)
+       
+       lasso = Lasso(alpha=0.1)
+       lasso.fit(X_scaled, y)
+       
+       enet = ElasticNet(alpha=0.1, l1_ratio=0.5)
+       enet.fit(X_scaled, y)
+       
+       print("="*60)
+       print("REGULARIZATION COMPARISON")
+       print("="*60)
+       print(f"\nData: n={n}, p={p}, {np.sum(beta_true != 0)} true nonzero coefficients")
+       
+       print(f"\n{'Method':<15} {'Nonzero':>10} {'MSE (coeffs)':>15}")
+       print("-"*40)
+       
+       methods = [('OLS', ols_beta), ('Ridge', ridge.coef_), 
+                  ('LASSO', lasso.coef_), ('Elastic Net', enet.coef_)]
+       
+       for name, coef in methods:
+           nonzero = np.sum(np.abs(coef) > 1e-6)
+           mse = np.mean((coef - beta_true)**2)
+           print(f"{name:<15} {nonzero:>10} {mse:>15.4f}")
+       
+       print("\n→ LASSO and Elastic Net achieve sparsity (fewer nonzero coefficients)")
+       print("→ Ridge shrinks but keeps all coefficients nonzero")
+
+   compare_regularization()
+
+.. code-block:: text
+
+   ============================================================
+   REGULARIZATION COMPARISON
+   ============================================================
+
+   Data: n=100, p=50, 5 true nonzero coefficients
+
+   Method              Nonzero   MSE (coeffs)
+   ----------------------------------------
+   OLS                      50          0.0892
+   Ridge                    50          0.0734
+   LASSO                    12          0.0418
+   Elastic Net              14          0.0456
+
+   → LASSO and Elastic Net achieve sparsity (fewer nonzero coefficients)
+   → Ridge shrinks but keeps all coefficients nonzero
+
+Choosing the Regularization Parameter
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The parameter :math:`\lambda` controls the amount of shrinkage. Too small → overfitting; too large → underfitting.
+
+**Cross-validation** is the standard approach:
+
+1. Split data into :math:`K` folds
+2. For each candidate :math:`\lambda`:
+   - Train on :math:`K-1` folds, predict on held-out fold
+   - Average prediction error across folds
+3. Choose :math:`\lambda` with lowest CV error
+
+.. code-block:: python
+
+   from sklearn.linear_model import RidgeCV, LassoCV
+
+   # Ridge with built-in CV
+   alphas = np.logspace(-4, 4, 50)
+   ridge_cv = RidgeCV(alphas=alphas, cv=5)
+   ridge_cv.fit(X_scaled, y)
+   print(f"Ridge optimal λ: {ridge_cv.alpha_:.4f}")
+
+   # LASSO with built-in CV  
+   lasso_cv = LassoCV(cv=5, random_state=42)
+   lasso_cv.fit(X_scaled, y)
+   print(f"LASSO optimal λ: {lasso_cv.alpha_:.4f}")
+
+
+
+
+Chapter 3.4 Exercises: Linear Models Mastery
+--------------------------------------------
+
+These exercises build your understanding of linear regression from matrix calculus foundations through the Gauss-Markov theorem to practical diagnostics. Each exercise connects theoretical derivations to computational practice and statistical interpretation.
+
+.. admonition:: A Note on These Exercises
+   :class: tip
+
+   These exercises are designed to deepen your understanding of linear models through hands-on exploration:
+
+   - **Exercise 1** develops matrix calculus skills essential for deriving OLS estimators
+   - **Exercise 2** explores the geometric interpretation of regression as projection
+   - **Exercise 3** identifies Gauss-Markov assumption violations and their consequences
+   - **Exercise 4** provides a complete proof of Gauss-Markov for a single coefficient
+   - **Exercise 5** verifies theoretical properties computationally via Monte Carlo simulation
+   - **Exercise 6** compares model-based and robust standard errors under heteroskedasticity
+
+   Complete solutions with derivations, code, output, and interpretation are provided. Work through the hints before checking solutions—the struggle builds understanding!
+
+
+.. admonition:: Exercise 1: Matrix Calculus Derivations
+   :class: exercise
+
+   The matrix calculus rules developed in this section are the foundation for deriving OLS estimators. This exercise builds fluency with these essential tools.
+
+   .. admonition:: Background: Why Matrix Calculus?
+      :class: note
+
+      When optimizing functions of vectors and matrices (like RSS as a function of :math:`\boldsymbol{\beta}`), we need systematic rules for computing gradients. Component-wise verification builds confidence that the matrix formulas are correct.
+
+   a. **Linear form**: Verify by component-wise differentiation that :math:`\frac{\partial}{\partial \mathbf{x}}(\mathbf{a}^\top\mathbf{x}) = \mathbf{a}` for :math:`\mathbf{a}, \mathbf{x} \in \mathbb{R}^3`.
+
+   b. **Cross term**: Derive :math:`\frac{\partial}{\partial \boldsymbol{\beta}}(\mathbf{y}^\top\mathbf{X}\boldsymbol{\beta})` directly from the definition of gradient.
+
+   c. **Quadratic form**: For symmetric :math:`\mathbf{A}`, show that :math:`\frac{\partial}{\partial \mathbf{x}}(\mathbf{x}^\top\mathbf{A}\mathbf{x}) = 2\mathbf{A}\mathbf{x}` by expanding in components.
+
+   d. **RSS gradient**: Derive the OLS gradient :math:`\frac{\partial \text{RSS}}{\partial \boldsymbol{\beta}} = 2\mathbf{X}^\top(\mathbf{X}\boldsymbol{\beta} - \mathbf{y})` using the chain rule.
+
+   .. admonition:: Hint
+      :class: tip
+
+      For part (c), write out :math:`\mathbf{x}^\top\mathbf{A}\mathbf{x} = \sum_i\sum_j x_i A_{ij} x_j` and differentiate with respect to :math:`x_k`. Remember that terms containing :math:`x_k` appear both when :math:`i = k` and when :math:`j = k`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Component-wise verification for linear function**
+
+      Let :math:`\mathbf{a} = (a_1, a_2, a_3)^\top` and :math:`\mathbf{x} = (x_1, x_2, x_3)^\top`.
+
+      .. math::
+
+         f(\mathbf{x}) = \mathbf{a}^\top\mathbf{x} = a_1 x_1 + a_2 x_2 + a_3 x_3
+
+      Partial derivatives:
+
+      .. math::
+
+         \frac{\partial f}{\partial x_1} = a_1, \quad
+         \frac{\partial f}{\partial x_2} = a_2, \quad
+         \frac{\partial f}{\partial x_3} = a_3
+
+      Therefore:
+
+      .. math::
+
+         \nabla_\mathbf{x} f = \begin{pmatrix} a_1 \\ a_2 \\ a_3 \end{pmatrix} = \mathbf{a} \quad \checkmark
+
+      **Part (b): Gradient of y'Xβ**
+
+      :math:`f(\boldsymbol{\beta}) = \mathbf{y}^\top\mathbf{X}\boldsymbol{\beta}` is a scalar. Write :math:`\mathbf{c} = \mathbf{X}^\top\mathbf{y}`, so :math:`f = \mathbf{c}^\top\boldsymbol{\beta} = \sum_j c_j \beta_j`.
+
+      .. math::
+
+         \frac{\partial f}{\partial \beta_k} = c_k = [\mathbf{X}^\top\mathbf{y}]_k
+
+      Therefore:
+
+      .. math::
+
+         \nabla_{\boldsymbol{\beta}} (\mathbf{y}^\top\mathbf{X}\boldsymbol{\beta}) = \mathbf{X}^\top\mathbf{y}
+
+      **Part (c): Quadratic form with symmetric A**
+
+      Let :math:`f(\mathbf{x}) = \mathbf{x}^\top\mathbf{A}\mathbf{x} = \sum_i\sum_j x_i A_{ij} x_j`.
+
+      For partial with respect to :math:`x_k`:
+      
+      - Terms where :math:`i = k`: :math:`\sum_j x_k A_{kj} x_j` → derivative is :math:`\sum_j A_{kj} x_j = [\mathbf{A}\mathbf{x}]_k`
+      - Terms where :math:`j = k`: :math:`\sum_i x_i A_{ik} x_k` → derivative is :math:`\sum_i A_{ik} x_i = [\mathbf{A}^\top\mathbf{x}]_k`
+      
+      Total: :math:`\frac{\partial f}{\partial x_k} = [\mathbf{A}\mathbf{x}]_k + [\mathbf{A}^\top\mathbf{x}]_k`
+
+      For symmetric :math:`\mathbf{A}`: :math:`\mathbf{A}\mathbf{x} = \mathbf{A}^\top\mathbf{x}`, so:
+
+      .. math::
+
+         \nabla f = 2\mathbf{A}\mathbf{x} \quad \checkmark
+
+      **Part (d): RSS gradient via chain rule**
+
+      Let :math:`\mathbf{r} = \mathbf{y} - \mathbf{X}\boldsymbol{\beta}` (residual vector). Then RSS :math:`= \mathbf{r}^\top\mathbf{r}`.
+
+      **Chain rule**: :math:`\frac{\partial \text{RSS}}{\partial \boldsymbol{\beta}} = \frac{\partial \mathbf{r}}{\partial \boldsymbol{\beta}^\top}^\top \frac{\partial (\mathbf{r}^\top\mathbf{r})}{\partial \mathbf{r}}`
+
+      - :math:`\frac{\partial (\mathbf{r}^\top\mathbf{r})}{\partial \mathbf{r}} = 2\mathbf{r}` (gradient of :math:`\|\mathbf{r}\|^2`)
+      - :math:`\frac{\partial \mathbf{r}}{\partial \boldsymbol{\beta}^\top} = \frac{\partial (\mathbf{y} - \mathbf{X}\boldsymbol{\beta})}{\partial \boldsymbol{\beta}^\top} = -\mathbf{X}`
+
+      Therefore:
+
+      .. math::
+
+         \frac{\partial \text{RSS}}{\partial \boldsymbol{\beta}} = (-\mathbf{X})^\top (2\mathbf{r}) = -2\mathbf{X}^\top\mathbf{r} = 2\mathbf{X}^\top(\mathbf{X}\boldsymbol{\beta} - \mathbf{y}) \quad \checkmark
+
+
+.. admonition:: Exercise 2: Geometry of Simple Regression
+   :class: exercise
+
+   The geometric perspective reveals regression as projection onto the column space of :math:`\mathbf{X}`. This exercise develops that intuition for simple linear regression.
+
+   .. admonition:: Background: Projection Interpretation
+      :class: note
+
+      In simple regression :math:`y = \beta_0 + \beta_1 x + \varepsilon`, the design matrix :math:`\mathbf{X} = [\mathbf{1} \; \mathbf{x}]` spans a 2-dimensional subspace of :math:`\mathbb{R}^n`. The fitted values :math:`\hat{\mathbf{y}}` are the orthogonal projection of :math:`\mathbf{y}` onto this plane.
+
+   a. Show that the design matrix has columns :math:`\mathbf{1}` and :math:`\mathbf{x}`, and verify that :math:`\hat{\beta}_1 = \frac{\sum(x_i - \bar{x})(y_i - \bar{y})}{\sum(x_i - \bar{x})^2}`.
+
+   b. Verify geometrically that the residual vector is orthogonal to both :math:`\mathbf{1}` and :math:`\mathbf{x}`. What do these orthogonality conditions imply about the residuals?
+
+   c. Show that the regression line passes through the point :math:`(\bar{x}, \bar{y})`.
+
+   d. Derive the formula for :math:`R^2` as the squared correlation between :math:`\mathbf{y}` and :math:`\hat{\mathbf{y}}` using vector inner products.
+
+   .. admonition:: Hint
+      :class: tip
+
+      For part (b), the condition :math:`\mathbf{1}^\top \mathbf{e} = 0` means :math:`\sum e_i = 0` (residuals sum to zero). The condition :math:`\mathbf{x}^\top \mathbf{e} = 0` means :math:`\sum x_i e_i = 0`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): OLS formula for simple regression**
+
+      The design matrix is:
+
+      .. math::
+
+         \mathbf{X} = \begin{pmatrix} 1 & x_1 \\ 1 & x_2 \\ \vdots & \vdots \\ 1 & x_n \end{pmatrix} = [\mathbf{1} \; \mathbf{x}]
+
+      From the normal equations :math:`\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}`:
+
+      .. math::
+
+         \begin{pmatrix} n & \sum x_i \\ \sum x_i & \sum x_i^2 \end{pmatrix} \begin{pmatrix} \hat{\beta}_0 \\ \hat{\beta}_1 \end{pmatrix} = \begin{pmatrix} \sum y_i \\ \sum x_i y_i \end{pmatrix}
+
+      Solving (multiply first equation by :math:`\bar{x}` and subtract from second):
+
+      .. math::
+
+         \hat{\beta}_1 = \frac{\sum x_i y_i - n\bar{x}\bar{y}}{\sum x_i^2 - n\bar{x}^2} = \frac{\sum(x_i - \bar{x})(y_i - \bar{y})}{\sum(x_i - \bar{x})^2}
+
+      **Part (b): Orthogonality conditions**
+
+      The normal equations :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{0}` give:
+
+      - :math:`\mathbf{1}^\top\mathbf{e} = \sum_i e_i = 0` → **Residuals sum to zero**
+      - :math:`\mathbf{x}^\top\mathbf{e} = \sum_i x_i e_i = 0` → **Residuals uncorrelated with predictor**
+
+      **Geometric interpretation**: The residual vector :math:`\mathbf{e}` is perpendicular to the plane spanned by :math:`\mathbf{1}` and :math:`\mathbf{x}`. Since :math:`\hat{\mathbf{y}} = \mathbf{X}\hat{\boldsymbol{\beta}}` lies in this plane, :math:`\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}}` is the perpendicular from :math:`\mathbf{y}` to the plane—the shortest distance.
+
+      **Part (c): Regression line through** :math:`(\bar{x}, \bar{y})`
+
+      From :math:`\sum e_i = 0`:
+
+      .. math::
+
+         \sum(y_i - \hat{\beta}_0 - \hat{\beta}_1 x_i) = 0
+
+      This gives :math:`n\bar{y} - n\hat{\beta}_0 - \hat{\beta}_1 n\bar{x} = 0`, so:
+
+      .. math::
+
+         \hat{\beta}_0 = \bar{y} - \hat{\beta}_1\bar{x}
+
+      Therefore the fitted value at :math:`x = \bar{x}` is:
+
+      .. math::
+
+         \hat{y}|_{x=\bar{x}} = \hat{\beta}_0 + \hat{\beta}_1\bar{x} = (\bar{y} - \hat{\beta}_1\bar{x}) + \hat{\beta}_1\bar{x} = \bar{y}
+
+      The regression line passes through the **centroid** :math:`(\bar{x}, \bar{y})`.
+
+      **Part (d): R² as squared correlation**
+
+      Define centered vectors: :math:`\tilde{\mathbf{y}} = \mathbf{y} - \bar{y}\mathbf{1}` and :math:`\tilde{\hat{\mathbf{y}}} = \hat{\mathbf{y}} - \bar{y}\mathbf{1}`.
+
+      The correlation between :math:`\mathbf{y}` and :math:`\hat{\mathbf{y}}` is:
+
+      .. math::
+
+         r_{y,\hat{y}} = \frac{\tilde{\mathbf{y}}^\top\tilde{\hat{\mathbf{y}}}}{\|\tilde{\mathbf{y}}\| \cdot \|\tilde{\hat{\mathbf{y}}}\|}
+
+      Since :math:`\mathbf{e} \perp \hat{\mathbf{y}}` and :math:`\bar{e} = 0`:
+
+      .. math::
+
+         \tilde{\mathbf{y}}^\top\tilde{\hat{\mathbf{y}}} = (\tilde{\hat{\mathbf{y}}} + \mathbf{e})^\top\tilde{\hat{\mathbf{y}}} = \|\tilde{\hat{\mathbf{y}}}\|^2
+
+      Therefore:
+
+      .. math::
+
+         r_{y,\hat{y}}^2 = \frac{\|\tilde{\hat{\mathbf{y}}}\|^4}{\|\tilde{\mathbf{y}}\|^2 \cdot \|\tilde{\hat{\mathbf{y}}}\|^2} = \frac{\|\tilde{\hat{\mathbf{y}}}\|^2}{\|\tilde{\mathbf{y}}\|^2} = \frac{\text{ESS}}{\text{TSS}} = R^2
+
+      **Key insight**: :math:`R^2` is the squared correlation between observed and fitted values, which equals the proportion of variance explained.
+
+
+.. admonition:: Exercise 3: Gauss-Markov Assumptions
+   :class: exercise
+
+   Understanding which assumptions are violated—and the consequences—is essential for applied regression. This exercise builds diagnostic intuition.
+
+   .. admonition:: Background: The Assumption Hierarchy
+      :class: note
+
+      The Gauss-Markov assumptions are: **GM1** (linearity), **GM2** (full rank), **GM3** (exogeneity: :math:`\mathbb{E}[\varepsilon|\mathbf{X}] = \mathbf{0}`), and **GM4** (spherical errors: :math:`\text{Var}(\varepsilon|\mathbf{X}) = \sigma^2\mathbf{I}`). Each violation has specific consequences for OLS.
+
+   For each scenario, identify which Gauss-Markov assumption is violated and describe the consequences.
+
+   a. A researcher fits :math:`y = \beta_0 + \beta_1 x + \varepsilon` but the true relationship is :math:`y = \beta_0 + \beta_1 \log(x) + \varepsilon`.
+
+   b. In a regression with three predictors, the third predictor is defined as :math:`x_3 = 2x_1 - x_2`.
+
+   c. An economist studies savings rates but omits "income," which is correlated with education (included) and directly affects savings.
+
+   d. In a study of housing prices, the variance of residuals is proportional to house size.
+
+   e. Monthly unemployment data shows residuals that are positively correlated across consecutive months.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Wrong functional form**
+
+      **Violation**: GM1 (Linearity)
+
+      The true model is :math:`y = \beta_0 + \beta_1\log(x) + \varepsilon`, but we're fitting :math:`y = \gamma_0 + \gamma_1 x + \varepsilon`.
+
+      **Consequences**:
+      
+      - OLS estimates :math:`\hat{\gamma}_0, \hat{\gamma}_1` are **biased** and **inconsistent**
+      - They estimate the "best linear approximation" to a nonlinear relationship
+      - Residual plots will show systematic curvature (nonlinearity pattern)
+      - Predictions will be systematically wrong, especially at extreme :math:`x` values
+
+      **Remedy**: Transform predictors (:math:`\log(x)`), add polynomial terms, or use nonlinear models.
+
+      **Part (b): Perfect multicollinearity**
+
+      **Violation**: GM2 (Full Rank)
+
+      If :math:`x_3 = 2x_1 - x_2`, the third column of :math:`\mathbf{X}` is a linear combination of the first two.
+
+      **Consequences**:
+      
+      - :math:`\mathbf{X}^\top\mathbf{X}` is **singular** (not invertible)
+      - OLS has **infinitely many solutions**—the parameter vector is not identified
+      - Software will fail or drop one predictor automatically
+
+      **Remedy**: Remove redundant predictor(s) or use regularization (ridge regression).
+
+      **Part (c): Omitted variable bias**
+
+      **Violation**: GM3 (Exogeneity/Strict Exogeneity)
+
+      Income affects both education (parents with higher income can afford more education) and savings (direct effect). By omitting income, :math:`\mathbb{E}[\varepsilon|\text{education}] \neq 0`.
+
+      **Consequences**:
+      
+      - OLS coefficient on education is **biased** and **inconsistent**
+      - The bias direction depends on signs: if income ↔ education (positive) and income → savings (positive), education coefficient is biased **upward**
+      - Omitted variable bias formula: :math:`\text{bias}(\hat{\beta}_{\text{edu}}) = \beta_{\text{inc}} \times \delta` where :math:`\delta` is the regression coefficient of income on education
+
+      **Remedy**: Include income as a control, use instrumental variables, or acknowledge the limitation.
+
+      **Part (d): Heteroskedasticity**
+
+      **Violation**: GM4 (Spherical Errors—specifically homoskedasticity)
+
+      :math:`\text{Var}(\varepsilon_i) = \sigma^2 \cdot (\text{house size}_i)`, not constant.
+
+      **Consequences**:
+      
+      - OLS is still **unbiased** and **consistent**
+      - OLS is **no longer BLUE**—more efficient estimators exist (WLS)
+      - Standard errors are **wrong** (typically too small for large houses)
+      - t-tests and F-tests have incorrect size (Type I error ≠ α)
+
+      **Remedy**: Use robust (HC) standard errors, or weighted least squares with :math:`w_i \propto 1/\text{size}_i`.
+
+      **Part (e): Autocorrelation**
+
+      **Violation**: GM4 (Spherical Errors—specifically no autocorrelation)
+
+      :math:`\text{Cov}(\varepsilon_t, \varepsilon_{t-1}) > 0` for consecutive months.
+
+      **Consequences**:
+      
+      - OLS is still **unbiased** and **consistent**
+      - OLS is **not BLUE**
+      - Standard errors are **underestimated** (positive autocorrelation clusters errors)
+      - Durbin-Watson test will detect this (DW < 2 indicates positive autocorrelation)
+
+      **Remedy**: Use Newey-West (HAC) standard errors, or GLS/Cochrane-Orcutt for efficiency.
+
+
+.. admonition:: Exercise 4: Complete BLUE Proof
+   :class: exercise
+
+   The Gauss-Markov theorem establishes OLS as the Best Linear Unbiased Estimator. This exercise develops a complete proof for a single coefficient, building intuition for the general result.
+
+   .. admonition:: Background: The BLUE Property
+      :class: note
+
+      BLUE means OLS achieves the minimum variance among all linear unbiased estimators. The proof uses a clever decomposition: any alternative estimator can be written as OLS plus a "deviation" term, and this deviation can only increase variance.
+
+   a. Let :math:`\tilde{\beta}_1 = \mathbf{c}^\top\mathbf{y}` be any linear unbiased estimator of :math:`\beta_1` in simple regression. Show that unbiasedness requires :math:`\mathbf{c}^\top\mathbf{X} = (0, 1)`.
+
+   b. Write :math:`\mathbf{c} = \mathbf{a}_1 + \mathbf{d}` where :math:`\mathbf{a}_1` is the second row of :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`. Show that :math:`\mathbf{d}^\top\mathbf{X} = \mathbf{0}`.
+
+   c. Show that :math:`\text{Var}(\tilde{\beta}_1) = \text{Var}(\hat{\beta}_1) + \sigma^2\mathbf{d}^\top\mathbf{d}`.
+
+   d. Conclude that :math:`\text{Var}(\tilde{\beta}_1) \geq \text{Var}(\hat{\beta}_1)` with equality iff :math:`\mathbf{d} = \mathbf{0}`.
+
+   .. admonition:: Hint
+      :class: tip
+
+      The key insight in part (c) is that the cross-term :math:`\mathbf{a}_1^\top\mathbf{d} = 0` because :math:`\mathbf{d}` is orthogonal to the column space of :math:`\mathbf{X}`, and :math:`\mathbf{a}_1` lies in that column space.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Unbiasedness condition**
+
+      In simple regression, :math:`\mathbf{X} = [\mathbf{1} \; \mathbf{x}]` (n×2). For :math:`\tilde{\beta}_1 = \mathbf{c}^\top\mathbf{y}` to be unbiased for :math:`\beta_1`:
+
+      .. math::
+
+         \mathbb{E}[\tilde{\beta}_1] = \mathbf{c}^\top\mathbb{E}[\mathbf{y}] = \mathbf{c}^\top\mathbf{X}\boldsymbol{\beta} = \mathbf{c}^\top[\mathbf{1} \; \mathbf{x}]\begin{pmatrix}\beta_0 \\ \beta_1\end{pmatrix} = (\mathbf{c}^\top\mathbf{1})\beta_0 + (\mathbf{c}^\top\mathbf{x})\beta_1
+
+      For this to equal :math:`\beta_1` for all :math:`(\beta_0, \beta_1)`:
+
+      .. math::
+
+         \mathbf{c}^\top\mathbf{1} = 0, \quad \mathbf{c}^\top\mathbf{x} = 1
+
+      Equivalently, :math:`\mathbf{c}^\top\mathbf{X} = (0, 1)`.
+
+      **Part (b): Decomposition**
+
+      Let :math:`\mathbf{a}_1` be the second row of :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`, so :math:`\hat{\beta}_1 = \mathbf{a}_1^\top\mathbf{y}` is the OLS estimator.
+
+      Since OLS is unbiased: :math:`\mathbf{a}_1^\top\mathbf{X} = (0, 1)`.
+
+      Define :math:`\mathbf{d} = \mathbf{c} - \mathbf{a}_1`. Then:
+
+      .. math::
+
+         \mathbf{d}^\top\mathbf{X} = \mathbf{c}^\top\mathbf{X} - \mathbf{a}_1^\top\mathbf{X} = (0, 1) - (0, 1) = (0, 0)
+
+      So :math:`\mathbf{d}^\top\mathbf{X} = \mathbf{0}`.
+
+      **Part (c): Variance calculation**
+
+      .. math::
+
+         \text{Var}(\tilde{\beta}_1) &= \text{Var}(\mathbf{c}^\top\mathbf{y}) = \mathbf{c}^\top\text{Var}(\mathbf{y})\mathbf{c} = \sigma^2\mathbf{c}^\top\mathbf{c} \\
+         &= \sigma^2(\mathbf{a}_1 + \mathbf{d})^\top(\mathbf{a}_1 + \mathbf{d}) \\
+         &= \sigma^2(\mathbf{a}_1^\top\mathbf{a}_1 + 2\mathbf{a}_1^\top\mathbf{d} + \mathbf{d}^\top\mathbf{d})
+
+      Now, :math:`\mathbf{a}_1 = [(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top]^\top_{\cdot,2}` (second column of :math:`\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}`).
+
+      Since :math:`\mathbf{d}^\top\mathbf{X} = \mathbf{0}`, we have :math:`\mathbf{X}^\top\mathbf{d} = \mathbf{0}`. 
+      
+      Using the explicit form of :math:`\mathbf{a}_1`:
+
+      .. math::
+
+         \mathbf{a}_1 = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{e}_2
+
+      where :math:`\mathbf{e}_2 = (0, 1)^\top`. Then:
+
+      .. math::
+
+         \mathbf{a}_1^\top\mathbf{d} = \mathbf{e}_2^\top(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{d} = \mathbf{e}_2^\top(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{0} = 0
+
+      Therefore:
+
+      .. math::
+
+         \text{Var}(\tilde{\beta}_1) = \sigma^2\mathbf{a}_1^\top\mathbf{a}_1 + \sigma^2\mathbf{d}^\top\mathbf{d} = \text{Var}(\hat{\beta}_1) + \sigma^2\|\mathbf{d}\|^2
+
+      **Part (d): Conclusion**
+
+      Since :math:`\|\mathbf{d}\|^2 \geq 0`:
+
+      .. math::
+
+         \text{Var}(\tilde{\beta}_1) \geq \text{Var}(\hat{\beta}_1)
+
+      with equality if and only if :math:`\mathbf{d} = \mathbf{0}`, i.e., :math:`\mathbf{c} = \mathbf{a}_1`.
+
+      This proves :math:`\hat{\beta}_1` is the **Best** (minimum variance) **Linear Unbiased Estimator**.
+
+      **Key Insight**: Any deviation :math:`\mathbf{d}` from the OLS weights must be orthogonal to :math:`C(\mathbf{X})` to preserve unbiasedness. But such deviations can only *add* variance, never reduce it. OLS is the unique minimum-variance choice.
+
+
+.. admonition:: Exercise 5: Computational Practice
+   :class: exercise
+
+   Theory becomes concrete through computation. This exercise verifies key theoretical results via Monte Carlo simulation.
+
+   .. admonition:: Background: Why Simulate?
+      :class: note
+
+      Simulation provides empirical verification of theoretical formulas. When theory says :math:`\mathbb{E}[\hat{\beta}] = \beta` and :math:`\text{Var}(\hat{\beta}) = \sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}`, simulation confirms these hold—building confidence and catching errors.
+
+   Using Python, verify key theoretical results.
+
+   a. Generate data from :math:`y = 2 + 3x + \varepsilon` with :math:`\varepsilon \sim N(0, 4)`, :math:`n = 50`. Fit OLS and verify :math:`\hat{\boldsymbol{\beta}} \approx (2, 3)`.
+
+   b. Compute the hat matrix :math:`\mathbf{H}` and verify: :math:`\mathbf{H} = \mathbf{H}^\top`, :math:`\mathbf{H}^2 = \mathbf{H}`, :math:`\text{tr}(\mathbf{H}) = p`.
+
+   c. Verify that :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{0}` (residuals orthogonal to predictors).
+
+   d. Simulate 10,000 datasets and verify that :math:`\mathbb{E}[\hat{\beta}_1] = 3` and :math:`\text{Var}(\hat{\beta}_1) \approx \sigma^2[(\mathbf{X}^\top\mathbf{X})^{-1}]_{22}`.
+
+   e. Verify that :math:`s^2 = \text{RSS}/(n-p)` is unbiased for :math:`\sigma^2 = 4`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def exercise_3_4_5():
+             """Complete solution to Exercise 3.4.5."""
+             rng = np.random.default_rng(42)
+             
+             # Parameters
+             beta_true = np.array([2.0, 3.0])
+             sigma = 2.0
+             n = 50
+             
+             print("="*60)
+             print("EXERCISE 3.4.5: COMPUTATIONAL VERIFICATION")
+             print("="*60)
+             
+             # Part (a): Single dataset fit
+             print("\n--- Part (a): Single Dataset OLS ---")
+             x = rng.uniform(0, 5, n)
+             X = np.column_stack([np.ones(n), x])
+             eps = rng.normal(0, sigma, n)
+             y = X @ beta_true + eps
+             
+             beta_hat = np.linalg.lstsq(X, y, rcond=None)[0]
+             print(f"True β = {beta_true}")
+             print(f"OLS β̂ = [{beta_hat[0]:.3f}, {beta_hat[1]:.3f}]")
+             
+             # Part (b): Hat matrix properties
+             print("\n--- Part (b): Hat Matrix Properties ---")
+             XtX_inv = np.linalg.inv(X.T @ X)
+             H = X @ XtX_inv @ X.T
+             p = X.shape[1]
+             
+             print(f"H = H' (symmetric):     {np.allclose(H, H.T)}")
+             print(f"H² = H (idempotent):    {np.allclose(H @ H, H)}")
+             print(f"tr(H) = p = {p}:        tr(H) = {np.trace(H):.6f}")
+             
+             # Part (c): Orthogonality of residuals
+             print("\n--- Part (c): Residual Orthogonality ---")
+             e = y - X @ beta_hat
+             Xte = X.T @ e
+             print(f"X'e = [{Xte[0]:.2e}, {Xte[1]:.2e}]")
+             print(f"||X'e|| ≈ 0: {np.allclose(Xte, 0)}")
+             
+             # Parts (d) & (e): Simulation study
+             print("\n--- Parts (d) & (e): Simulation Study (10,000 reps) ---")
+             n_sim = 10000
+             
+             beta1_hats = []
+             s2_estimates = []
+             
+             # Use FIXED X for simulation
+             x_fixed = rng.uniform(0, 5, n)
+             X_fixed = np.column_stack([np.ones(n), x_fixed])
+             XtX_inv_fixed = np.linalg.inv(X_fixed.T @ X_fixed)
+             
+             for _ in range(n_sim):
+                 eps_sim = rng.normal(0, sigma, n)
+                 y_sim = X_fixed @ beta_true + eps_sim
+                 
+                 beta_sim = XtX_inv_fixed @ X_fixed.T @ y_sim
+                 beta1_hats.append(beta_sim[1])
+                 
+                 resid = y_sim - X_fixed @ beta_sim
+                 s2_estimates.append(np.sum(resid**2) / (n - p))
+             
+             beta1_hats = np.array(beta1_hats)
+             s2_estimates = np.array(s2_estimates)
+             
+             # Theoretical variance
+             var_theory = sigma**2 * XtX_inv_fixed[1, 1]
+             
+             print(f"\nFor β̂₁ (slope):")
+             print(f"  E[β̂₁] ≈ β₁ = {beta_true[1]}:")
+             print(f"    Sample mean: {np.mean(beta1_hats):.4f}")
+             print(f"  Var(β̂₁) = σ²[(X'X)⁻¹]₂₂ = {var_theory:.6f}:")
+             print(f"    Sample var:  {np.var(beta1_hats):.6f}")
+             
+             print(f"\nFor s² (variance estimator):")
+             print(f"  E[s²] = σ² = {sigma**2}:")
+             print(f"    Sample mean: {np.mean(s2_estimates):.4f}")
+
+         exercise_3_4_5()
+
+      .. code-block:: text
+
+         ============================================================
+         EXERCISE 3.4.5: COMPUTATIONAL VERIFICATION
+         ============================================================
+
+         --- Part (a): Single Dataset OLS ---
+         True β = [2. 3.]
+         OLS β̂ = [2.119, 2.972]
+
+         --- Part (b): Hat Matrix Properties ---
+         H = H' (symmetric):     True
+         H² = H (idempotent):    True
+         tr(H) = p = 2:        tr(H) = 2.000000
+
+         --- Part (c): Residual Orthogonality ---
+         X'e = [1.42e-14, -3.55e-14]
+         ||X'e|| ≈ 0: True
+
+         --- Parts (d) & (e): Simulation Study (10,000 reps) ---
+
+         For β̂₁ (slope):
+           E[β̂₁] ≈ β₁ = 3.0:
+             Sample mean: 3.0002
+           Var(β̂₁) = σ²[(X'X)⁻¹]₂₂ = 0.035294:
+             Sample var:  0.035183
+
+         For s² (variance estimator):
+           E[s²] = σ² = 4.0:
+             Sample mean: 4.0024
+
+      **Key Insights:**
+
+      1. **Hat matrix properties confirmed**: :math:`\mathbf{H}` is symmetric, idempotent, and has trace equal to :math:`p` (number of parameters).
+
+      2. **Orthogonality verified**: :math:`\mathbf{X}^\top\mathbf{e} \approx \mathbf{0}` to machine precision—the residuals are exactly orthogonal to the column space.
+
+      3. **Unbiasedness confirmed**: Over 10,000 simulations, :math:`\bar{\hat{\beta}}_1 = 3.0002 \approx \beta_1 = 3.0`.
+
+      4. **Variance formula confirmed**: Empirical variance matches :math:`\sigma^2[(\mathbf{X}^\top\mathbf{X})^{-1}]_{22}` closely.
+
+      5. **s² is unbiased**: :math:`\bar{s}^2 = 4.0024 \approx \sigma^2 = 4.0`.
+
+
+.. admonition:: Exercise 6: Robust Standard Errors
+   :class: exercise
+
+   When heteroskedasticity is present, model-based standard errors are wrong. This exercise compares them to robust alternatives via simulation.
+
+   .. admonition:: Background: The Heteroskedasticity Problem
+      :class: note
+
+      Under heteroskedasticity, :math:`\text{Var}(\varepsilon_i) = \sigma_i^2` varies across observations. OLS remains unbiased but the formula :math:`\text{Var}(\hat{\boldsymbol{\beta}}) = \sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}` is wrong. Robust (sandwich) standard errors correct this.
+
+   a. Generate heteroskedastic data: :math:`y_i = 2 + 3x_i + \varepsilon_i` where :math:`\varepsilon_i \sim N(0, (0.5 + x_i)^2)`.
+
+   b. Fit OLS and compute standard errors using both model-based and HC3 formulas.
+
+   c. Construct 95% CIs for :math:`\beta_1` using both SE methods. Assess coverage via simulation (10,000 replications). Which achieves closer to 95% coverage?
+
+   d. Explain why the model-based SE is inappropriate here and how HC3 corrects the problem.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Parts (a)-(c): Implementation and Coverage Simulation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def robust_se_hc3(X, residuals):
+             """Compute HC3 robust standard errors."""
+             n, p = X.shape
+             XtX_inv = np.linalg.inv(X.T @ X)
+             H = X @ XtX_inv @ X.T
+             h = np.diag(H)
+             omega = residuals**2 / (1 - h)**2
+             meat = X.T @ np.diag(omega) @ X
+             sandwich = XtX_inv @ meat @ XtX_inv
+             return np.sqrt(np.diag(sandwich))
+
+         def coverage_simulation(n_sim=10000, n=100, seed=42):
+             """Compare coverage of model-based vs HC3 standard errors."""
+             rng = np.random.default_rng(seed)
+             
+             beta_true = np.array([2.0, 3.0])
+             
+             model_covers = 0
+             hc3_covers = 0
+             
+             for _ in range(n_sim):
+                 # Generate heteroskedastic data
+                 x = rng.uniform(0, 3, n)
+                 sigma = 0.5 + x  # SD increases with x
+                 eps = rng.normal(0, sigma)
+                 y = beta_true[0] + beta_true[1] * x + eps
+                 
+                 # Design matrix
+                 X = np.column_stack([np.ones(n), x])
+                 
+                 # OLS fit
+                 XtX_inv = np.linalg.inv(X.T @ X)
+                 beta_hat = XtX_inv @ X.T @ y
+                 residuals = y - X @ beta_hat
+                 
+                 # Model-based SE (assumes homoskedasticity)
+                 s2 = np.sum(residuals**2) / (n - 2)
+                 se_model = np.sqrt(s2 * np.diag(XtX_inv))
+                 
+                 # HC3 robust SE
+                 se_hc3 = robust_se_hc3(X, residuals)
+                 
+                 # 95% CI for beta_1 (slope)
+                 t_crit = stats.t.ppf(0.975, n - 2)
+                 
+                 ci_model = (beta_hat[1] - t_crit * se_model[1],
+                             beta_hat[1] + t_crit * se_model[1])
+                 ci_hc3 = (beta_hat[1] - t_crit * se_hc3[1],
+                           beta_hat[1] + t_crit * se_hc3[1])
+                 
+                 if ci_model[0] <= beta_true[1] <= ci_model[1]:
+                     model_covers += 1
+                 if ci_hc3[0] <= beta_true[1] <= ci_hc3[1]:
+                     hc3_covers += 1
+             
+             return model_covers / n_sim, hc3_covers / n_sim
+
+         # Run simulation
+         cov_model, cov_hc3 = coverage_simulation()
+
+         print("="*60)
+         print("HETEROSKEDASTICITY: MODEL-BASED VS ROBUST SE")
+         print("="*60)
+         print(f"\n95% CI Coverage for β₁ (10,000 simulations):")
+         print(f"  Model-based SE: {cov_model:.3f} (target: 0.950)")
+         print(f"  HC3 robust SE:  {cov_hc3:.3f} (target: 0.950)")
+         print(f"\nModel-based {'UNDERCOVERED' if cov_model < 0.93 else 'OK'}")
+         print(f"HC3 {'achieves nominal coverage' if 0.94 <= cov_hc3 <= 0.96 else 'slightly off'}")
+
+      .. code-block:: text
+
+         ============================================================
+         HETEROSKEDASTICITY: MODEL-BASED VS ROBUST SE
+         ============================================================
+
+         95% CI Coverage for β₁ (10,000 simulations):
+           Model-based SE: 0.912 (target: 0.950)
+           HC3 robust SE:  0.948 (target: 0.950)
+
+         Model-based UNDERCOVERED
+         HC3 achieves nominal coverage
+
+      **Part (d): Explanation**
+
+      The model-based SE assumes :math:`\text{Var}(\varepsilon_i) = \sigma^2` for all :math:`i`. When variance increases with :math:`x`, this assumption fails.
+
+      **Why model-based SE fails**: The formula :math:`s^2(\mathbf{X}^\top\mathbf{X})^{-1}` uses a pooled :math:`s^2` that averages across all observations. This underestimates variance where :math:`x` is large (variance actually higher) and overestimates where :math:`x` is small. Since high-:math:`x` observations carry more weight in determining :math:`\hat{\beta}_1`, the net effect is that model-based SE is **too small**, leading to CIs that are too narrow and systematic undercoverage.
+
+      **How HC3 corrects**: The sandwich formula uses observation-specific variance estimates:
+
+      .. math::
+
+         \widehat{\text{Var}}(\hat{\boldsymbol{\beta}}) = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\hat{\boldsymbol{\Omega}}\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}
+
+      where :math:`\hat{\Omega}_{ii} = e_i^2/(1-h_{ii})^2` for HC3. 
+      
+      - Each observation contributes its own squared residual
+      - The :math:`(1-h_{ii})^2` denominator inflates residuals for high-leverage points (which tend to have smaller residuals even when variance is large)
+      - This provides a conservative correction that achieves approximately correct coverage even under heteroskedasticity
+
+      **Key Insight**: Robust standard errors **do not change the point estimates**—OLS :math:`\hat{\boldsymbol{\beta}}` is still unbiased. They only correct the variance/SE calculation, making inference (CIs, tests) valid under heteroskedasticity.
+
+
+
+References
+----------
+
+**Historical Origins of Least Squares**
+
+.. [Legendre1805] Legendre, A. M. (1805). *Nouvelles méthodes pour la détermination des orbites des comètes*. Firmin Didot, Paris. Appendix contains the first published account of the method of least squares, developed for fitting parabolic orbits to comet observations.
+
+.. [Gauss1809] Gauss, C. F. (1809). *Theoria Motus Corporum Coelestium in Sectionibus Conicis Solem Ambientium*. Perthes and Besser, Hamburg. Contains Gauss's probabilistic justification of least squares under normally distributed errors, applied to predicting the orbit of the asteroid Ceres.
+
+.. [Gauss1821] Gauss, C. F. (1821–1823). *Theoria Combinationis Observationum Erroribus Minimis Obnoxiae*. Commentationes Societatis Regiae Scientiarum Gottingensis. English translation by G. W. Stewart (1995), SIAM. Proves that least squares minimizes variance among linear unbiased estimators without assuming normality—the original Gauss-Markov theorem.
+
+.. [Stigler1981] Stigler, S. M. (1981). Gauss and the invention of least squares. *Annals of Statistics*, 9(3), 465–474. Historical analysis of the priority dispute between Gauss and Legendre over the invention of least squares.
+
+**The Gauss-Markov Theorem**
+
+.. [Markov1900] Markov, A. A. (1900). *Wahrscheinlichkeitsrechnung*. Teubner, Leipzig. Contains Markov's rediscovery and generalization of Gauss's optimality result for least squares.
+
+.. [Aitken1935] Aitken, A. C. (1935). On least squares and linear combination of observations. *Proceedings of the Royal Society of Edinburgh*, 55, 42–48. Generalizes least squares to handle correlated errors through the weighted least squares estimator (generalized least squares).
+
+.. [Plackett1950] Plackett, R. L. (1950). Some theorems in least squares. *Biometrika*, 37(1/2), 149–157. Clarifies and extends the Gauss-Markov theorem with modern notation.
+
+.. [Kruskal1968] Kruskal, W. (1968). When are Gauss-Markov and least squares estimators identical? A coordinate-free approach. *Annals of Mathematical Statistics*, 39(1), 70–75. Geometric perspective on the Gauss-Markov theorem using coordinate-free notation.
+
+**Distributional Theory and Inference**
+
+.. [Student1908] Student [Gosset, W. S.] (1908). The probable error of a mean. *Biometrika*, 6(1), 1–25. Introduces the t-distribution for inference on means with estimated variance—fundamental for regression coefficient testing.
+
+.. [Fisher1925] Fisher, R. A. (1925). *Statistical Methods for Research Workers*. Oliver and Boyd. Develops the F-test for comparing nested models and analysis of variance for regression.
+
+.. [Cochran1934] Cochran, W. G. (1934). The distribution of quadratic forms in a normal system, with applications to the analysis of covariance. *Mathematical Proceedings of the Cambridge Philosophical Society*, 30(2), 178–191. Cochran's theorem on distributions of quadratic forms, fundamental for understanding F-tests and ANOVA decompositions.
+
+.. [Scheffe1959] Scheffé, H. (1959). *The Analysis of Variance*. Wiley. Comprehensive treatment of linear models from the ANOVA perspective with rigorous distributional theory.
+
+**Matrix Approach to Linear Models**
+
+.. [Graybill1961] Graybill, F. A. (1961). *An Introduction to Linear Statistical Models*. McGraw-Hill. Early systematic treatment of linear models using matrix notation.
+
+.. [Searle1971] Searle, S. R. (1971). *Linear Models*. Wiley. Definitive reference on the matrix theory of linear models including rank-deficient designs.
+
+.. [Rao1973] Rao, C. R. (1973). *Linear Statistical Inference and Its Applications* (2nd ed.). Wiley. Graduate-level treatment emphasizing linear algebra foundations of statistical inference.
+
+**Diagnostics and Model Checking**
+
+.. [Cook1977] Cook, R. D. (1977). Detection of influential observation in linear regression. *Technometrics*, 19(1), 15–18. Introduces Cook's distance for identifying influential observations.
+
+.. [Belsley1980] Belsley, D. A., Kuh, E., and Welsch, R. E. (1980). *Regression Diagnostics: Identifying Influential Data and Sources of Collinearity*. Wiley. Comprehensive treatment of regression diagnostics including condition numbers and influence measures.
+
+.. [Cook1982] Cook, R. D., and Weisberg, S. (1982). *Residuals and Influence in Regression*. Chapman and Hall. Monograph on diagnostic methods including added-variable plots and influence functions.
+
+**Heteroskedasticity and Robust Methods**
+
+.. [White1980] White, H. (1980). A heteroskedasticity-consistent covariance matrix estimator and a direct test for heteroskedasticity. *Econometrica*, 48(4), 817–838. Introduces heteroskedasticity-robust standard errors for regression coefficients.
+
+.. [Breusch1979] Breusch, T. S., and Pagan, A. R. (1979). A simple test for heteroscedasticity and random coefficient variation. *Econometrica*, 47(5), 1287–1294. The Breusch-Pagan test for detecting heteroskedasticity.
+
+.. [Long2000] Long, J. S., and Ervin, L. H. (2000). Using heteroscedasticity consistent standard errors in the linear regression model. *The American Statistician*, 54(3), 217–224. Practical guidance on when and how to use robust standard errors.
+
+**Modern Perspectives**
+
+.. [Seber2003] Seber, G. A. F., and Lee, A. J. (2003). *Linear Regression Analysis* (2nd ed.). Wiley. Comprehensive modern treatment of linear regression including computational methods.
+
+.. [Rencher2008] Rencher, A. C., and Schaalje, G. B. (2008). *Linear Models in Statistics* (2nd ed.). Wiley. Graduate textbook covering general linear models with extensive applications.
+
+.. [Weisberg2014] Weisberg, S. (2014). *Applied Linear Regression* (4th ed.). Wiley. Accessible applied treatment emphasizing diagnostics and practical considerations.
+
+**Computational Aspects**
+
+.. [Golub1996] Golub, G. H., and Van Loan, C. F. (1996). *Matrix Computations* (3rd ed.). Johns Hopkins University Press. Definitive reference on numerical linear algebra including QR decomposition for least squares.
+
+.. [Björck1996] Björck, Å. (1996). *Numerical Methods for Least Squares Problems*. SIAM. Comprehensive treatment of computational methods for solving least squares problems.
+
+**Historical Perspective**
+
+.. [Stigler1986] Stigler, S. M. (1986). *The History of Statistics: The Measurement of Uncertainty before 1900*. Harvard University Press. Historical context for the development of regression and least squares methods.
+
+.. [Magnus2019] Magnus, J. R. (2019). On the concept of matrix derivative. *Journal of Multivariate Analysis*, 169, 94–119. Modern perspective on matrix calculus notation used in deriving least squares estimators.

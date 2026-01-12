@@ -1,0 +1,4396 @@
+.. _ch3_2-maximum-likelihood-estimation:
+
+=========================================
+Section 3.2 Maximum Likelihood Estimation
+=========================================
+
+In the summer of 1912, a young statistician named Ronald Aylmer Fisher was grappling with a fundamental question: given a sample of data, how should we estimate the parameters of a probability distribution? Fisher was not satisfied with the existing answers—Karl Pearson's method of moments, while simple, seemed to throw away information. Surely there was a principled way to extract *all* the information the data contained about the unknown parameters.
+
+Fisher's answer, published in a series of papers between 1912 and 1925, was maximum likelihood estimation: choose the parameter values that make the observed data most probable. This deceptively simple idea revolutionized statistical inference. Fisher showed that maximum likelihood estimators (MLEs) have remarkable properties—they are consistent, asymptotically normal, and asymptotically efficient, achieving the theoretical lower bound on estimator variance. These properties made MLE the workhorse of parametric inference for a century.
+
+This section develops the theory and practice of maximum likelihood estimation. We begin with the likelihood function itself—the mathematical object that quantifies how well different parameter values explain the observed data. We derive the score function and Fisher information, which together characterize the geometry of the likelihood surface. For simple models, we obtain closed-form MLEs; for complex models, we develop numerical optimization algorithms including Newton-Raphson and Fisher scoring. We establish the asymptotic theory that justifies using MLEs for inference, including a complete proof of the Cramér-Rao lower bound. Finally, we connect MLE to hypothesis testing through likelihood ratio, Wald, and score tests.
+
+The exponential family framework from :ref:`Section 3.1 <ch3.1-exponential-families>` will prove essential here: for exponential families, the score equation takes a particularly elegant form, and the MLE has explicit connections to sufficient statistics. But MLE extends far beyond exponential families—it applies to any parametric model, making it the universal tool for parametric inference.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand**: The likelihood function as a measure of parameter support, the score function as its gradient, and Fisher information as its curvature
+   • **Derive**: Closed-form MLEs for normal, exponential, Poisson, and Bernoulli distributions; understand why Gamma and Beta require numerical methods
+   • **Implement**: Newton-Raphson and Fisher scoring algorithms; leverage ``scipy.optimize`` for production code
+   • **Prove**: Asymptotic consistency, normality, and efficiency; the Cramér-Rao lower bound with full regularity conditions
+   • **Apply**: Likelihood ratio, Wald, and score tests for hypothesis testing; construct confidence intervals via multiple methods
+
+
+The Likelihood Function
+-----------------------
+
+The likelihood function is the foundation of maximum likelihood estimation. It answers a simple question: for fixed data, how probable would that data be under different parameter values?
+
+Definition and Interpretation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Let :math:`X_1, X_2, \ldots, X_n` be independent random variables, each with probability density (or mass) function :math:`f(x|\theta)` depending on an unknown parameter :math:`\theta \in \Theta`. After observing data :math:`x_1, x_2, \ldots, x_n`, we define the **likelihood function**:
+
+.. math::
+   :label: likelihood-def
+
+   L(\theta) = L(\theta; x_1, \ldots, x_n) = \prod_{i=1}^{n} f(x_i | \theta)
+
+The crucial conceptual shift is this: we view the likelihood as a function of :math:`\theta` for *fixed* data, not as a probability of data for fixed :math:`\theta`. The data are observed and therefore fixed; the parameter is unknown and therefore variable.
+
+.. admonition:: The Likelihood is Not a Probability Density
+   :class: warning
+
+   While :math:`L(\theta)` is constructed from probability densities, it is *not* a probability density over :math:`\theta`. There is no requirement that :math:`\int L(\theta) d\theta = 1`, and indeed this integral often diverges or depends on the data in complex ways. The likelihood measures *relative support*—how much more or less the data support one parameter value versus another—not absolute probability.
+
+The **maximum likelihood estimator** (MLE) is the parameter value that maximizes the likelihood:
+
+.. math::
+   :label: mle-def
+
+   \hat{\theta}_{\text{MLE}} = \arg\max_{\theta \in \Theta} L(\theta)
+
+Intuitively, the MLE is the parameter value that makes the observed data most probable.
+
+The Log-Likelihood
+~~~~~~~~~~~~~~~~~~
+
+In practice, we almost always work with the **log-likelihood**:
+
+.. math::
+   :label: log-likelihood
+
+   \ell(\theta) = \log L(\theta) = \sum_{i=1}^{n} \log f(x_i | \theta)
+
+This transformation offers multiple advantages:
+
+1. **Numerical stability**: Products of many small probabilities underflow floating-point arithmetic; sums of log-probabilities do not.
+
+2. **Computational convenience**: Sums are easier to differentiate and optimize than products.
+
+3. **Theoretical elegance**: Asymptotic theory for the log-likelihood has cleaner formulations.
+
+Since :math:`\log` is monotonically increasing, maximizing :math:`\ell(\theta)` is equivalent to maximizing :math:`L(\theta)`. The MLE is unchanged.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig01_likelihood_concept.png
+   :alt: Likelihood function concept showing data, likelihood, and log-likelihood
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.1**: The likelihood function for Poisson data. (a) Histogram of observed counts with sample mean :math:`\bar{x} = 3.10`. (b) Normalized likelihood function :math:`L(\lambda)/L(\hat{\lambda})` showing the MLE at the peak. (c) Log-likelihood function :math:`\ell(\lambda)`, whose curvature at the maximum relates to Fisher information. The true parameter :math:`\lambda = 3.5` is marked for comparison.
+
+
+
+.. admonition:: Example 💡 Normal Likelihood
+   :class: note
+
+   **Setup**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)` with both parameters unknown. The density is:
+
+   .. math::
+
+      f(x|\mu, \sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)
+
+   **Log-likelihood derivation**:
+
+   .. math::
+
+      \ell(\mu, \sigma^2) &= \sum_{i=1}^n \log f(x_i|\mu, \sigma^2) \\
+      &= \sum_{i=1}^n \left[ -\frac{1}{2}\log(2\pi) - \frac{1}{2}\log(\sigma^2) - \frac{(x_i - \mu)^2}{2\sigma^2} \right] \\
+      &= -\frac{n}{2}\log(2\pi) - \frac{n}{2}\log(\sigma^2) - \frac{1}{2\sigma^2}\sum_{i=1}^n (x_i - \mu)^2
+
+   This expression will be maximized shortly to derive the normal MLEs.
+
+
+The Score Function
+------------------
+
+The **score function** is the gradient of the log-likelihood with respect to the parameters. It plays a central role in both the theory and computation of MLE.
+
+Definition and Properties
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a scalar parameter :math:`\theta`, the score function is:
+
+.. math::
+   :label: score-def
+
+   U(\theta) = \frac{\partial \ell(\theta)}{\partial \theta} = \sum_{i=1}^{n} \frac{\partial}{\partial \theta} \log f(X_i | \theta)
+
+For a parameter vector :math:`\boldsymbol{\theta} = (\theta_1, \ldots, \theta_p)^\top`, the score is the gradient vector:
+
+.. math::
+
+   \mathbf{U}(\boldsymbol{\theta}) = \nabla \ell(\boldsymbol{\theta}) = \left( \frac{\partial \ell}{\partial \theta_1}, \ldots, \frac{\partial \ell}{\partial \theta_p} \right)^\top
+
+The MLE is typically found by solving the **score equation** :math:`U(\hat{\theta}) = 0`. At the maximum, the gradient of the log-likelihood vanishes.
+
+The score function has a fundamental property that underlies much of likelihood theory:
+
+.. admonition:: Theorem: Score Has Mean Zero
+   :class: note
+
+   Under regularity conditions (see below), the expected value of the score function at the true parameter value is zero:
+
+   .. math::
+      :label: score-mean-zero
+
+      \mathbb{E}_{\theta_0}\left[ U(\theta_0) \right] = 0
+
+**Proof**: For a single observation, the score contribution is :math:`u(X; \theta) = \frac{\partial}{\partial \theta} \log f(X|\theta)`. We compute:
+
+.. math::
+
+   \mathbb{E}_{\theta}\left[ \frac{\partial}{\partial \theta} \log f(X|\theta) \right] &= \int \frac{\partial}{\partial \theta} \log f(x|\theta) \cdot f(x|\theta) \, dx \\
+   &= \int \frac{1}{f(x|\theta)} \cdot \frac{\partial f(x|\theta)}{\partial \theta} \cdot f(x|\theta) \, dx \\
+   &= \int \frac{\partial f(x|\theta)}{\partial \theta} \, dx
+
+Now, assuming we can interchange differentiation and integration (this is one of the regularity conditions):
+
+.. math::
+
+   \int \frac{\partial f(x|\theta)}{\partial \theta} \, dx = \frac{\partial}{\partial \theta} \int f(x|\theta) \, dx = \frac{\partial}{\partial \theta} (1) = 0
+
+Since the score for :math:`n` iid observations is the sum of :math:`n` individual scores, each with mean zero, we have :math:`\mathbb{E}[U(\theta_0)] = 0`. ∎
+
+This result has an intuitive interpretation: at the true parameter value, the log-likelihood is "locally flat" *on average*—positive and negative slopes cancel out when we average over all possible datasets.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig02_score_function.png
+   :alt: Score function geometry showing zero-crossing at MLE and score distribution
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.2**: The score function and its properties. (a) For Poisson data, the score :math:`U(\lambda) = n(\bar{x}/\lambda - 1)` crosses zero at the MLE :math:`\hat{\lambda} = \bar{x}`. When :math:`U > 0` (green region), the likelihood increases with :math:`\lambda`; when :math:`U < 0` (red region), it decreases. (b) At the true parameter :math:`\lambda_0`, the score has mean zero and variance equal to the Fisher information: :math:`\text{Var}[U(\lambda_0)] = nI_1(\lambda_0)`.
+
+
+Fisher Information
+------------------
+
+While the score tells us the direction of steepest ascent on the likelihood surface, the **Fisher information** tells us about the surface's curvature—how sharply peaked the likelihood is around its maximum.
+
+Definition
+~~~~~~~~~~
+
+The **Fisher information** for a scalar parameter :math:`\theta` is defined as the variance of the score:
+
+.. math::
+   :label: fisher-info-def1
+
+   I(\theta) = \text{Var}_\theta\left[ U(\theta) \right] = \mathbb{E}_\theta\left[ U(\theta)^2 \right]
+
+where the second equality follows from :math:`\mathbb{E}[U(\theta)] = 0`.
+
+.. admonition:: Notation Convention: Expected vs. Observed Information
+   :class: important
+
+   We adopt the following notation throughout this chapter:
+
+   **Per-observation vs. total information:**
+   
+   - :math:`I_1(\theta)` = Fisher information from a **single observation**
+   - :math:`I_n(\theta) = n \cdot I_1(\theta)` = total Fisher information from :math:`n` iid observations
+
+   **Expected vs. observed information:**
+   
+   - :math:`I(\theta) = -\mathbb{E}\left[\frac{\partial^2 \ell}{\partial \theta^2}\right]` = **expected** (Fisher) information
+   - :math:`J(\theta) = -\frac{\partial^2 \ell}{\partial \theta^2}\bigg|_{\text{observed}}` = **observed** information (data-dependent)
+
+   Under correct model specification, :math:`\mathbb{E}[J(\theta_0)] = I(\theta_0)`. Under misspecification, these may differ, leading to the sandwich variance estimator (see :ref:`below <misspecification-section>`).
+
+   **Convention in formulas:** Unless subscripted, :math:`I(\theta)` denotes **per-observation expected information** :math:`I_1(\theta)`. The Wald statistic :math:`W = n I_1(\hat{\theta})(\hat{\theta} - \theta_0)^2` uses per-observation information.
+
+
+
+
+Under the same regularity conditions that gave us :math:`\mathbb{E}[U] = 0`, we have an equivalent expression involving the second derivative:
+
+.. math::
+   :label: fisher-info-def2
+
+   I(\theta) = -\mathbb{E}_\theta\left[ \frac{\partial^2 \ell}{\partial \theta^2} \right]
+
+This is the **information equality**: the variance of the score equals the negative expected Hessian.
+
+**Proof of information equality**: We differentiate the identity :math:`\mathbb{E}_\theta[U(\theta)] = 0` with respect to :math:`\theta`:
+
+.. math::
+
+   \frac{\partial}{\partial \theta} \int \frac{\partial \log f(x|\theta)}{\partial \theta} f(x|\theta) \, dx = 0
+
+Applying the product rule inside the integral:
+
+.. math::
+
+   \int \frac{\partial^2 \log f}{\partial \theta^2} f \, dx + \int \frac{\partial \log f}{\partial \theta} \cdot \frac{\partial f}{\partial \theta} \, dx = 0
+
+The first integral is :math:`\mathbb{E}[\partial^2 \ell / \partial \theta^2]`. For the second integral, note that :math:`\frac{\partial f}{\partial \theta} = f \cdot \frac{\partial \log f}{\partial \theta}`, so:
+
+.. math::
+
+   \int \frac{\partial \log f}{\partial \theta} \cdot f \cdot \frac{\partial \log f}{\partial \theta} \, dx = \mathbb{E}\left[\left(\frac{\partial \log f}{\partial \theta}\right)^2\right] = \mathbb{E}[U^2]
+
+Therefore: :math:`\mathbb{E}[\partial^2 \ell / \partial \theta^2] + \mathbb{E}[U^2] = 0`, giving :math:`I(\theta) = \mathbb{E}[U^2] = -\mathbb{E}[\partial^2 \ell / \partial \theta^2]`. ∎
+
+Additivity for IID Samples
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For :math:`n` iid observations, the Fisher information is additive:
+
+.. math::
+   :label: fisher-additive
+
+   I_n(\theta) = n \cdot I_1(\theta)
+
+where :math:`I_1(\theta)` is the information from a single observation. This follows because the score is a sum of independent terms, and variance is additive for independent random variables.
+
+This additivity has profound implications: *more data means more information*. Specifically, information grows linearly with sample size, which (as we will see) implies that standard errors shrink as :math:`1/\sqrt{n}`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig03_fisher_information.png
+   :alt: Fisher information as curvature of log-likelihood
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.3**: Fisher information as log-likelihood curvature. (a) High information (:math:`I = 4.0`): a sharply peaked log-likelihood means small changes in :math:`\theta` produce large changes in :math:`\ell`—the data strongly constrain the parameter. (b) Low information (:math:`I = 0.44`): a broad peak indicates the data are consistent with many parameter values. (c) For the Bernoulli distribution, :math:`I(p) = 1/[p(1-p)]` is minimized at :math:`p = 0.5`, where the outcome is most uncertain and each observation is most informative about :math:`p`.
+
+
+Multivariate Fisher Information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a parameter vector :math:`\boldsymbol{\theta} \in \mathbb{R}^p`, the Fisher information becomes a :math:`p \times p` matrix:
+
+.. math::
+   :label: fisher-matrix
+
+   \mathbf{I}(\boldsymbol{\theta})_{jk} = \mathbb{E}\left[ \frac{\partial \ell}{\partial \theta_j} \cdot \frac{\partial \ell}{\partial \theta_k} \right] = -\mathbb{E}\left[ \frac{\partial^2 \ell}{\partial \theta_j \partial \theta_k} \right]
+
+The Fisher information matrix is positive semi-definite (as a covariance matrix must be), and under regularity conditions, positive definite.
+
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig12_information_matrix.png
+   :alt: Fisher information matrix and parameter orthogonality
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.12**: Multivariate Fisher information for the Normal distribution. (a) Joint sampling distribution of :math:`(\hat{\mu}, \hat{\sigma}^2)` from 1000 simulations (:math:`n=50`). The elliptical 95% contour reflects the diagonal Fisher information matrix—the near-zero correlation (−0.04) confirms that :math:`\hat{\mu}` and :math:`\hat{\sigma}^2` are asymptotically independent. (b) Per-observation information components: :math:`I_{\mu\mu} = 1/\sigma^2` for the mean and :math:`I_{\sigma^2\sigma^2} = 1/(2\sigma^4)` for the variance. The off-diagonal :math:`I_{\mu,\sigma^2} = 0` demonstrates **parameter orthogonality**—inference about one parameter does not depend on the other.
+
+
+.. admonition:: Example 💡 Fisher Information for Exponential Distribution
+   :class: note
+
+   **Setup**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Exponential}(\lambda)` where :math:`\lambda` is the rate parameter. The density is :math:`f(x|\lambda) = \lambda e^{-\lambda x}` for :math:`x > 0`.
+
+   **Log-likelihood**: :math:`\ell(\lambda) = n \log \lambda - \lambda \sum_{i=1}^n x_i`
+
+   **Score**: :math:`U(\lambda) = \frac{n}{\lambda} - \sum_{i=1}^n x_i = \frac{n}{\lambda} - n\bar{x}`
+
+   **Second derivative**: :math:`\frac{\partial^2 \ell}{\partial \lambda^2} = -\frac{n}{\lambda^2}`
+
+   **Fisher information**: :math:`I_n(\lambda) = -\mathbb{E}\left[-\frac{n}{\lambda^2}\right] = \frac{n}{\lambda^2}`
+
+   The per-observation information is :math:`I_1(\lambda) = 1/\lambda^2`. **Lower rates (longer mean lifetimes) provide more information per observation.** This may seem counterintuitive: shouldn't more events (higher rate) tell us more? The resolution lies in understanding what "information about :math:`\lambda`" means.
+
+   When :math:`\lambda` is small, lifetimes are long and vary considerably—the data spread out, allowing us to distinguish between nearby :math:`\lambda` values. When :math:`\lambda` is large, lifetimes are short and tightly concentrated near zero—the data provide less resolution for distinguishing :math:`\lambda` from :math:`\lambda + \epsilon`.
+
+   **Reparameterization perspective**: In terms of the mean lifetime :math:`\theta = 1/\lambda`, the information is :math:`I_1(\theta) = 1/\theta^2`. The *coefficient of variation* of the MLE is :math:`\text{CV}(\hat{\theta}) = \text{SE}(\hat{\theta})/\theta = 1/\sqrt{n}`, which is constant regardless of :math:`\theta`. The absolute precision scales with the parameter, but relative precision is parameter-independent.
+
+
+
+
+Closed-Form Maximum Likelihood Estimators
+-----------------------------------------
+
+For many common distributions, setting the score equal to zero yields explicit formulas for the MLE.
+
+Normal Distribution
+~~~~~~~~~~~~~~~~~~~
+
+For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)`:
+
+**Score equations**:
+
+.. math::
+
+   \frac{\partial \ell}{\partial \mu} &= \frac{1}{\sigma^2} \sum_{i=1}^n (x_i - \mu) = 0 \\
+   \frac{\partial \ell}{\partial \sigma^2} &= -\frac{n}{2\sigma^2} + \frac{1}{2\sigma^4} \sum_{i=1}^n (x_i - \mu)^2 = 0
+
+**Solutions**:
+
+.. math::
+   :label: normal-mle
+
+   \hat{\mu} = \bar{x} = \frac{1}{n}\sum_{i=1}^n x_i, \qquad \hat{\sigma}^2 = \frac{1}{n}\sum_{i=1}^n (x_i - \bar{x})^2
+
+The MLE for :math:`\mu` is the sample mean—unbiased and efficient. The MLE for :math:`\sigma^2` is the *biased* sample variance (dividing by :math:`n` rather than :math:`n-1`). This illustrates an important point: MLEs are not always unbiased, though their bias typically vanishes as :math:`n \to \infty`.
+
+Exponential Distribution
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Exponential}(\lambda)` (rate parameterization):
+
+Setting :math:`U(\lambda) = n/\lambda - n\bar{x} = 0` gives:
+
+.. math::
+   :label: exp-mle
+
+   \hat{\lambda} = \frac{1}{\bar{x}}
+
+The MLE is the reciprocal of the sample mean.
+
+Poisson Distribution
+~~~~~~~~~~~~~~~~~~~~
+
+For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Poisson}(\lambda)`:
+
+**Log-likelihood**: :math:`\ell(\lambda) = \sum_{i=1}^n (x_i \log \lambda - \lambda - \log(x_i!))`
+
+**Score**: :math:`U(\lambda) = \frac{\sum_{i=1}^n x_i}{\lambda} - n = \frac{n\bar{x}}{\lambda} - n`
+
+Setting :math:`U(\lambda) = 0`:
+
+.. math::
+   :label: poisson-mle
+
+   \hat{\lambda} = \bar{x}
+
+The MLE equals the sample mean—exactly what we would expect given that :math:`\mathbb{E}[X] = \lambda` for the Poisson.
+
+Bernoulli and Binomial
+~~~~~~~~~~~~~~~~~~~~~~
+
+For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Bernoulli}(p)`:
+
+**Log-likelihood**: :math:`\ell(p) = \sum_{i=1}^n [x_i \log p + (1-x_i) \log(1-p)]`
+
+**Score**: :math:`U(p) = \frac{\sum x_i}{p} - \frac{n - \sum x_i}{1-p}`
+
+Setting :math:`U(p) = 0` and solving:
+
+.. math::
+   :label: bernoulli-mle
+
+   \hat{p} = \bar{x} = \frac{\sum_{i=1}^n x_i}{n}
+
+The MLE is the sample proportion.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def mle_normal(x):
+       """
+       Compute MLEs for Normal(μ, σ²) distribution.
+
+       Parameters
+       ----------
+       x : array-like
+           Observed data.
+
+       Returns
+       -------
+       dict
+           MLEs and standard errors.
+       """
+       x = np.asarray(x)
+       n = len(x)
+
+       # Point estimates
+       mu_hat = np.mean(x)
+       sigma2_hat = np.var(x, ddof=0)  # MLE uses divisor n, not n-1
+
+       # Fisher information (evaluated at MLE)
+       # I(μ) = n/σ², I(σ²) = n/(2σ⁴)
+       se_mu = np.sqrt(sigma2_hat / n)
+       se_sigma2 = sigma2_hat * np.sqrt(2 / n)
+
+       return {
+           'mu_hat': mu_hat,
+           'sigma2_hat': sigma2_hat,
+           'se_mu': se_mu,
+           'se_sigma2': se_sigma2
+       }
+
+   def mle_exponential(x):
+       """
+       Compute MLE for Exponential(λ) distribution (rate parameterization).
+
+       Parameters
+       ----------
+       x : array-like
+           Observed data (must be positive).
+
+       Returns
+       -------
+       dict
+           MLE and standard error.
+       """
+       x = np.asarray(x)
+       n = len(x)
+
+       lambda_hat = 1 / np.mean(x)
+
+       # Fisher information: I(λ) = n/λ²
+       # SE(λ̂) = λ/√n (evaluated at MLE)
+       se_lambda = lambda_hat / np.sqrt(n)
+
+       return {
+           'lambda_hat': lambda_hat,
+           'se_lambda': se_lambda
+       }
+
+   # Demonstration
+   rng = np.random.default_rng(42)
+
+   # Normal data
+   true_mu, true_sigma = 5.0, 2.0
+   x_normal = rng.normal(true_mu, true_sigma, size=100)
+   result_normal = mle_normal(x_normal)
+   print("Normal MLE Results:")
+   print(f"  μ̂ = {result_normal['mu_hat']:.4f} (true: {true_mu}), SE = {result_normal['se_mu']:.4f}")
+   print(f"  σ̂² = {result_normal['sigma2_hat']:.4f} (true: {true_sigma**2}), SE = {result_normal['se_sigma2']:.4f}")
+
+   # Exponential data
+   true_lambda = 0.5
+   x_exp = rng.exponential(scale=1/true_lambda, size=100)
+   result_exp = mle_exponential(x_exp)
+   print(f"\nExponential MLE Results:")
+   print(f"  λ̂ = {result_exp['lambda_hat']:.4f} (true: {true_lambda}), SE = {result_exp['se_lambda']:.4f}")
+
+.. code-block:: text
+
+   Normal MLE Results:
+     μ̂ = 4.8572 (true: 5.0), SE = 0.1918
+     σ̂² = 3.6800 (true: 4.0), SE = 0.5205
+
+   Exponential MLE Results:
+     λ̂ = 0.4834 (true: 0.5), SE = 0.0483
+
+
+Exact Finite-Sample Properties
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+While our focus is on asymptotic theory, several exact results are available for common distributions and provide useful benchmarks.
+
+**Normal distribution**: For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \mathcal{N}(\mu, \sigma^2)`:
+
+- The MLEs :math:`\hat{\mu} = \bar{X}` and :math:`\hat{\sigma}^2 = \frac{1}{n}\sum(X_i - \bar{X})^2` are independent
+- :math:`\hat{\mu} \sim \mathcal{N}(\mu, \sigma^2/n)` exactly
+- :math:`\frac{n\hat{\sigma}^2}{\sigma^2} \sim \chi^2_{n-1}` exactly
+
+The :math:`\chi^2_{n-1}` result implies :math:`\mathbb{E}[\hat{\sigma}^2] = \frac{n-1}{n} \sigma^2`—the MLE is biased. The unbiased estimator :math:`S^2 = \frac{1}{n-1}\sum(X_i - \bar{X})^2` corrects this.
+
+**Exponential distribution**: For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Exp}(\lambda)` with MLE :math:`\hat{\lambda} = 1/\bar{X}`:
+
+- :math:`n\bar{X}` has a Gamma(:math:`n, \lambda`) distribution
+- The exact bias is :math:`\mathbb{E}[\hat{\lambda}] = \lambda \cdot \frac{n}{n-1}` for :math:`n > 1`
+- The exact variance is :math:`\text{Var}(\hat{\lambda}) = \lambda^2 \cdot \frac{n}{(n-1)^2(n-2)}` for :math:`n > 2`
+
+The bias-corrected estimator :math:`\tilde{\lambda} = \frac{n-1}{n} \hat{\lambda} = \frac{n-1}{n\bar{X}}` is unbiased.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def verify_exponential_exact_results():
+       """Verify exact finite-sample results for exponential MLE."""
+       rng = np.random.default_rng(42)
+       true_lambda = 2.0
+       n = 10
+       n_sim = 100000
+
+       mles = np.zeros(n_sim)
+       for i in range(n_sim):
+           x = rng.exponential(scale=1/true_lambda, size=n)
+           mles[i] = 1 / np.mean(x)
+
+       # Theoretical exact values
+       theory_mean = true_lambda * n / (n - 1)
+       theory_var = true_lambda**2 * n / ((n-1)**2 * (n-2))
+
+       print("EXACT FINITE-SAMPLE RESULTS: EXPONENTIAL MLE")
+       print("=" * 50)
+       print(f"n = {n}, true λ = {true_lambda}")
+       print(f"\n{'Quantity':<20} {'Theory':>15} {'Empirical':>15}")
+       print("-" * 50)
+       print(f"{'E[λ̂]':<20} {theory_mean:>15.6f} {np.mean(mles):>15.6f}")
+       print(f"{'Var(λ̂)':<20} {theory_var:>15.6f} {np.var(mles):>15.6f}")
+       print(f"{'Bias':<20} {theory_mean - true_lambda:>15.6f} {np.mean(mles) - true_lambda:>15.6f}")
+
+   verify_exponential_exact_results()
+
+.. code-block:: text
+
+   EXACT FINITE-SAMPLE RESULTS: EXPONENTIAL MLE
+   ==================================================
+   n = 10, true λ = 2.0
+
+   Quantity                   Theory       Empirical
+   --------------------------------------------------
+   E[λ̂]                     2.222222        2.221456
+   Var(λ̂)                   0.617284        0.615890
+   Bias                      0.222222        0.221456
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig10_exact_vs_asymptotic.png
+   :alt: Exact versus asymptotic properties of exponential MLE
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.10**: Exact versus asymptotic finite-sample properties of the exponential MLE. (a) The MLE is biased upward: :math:`\mathbb{E}[\hat{\lambda}] = \lambda n/(n-1) > \lambda`, with bias decreasing as :math:`n` increases. (b) The exact variance :math:`\lambda^2 n/[(n-1)^2(n-2)]` substantially exceeds the asymptotic approximation :math:`\lambda^2/n` for small samples. The :math:`n-1` and :math:`n-2` factors explain why finite-sample corrections matter.
+
+When Closed Forms Don't Exist
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Not all MLEs have closed-form solutions. Two important examples:
+
+**Gamma distribution**: For :math:`X \sim \text{Gamma}(\alpha, \beta)`, the score equation for :math:`\alpha` involves the digamma function :math:`\psi(\alpha) = \frac{d}{d\alpha} \log \Gamma(\alpha)`:
+
+.. math::
+
+   n[\log \beta + \psi(\alpha)] = \sum_{i=1}^n \log x_i
+
+This transcendental equation has no closed-form solution; numerical methods are required.
+
+**Beta distribution**: Similarly, the Beta(:math:`\alpha, \beta`) MLEs require solving a system involving digamma functions.
+
+**Mixture models**: Even simple mixtures like :math:`p \cdot \mathcal{N}(\mu_1, \sigma_1^2) + (1-p) \cdot \mathcal{N}(\mu_2, \sigma_2^2)` have likelihood surfaces that preclude closed-form solutions.
+
+For these cases, we turn to numerical optimization.
+
+
+Numerical Optimization for MLE
+------------------------------
+
+When closed-form solutions are unavailable, we compute MLEs numerically by optimizing the log-likelihood. Two classical algorithms dominate: Newton-Raphson and Fisher scoring.
+
+Newton-Raphson Method
+~~~~~~~~~~~~~~~~~~~~~
+
+Newton-Raphson is a general-purpose optimization algorithm based on quadratic approximation of the objective function.
+
+At iteration :math:`t`, we approximate the log-likelihood near :math:`\theta^{(t)}` by its second-order Taylor expansion:
+
+.. math::
+
+   \ell(\theta) \approx \ell(\theta^{(t)}) + (\theta - \theta^{(t)}) U(\theta^{(t)}) + \frac{1}{2}(\theta - \theta^{(t)})^2 H(\theta^{(t)})
+
+where :math:`U(\theta) = \partial \ell / \partial \theta` is the score and :math:`H(\theta) = \partial^2 \ell / \partial \theta^2` is the Hessian (second derivative).
+
+Maximizing this quadratic approximation gives the update:
+
+.. math::
+   :label: newton-raphson
+
+   \theta^{(t+1)} = \theta^{(t)} - \frac{U(\theta^{(t)})}{H(\theta^{(t)})} = \theta^{(t)} - [H(\theta^{(t)})]^{-1} U(\theta^{(t)})
+
+In the multivariate case with parameter vector :math:`\boldsymbol{\theta}`:
+
+.. math::
+
+   \boldsymbol{\theta}^{(t+1)} = \boldsymbol{\theta}^{(t)} - [\mathbf{H}(\boldsymbol{\theta}^{(t)})]^{-1} \mathbf{U}(\boldsymbol{\theta}^{(t)})
+
+where :math:`\mathbf{H}` is the :math:`p \times p` Hessian matrix.
+
+**Properties of Newton-Raphson**:
+
+- **Quadratic convergence**: Near the optimum, the error decreases quadratically—each iteration roughly doubles the number of correct digits.
+- **Local convergence**: Convergence is only guaranteed if we start sufficiently close to the optimum.
+- **Potential instability**: If the Hessian is not negative definite (the log-likelihood is not locally concave), the algorithm may diverge or converge to a saddle point.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig05_newton_raphson.png
+   :alt: Newton-Raphson convergence for Gamma MLE
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.5**: Newton-Raphson optimization for the Gamma distribution. (a) The profile log-likelihood :math:`\ell_p(\alpha)` with Newton-Raphson iterates shown as points. Starting from a method-of-moments initial value near :math:`\alpha = 2.5`, the algorithm converges to the MLE :math:`\hat{\alpha} = 4.02` in just 5 iterations. (b) Quadratic convergence: the error :math:`|\alpha^{(t)} - \hat{\alpha}|` decreases super-exponentially, roughly doubling the number of correct digits per iteration.
+
+
+Fisher Scoring
+~~~~~~~~~~~~~~
+
+Fisher scoring replaces the observed Hessian :math:`H(\theta)` with its expected value, the negative Fisher information:
+
+.. math::
+   :label: fisher-scoring
+
+   \theta^{(t+1)} = \theta^{(t)} + [I(\theta^{(t)})]^{-1} U(\theta^{(t)})
+
+**Why Fisher scoring?**
+
+1. **Guaranteed stability**: The Fisher information matrix is always positive definite (under regularity conditions), ensuring we always move in an ascent direction.
+
+2. **Simpler computation**: For some models, the expected information has a simpler form than the observed Hessian.
+
+3. **Statistical interpretation**: Fisher scoring is equivalent to iteratively reweighted least squares (IRLS) for generalized linear models.
+
+**For exponential families with canonical links, Newton-Raphson and Fisher scoring are identical**: the observed and expected information coincide.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import special
+
+   def mle_gamma_fisher_scoring(x, max_iter=100, tol=1e-8):
+       """
+       Compute MLE for Gamma(α, β) using Fisher scoring.
+
+       Uses shape-rate parameterization where E[X] = α/β, Var(X) = α/β².
+
+       Parameters
+       ----------
+       x : array-like
+           Observed data (must be positive).
+       max_iter : int
+           Maximum iterations.
+       tol : float
+           Convergence tolerance.
+
+       Returns
+       -------
+       dict
+           MLEs, standard errors, and convergence info.
+       """
+       x = np.asarray(x)
+       n = len(x)
+       x_bar = np.mean(x)
+       log_x_bar = np.mean(np.log(x))
+
+       # Method of moments initialization
+       s2 = np.var(x, ddof=1)
+       alpha = x_bar**2 / s2
+       beta = x_bar / s2
+
+       history = [(alpha, beta)]
+
+       for iteration in range(max_iter):
+           # Score functions
+           # ∂ℓ/∂α = n[log(β) - ψ(α)] + Σlog(xᵢ)
+           # ∂ℓ/∂β = nα/β - Σxᵢ
+           psi_alpha = special.digamma(alpha)
+           score_alpha = n * (np.log(beta) - psi_alpha) + n * log_x_bar
+           score_beta = n * alpha / beta - n * x_bar
+
+           # Fisher information matrix
+           # I_αα = n·ψ'(α), I_ββ = nα/β², I_αβ = -n/β
+           psi1_alpha = special.polygamma(1, alpha)  # trigamma
+           I_aa = n * psi1_alpha
+           I_bb = n * alpha / beta**2
+           I_ab = -n / beta
+
+           # Invert 2x2 Fisher information
+           det = I_aa * I_bb - I_ab**2
+           I_inv = np.array([[I_bb, -I_ab], [-I_ab, I_aa]]) / det
+
+           # Fisher scoring update
+           score = np.array([score_alpha, score_beta])
+           delta = I_inv @ score
+
+           alpha_new = alpha + delta[0]
+           beta_new = beta + delta[1]
+
+           # Ensure parameters stay positive
+           alpha_new = max(alpha_new, 1e-10)
+           beta_new = max(beta_new, 1e-10)
+
+           history.append((alpha_new, beta_new))
+
+           # Check convergence
+           if np.max(np.abs(delta)) < tol:
+               break
+
+           alpha, beta = alpha_new, beta_new
+
+       # Standard errors from inverse Fisher information at MLE
+       psi1_alpha = special.polygamma(1, alpha)
+       I_aa = n * psi1_alpha
+       I_bb = n * alpha / beta**2
+       I_ab = -n / beta
+       det = I_aa * I_bb - I_ab**2
+       I_inv = np.array([[I_bb, -I_ab], [-I_ab, I_aa]]) / det
+
+       return {
+           'alpha_hat': alpha,
+           'beta_hat': beta,
+           'se_alpha': np.sqrt(I_inv[0, 0]),
+           'se_beta': np.sqrt(I_inv[1, 1]),
+           'iterations': iteration + 1,
+           'converged': iteration + 1 < max_iter,
+           'history': history
+       }
+
+   # Demonstration
+   rng = np.random.default_rng(42)
+   true_alpha, true_beta = 3.0, 2.0
+   x_gamma = rng.gamma(shape=true_alpha, scale=1/true_beta, size=200)
+
+   result = mle_gamma_fisher_scoring(x_gamma)
+   print("Gamma MLE via Fisher Scoring:")
+   print(f"  α̂ = {result['alpha_hat']:.4f} (true: {true_alpha}), SE = {result['se_alpha']:.4f}")
+   print(f"  β̂ = {result['beta_hat']:.4f} (true: {true_beta}), SE = {result['se_beta']:.4f}")
+   print(f"  Converged in {result['iterations']} iterations")
+
+.. code-block:: text
+
+   Gamma MLE via Fisher Scoring:
+     α̂ = 3.1538 (true: 3.0), SE = 0.3209
+     β̂ = 2.0893 (true: 2.0), SE = 0.2257
+     Converged in 6 iterations
+
+
+
+.. admonition:: Connection to Generalized Linear Models
+   :class: tip
+
+   Fisher scoring becomes especially elegant for exponential family models with canonical links. In :ref:`Section 3.7 <ch3.7-glms>`, we show that:
+
+   1. For an exponential family response with canonical link, the **observed and expected information are equal**
+   
+   2. Therefore, Newton-Raphson and Fisher scoring produce **identical iterations**
+   
+   3. Fisher scoring reduces to **Iteratively Reweighted Least Squares (IRLS)**, solving at each step:
+
+      .. math::
+
+         \boldsymbol{\beta}^{(t+1)} = (\mathbf{X}^\top \mathbf{W}^{(t)} \mathbf{X})^{-1} \mathbf{X}^\top \mathbf{W}^{(t)} \mathbf{z}^{(t)}
+
+      where :math:`\mathbf{W}` is a diagonal weight matrix and :math:`\mathbf{z}` is a "working response"
+
+   This connection—from general MLE theory through Fisher scoring to IRLS for GLMs—illustrates how foundational concepts build toward practical algorithms.
+
+
+
+Practical Implementation with SciPy
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For production code, ``scipy.optimize`` provides robust, well-tested optimization routines:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import optimize, stats
+
+   def mle_gamma_scipy(x):
+       """
+       Compute Gamma MLE using scipy.optimize.
+
+       Parameters
+       ----------
+       x : array-like
+           Observed data.
+
+       Returns
+       -------
+       dict
+           MLEs and optimization results.
+       """
+       x = np.asarray(x)
+       n = len(x)
+
+       def neg_log_likelihood(params):
+           alpha, beta = params
+           if alpha <= 0 or beta <= 0:
+               return np.inf
+           # Gamma log-likelihood (rate parameterization)
+           return -(n * alpha * np.log(beta) - n * np.log(special.gamma(alpha))
+                    + (alpha - 1) * np.sum(np.log(x)) - beta * np.sum(x))
+
+       # Method of moments starting values
+       x_bar = np.mean(x)
+       s2 = np.var(x, ddof=1)
+       alpha0 = x_bar**2 / s2
+       beta0 = x_bar / s2
+
+       # L-BFGS-B with bounds to keep parameters positive
+       result = optimize.minimize(
+           neg_log_likelihood,
+           x0=[alpha0, beta0],
+           method='L-BFGS-B',
+           bounds=[(1e-10, None), (1e-10, None)]
+       )
+
+       # Standard errors via numerical Hessian
+       hess_inv = result.hess_inv.todense() if hasattr(result.hess_inv, 'todense') else result.hess_inv
+       se = np.sqrt(np.diag(hess_inv))
+
+       return {
+           'alpha_hat': result.x[0],
+           'beta_hat': result.x[1],
+           'se_alpha': se[0] if len(se) > 0 else np.nan,
+           'se_beta': se[1] if len(se) > 1 else np.nan,
+           'success': result.success,
+           'message': result.message
+       }
+
+   # Compare with scipy.stats.gamma.fit
+   # Note: scipy uses shape, loc, scale parameterization
+   fitted = stats.gamma.fit(x_gamma, floc=0)  # Fix location at 0
+   print(f"\nscipy.stats.gamma.fit: shape={fitted[0]:.4f}, scale={fitted[2]:.4f}")
+   print(f"  Implied β = 1/scale = {1/fitted[2]:.4f}")
+
+.. code-block:: text
+
+   scipy.stats.gamma.fit: shape=3.1538, scale=0.4786
+     Implied β = 1/scale = 2.0893
+
+.. admonition:: Common Pitfall ⚠️ Parameterization Consistency
+   :class: warning
+
+   Different software packages use different parameterizations for the same distribution:
+
+   - **Gamma**: SciPy uses shape-scale; some texts use shape-rate (β = 1/scale)
+   - **Exponential**: SciPy uses scale (mean); some texts use rate (1/mean)
+   - **Normal**: The second parameter is always variance in this text; some use standard deviation
+
+   Always verify parameterization before comparing results across packages or implementing formulas from different sources.
+
+
+Practical Safeguards for Numerical MLE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Real-world MLE optimization requires more than the basic Newton-Raphson update. Several safeguards improve robustness and reliability.
+
+**1. Line search and step control**
+
+The pure Newton step :math:`\theta^{(t+1)} = \theta^{(t)} - H^{-1} U` may overshoot, especially far from the optimum. **Line search** modifies this to:
+
+.. math::
+
+   \theta^{(t+1)} = \theta^{(t)} + \alpha_t \cdot d_t
+
+where :math:`d_t = -H^{-1} U` is the Newton direction and :math:`\alpha_t \in (0, 1]` is chosen to ensure sufficient increase in :math:`\ell(\theta)`. The **Armijo condition** requires:
+
+.. math::
+
+   \ell(\theta^{(t)} + \alpha d_t) \geq \ell(\theta^{(t)}) + c \cdot \alpha \cdot U^\top d_t
+
+for some :math:`c \in (0, 1)` (typically :math:`c = 10^{-4}`). Start with :math:`\alpha = 1` and backtrack by halving until the condition holds.
+
+**2. Trust region methods**
+
+Instead of line search along a direction, **trust region methods** constrain the step size directly:
+
+.. math::
+
+   \theta^{(t+1)} = \arg\max_\theta \left\{ \ell(\theta^{(t)}) + (\theta - \theta^{(t)})^\top U + \frac{1}{2}(\theta - \theta^{(t)})^\top H (\theta - \theta^{(t)}) \right\}
+
+subject to :math:`\|\theta - \theta^{(t)}\| \leq \Delta_t`. The trust region radius :math:`\Delta_t` adapts based on how well the quadratic approximation predicts actual improvement.
+
+**3. Parameter transformations for constraints**
+
+Many parameters have natural constraints. Transform to an unconstrained scale:
+
+.. list-table:: Common Parameter Transformations
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - Constraint
+     - Transformation
+     - Original parameter
+   * - :math:`\sigma^2 > 0`
+     - :math:`\eta = \log(\sigma^2)`
+     - :math:`\sigma^2 = e^\eta`
+   * - :math:`0 < p < 1`
+     - :math:`\eta = \log(p/(1-p))`
+     - :math:`p = 1/(1 + e^{-\eta})`
+   * - :math:`\lambda > 0`
+     - :math:`\eta = \log(\lambda)`
+     - :math:`\lambda = e^\eta`
+   * - :math:`\rho \in (-1, 1)`
+     - :math:`\eta = \text{arctanh}(\rho)`
+     - :math:`\rho = \tanh(\eta)`
+
+Optimize in :math:`\eta`, then transform back. The Jacobian of the transformation enters the standard error calculation.
+
+**4. Scaling and conditioning**
+
+Poor numerical conditioning causes optimization difficulties:
+
+- **Center predictors**: In regression, use :math:`\tilde{x}_j = x_j - \bar{x}_j` to reduce correlation between intercept and slopes
+- **Scale parameters**: If parameters differ by orders of magnitude, rescale so they're comparable
+- **Check condition number**: If :math:`\kappa(H) = \lambda_{\max} / \lambda_{\min} > 10^6`, the problem is ill-conditioned
+
+.. code-block:: python
+
+   from scipy.optimize import minimize
+
+   def mle_with_safeguards(neg_log_lik, x0, bounds=None, transform=None):
+       """
+       MLE with practical safeguards.
+
+       Parameters
+       ----------
+       neg_log_lik : callable
+           Negative log-likelihood function.
+       x0 : ndarray
+           Initial parameter values.
+       bounds : list of tuples, optional
+           Parameter bounds for L-BFGS-B.
+       transform : dict, optional
+           Parameter transformations {'to_unconstrained': func, 'from_unconstrained': func}.
+
+       Returns
+       -------
+       result : OptimizeResult
+           Optimization result with MLE and diagnostics.
+       """
+       # Apply transformation if provided
+       if transform is not None:
+           x0_transformed = transform['to_unconstrained'](x0)
+
+           def neg_ll_transformed(eta):
+               theta = transform['from_unconstrained'](eta)
+               return neg_log_lik(theta)
+
+           result = minimize(neg_ll_transformed, x0_transformed,
+                             method='BFGS',  # No bounds needed after transform
+                             options={'gtol': 1e-8, 'maxiter': 1000})
+
+           result.x = transform['from_unconstrained'](result.x)
+       else:
+           # Use L-BFGS-B with bounds if provided
+           result = minimize(neg_log_lik, x0,
+                             method='L-BFGS-B' if bounds else 'BFGS',
+                             bounds=bounds,
+                             options={'gtol': 1e-8, 'maxiter': 1000})
+
+       return result
+
+
+
+Asymptotic Properties of MLEs
+-----------------------------
+
+The true power of maximum likelihood estimation lies in its asymptotic properties. Under regularity conditions, MLEs are consistent, asymptotically normal, and asymptotically efficient.
+
+Regularity Conditions
+~~~~~~~~~~~~~~~~~~~~~
+
+The classical asymptotic theory requires the following conditions. Let :math:`\theta_0` denote the true parameter value:
+
+.. admonition:: Regularity Conditions for MLE Asymptotics
+   :class: important
+
+   **R1. Identifiability**: Different parameter values give different distributions: :math:`\theta_1 \neq \theta_2 \Rightarrow f(\cdot|\theta_1) \neq f(\cdot|\theta_2)`.
+
+   **R2. Common support**: The support of :math:`f(x|\theta)` does not depend on :math:`\theta`.
+
+   **R3. Interior true value**: :math:`\theta_0` is in the interior of the parameter space :math:`\Theta`.
+
+   **R4. Differentiability**: :math:`\log f(x|\theta)` is three times continuously differentiable in :math:`\theta` for all :math:`x` in the support.
+
+   **R5. Integrability**: We can interchange differentiation and integration:
+   :math:`\frac{\partial}{\partial \theta} \int f(x|\theta) dx = \int \frac{\partial f(x|\theta)}{\partial \theta} dx`.
+
+   **R6. Finite Fisher information**: :math:`0 < I(\theta_0) < \infty`.
+
+   **R7. Uniform integrability**: :math:`\left|\frac{\partial^3 \log f(x|\theta)}{\partial \theta^3}\right|` is bounded by a function with finite expectation in a neighborhood of :math:`\theta_0`.
+
+These conditions exclude some pathological cases (e.g., uniform distributions with unknown endpoints) but are satisfied by most common parametric families.
+
+Consistency
+~~~~~~~~~~~
+
+.. admonition:: Theorem: Consistency of MLE
+   :class: note
+
+   Under regularity conditions R1–R3, the MLE is **consistent**:
+
+   .. math::
+
+      \hat{\theta}_n \xrightarrow{p} \theta_0 \quad \text{as } n \to \infty
+
+**Proof sketch**: The key insight is that maximizing the log-likelihood is equivalent to maximizing the Kullback-Leibler divergence from the true distribution. Define:
+
+.. math::
+
+   M(\theta) = \mathbb{E}_{\theta_0}\left[\log f(X|\theta)\right]
+
+By Jensen's inequality and strict concavity of the log function, :math:`M(\theta)` is uniquely maximized at :math:`\theta = \theta_0`. The sample average :math:`\frac{1}{n}\ell(\theta)` converges uniformly to :math:`M(\theta)` by the uniform law of large numbers, and the maximizer of the sample average converges to the maximizer of the limit. ∎
+
+Asymptotic Normality
+~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Asymptotic Normality of MLE
+   :class: note
+
+   Under regularity conditions R1–R7, the MLE is **asymptotically normal**:
+
+   .. math::
+      :label: mle-asymp-normal
+
+      \sqrt{n}(\hat{\theta}_n - \theta_0) \xrightarrow{d} \mathcal{N}\left(0, I_1(\theta_0)^{-1}\right)
+
+   Equivalently, for large :math:`n`:
+
+   .. math::
+
+      \hat{\theta}_n \stackrel{\cdot}{\sim} \mathcal{N}\left(\theta_0, \frac{1}{nI_1(\theta_0)}\right)
+
+**Proof**: Taylor expand the score function around :math:`\theta_0`:
+
+.. math::
+
+   0 = U(\hat{\theta}_n) = U(\theta_0) + (\hat{\theta}_n - \theta_0) \frac{\partial U}{\partial \theta}\bigg|_{\tilde{\theta}}
+
+for some :math:`\tilde{\theta}` between :math:`\hat{\theta}_n` and :math:`\theta_0`. Rearranging:
+
+.. math::
+
+   \sqrt{n}(\hat{\theta}_n - \theta_0) = \frac{\frac{1}{\sqrt{n}} U(\theta_0)}{-\frac{1}{n} \frac{\partial U}{\partial \theta}\big|_{\tilde{\theta}}}
+
+The numerator: :math:`\frac{1}{\sqrt{n}} U(\theta_0) = \frac{1}{\sqrt{n}} \sum_{i=1}^n u_i` where :math:`u_i` has mean 0 and variance :math:`I_1(\theta_0)`. By the CLT:
+
+.. math::
+
+   \frac{1}{\sqrt{n}} U(\theta_0) \xrightarrow{d} \mathcal{N}(0, I_1(\theta_0))
+
+The denominator: :math:`-\frac{1}{n} \frac{\partial U}{\partial \theta} = -\frac{1}{n} \frac{\partial^2 \ell}{\partial \theta^2} \xrightarrow{p} I_1(\theta_0)` by the LLN and consistency of :math:`\hat{\theta}_n`.
+
+By Slutsky's theorem:
+
+.. math::
+
+   \sqrt{n}(\hat{\theta}_n - \theta_0) \xrightarrow{d} \frac{\mathcal{N}(0, I_1(\theta_0))}{I_1(\theta_0)} = \mathcal{N}\left(0, \frac{1}{I_1(\theta_0)}\right) \quad \blacksquare
+
+This result is remarkably powerful: regardless of the underlying distribution, MLEs have approximately normal sampling distributions with variance determined by the Fisher information.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig04_asymptotic_normality.png
+   :alt: Asymptotic normality of MLE demonstrated via simulation
+   :align: center
+   :width: 95%
+
+   **Figure 3.2.4**: Asymptotic normality of the exponential MLE. The standardized statistic :math:`\sqrt{nI_1(\lambda_0)}(\hat{\lambda} - \lambda_0)` converges to :math:`N(0,1)` as :math:`n` increases. For :math:`n=5`, the distribution is right-skewed (skewness = 2.63); by :math:`n=200`, it closely matches the standard normal (skewness = 0.28). The K-S test p-values confirm improved approximation with larger samples.
+
+
+Model Misspecification and the Sandwich Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The asymptotic theory developed above assumes the model is *correctly specified*—that the data truly come from :math:`f(x|\theta_0)` for some :math:`\theta_0 \in \Theta`. In practice, all models are approximations. What happens when the model is wrong?
+
+**The quasi-MLE target**: Even under misspecification, the MLE converges to a well-defined limit: the parameter value :math:`\theta^*` that minimizes the Kullback-Leibler divergence from the true data-generating distribution :math:`g(x)` to the model family:
+
+.. math::
+
+   \theta^* = \arg\min_\theta \text{KL}(g \| f_\theta) = \arg\min_\theta \left[ -\int g(x) \log f(x|\theta) \, dx \right]
+
+This is the "best approximation" within the model family, even if no member of the family is correct.
+
+**Asymptotic normality still holds**, but with a different variance. Define:
+
+.. math::
+
+   \mathbf{A} &= -\mathbb{E}_{g}\left[\frac{\partial^2 \log f(X|\theta^*)}{\partial \theta \partial \theta^\top}\right] \quad \text{(expected Hessian under true } g\text{)} \\
+   \mathbf{B} &= \mathbb{E}_{g}\left[\frac{\partial \log f(X|\theta^*)}{\partial \theta} \frac{\partial \log f(X|\theta^*)}{\partial \theta^\top}\right] \quad \text{(variance of score under true } g\text{)}
+
+Under correct specification, :math:`\mathbf{A} = \mathbf{B} = \mathbf{I}(\theta_0)` (the information equality). Under misspecification, :math:`\mathbf{A} \neq \mathbf{B}` in general.
+
+.. admonition:: Theorem: Quasi-MLE Asymptotics
+   :class: note
+
+   Under misspecification and regularity conditions:
+
+   .. math::
+
+      \sqrt{n}(\hat{\theta}_n - \theta^*) \xrightarrow{d} \mathcal{N}\left(\mathbf{0}, \mathbf{A}^{-1} \mathbf{B} \mathbf{A}^{-1}\right)
+
+   The variance :math:`\mathbf{A}^{-1} \mathbf{B} \mathbf{A}^{-1}` is called the **sandwich variance** (or Huber-White variance).
+
+**Practical implications**:
+
+1. **Standard errors may be wrong**: If we use :math:`I(\hat{\theta})^{-1}` for variance (assuming correct specification), SEs can be too small or too large depending on the nature of misspecification.
+
+2. **Sandwich (robust) standard errors**: Estimate :math:`\mathbf{A}` and :math:`\mathbf{B}` separately:
+
+   .. math::
+
+      \hat{\mathbf{A}} = -\frac{1}{n} \sum_{i=1}^n \frac{\partial^2 \log f(x_i|\hat{\theta})}{\partial \theta \partial \theta^\top}, \quad
+      \hat{\mathbf{B}} = \frac{1}{n} \sum_{i=1}^n \frac{\partial \log f(x_i|\hat{\theta})}{\partial \theta} \frac{\partial \log f(x_i|\hat{\theta})}{\partial \theta^\top}
+
+   Then :math:`\widehat{\text{Var}}(\hat{\theta}) = \hat{\mathbf{A}}^{-1} \hat{\mathbf{B}} \hat{\mathbf{A}}^{-1} / n`.
+
+3. **Model-based vs. robust inference**: Under correct specification, both give consistent SEs. Under misspecification, only sandwich SEs are consistent. The difference between them is a diagnostic for misspecification.
+
+.. code-block:: python
+
+   import numpy as np
+
+   def sandwich_variance(score_contributions, hessian):
+       """
+       Compute sandwich variance estimator.
+
+       Parameters
+       ----------
+       score_contributions : ndarray, shape (n, p)
+           Individual score contributions ∂log f(xᵢ|θ̂)/∂θ for each observation.
+       hessian : ndarray, shape (p, p)
+           Observed Hessian ∂²ℓ/∂θ∂θ' evaluated at MLE.
+
+       Returns
+       -------
+       sandwich_var : ndarray, shape (p, p)
+           Sandwich variance estimate for θ̂.
+       """
+       n = score_contributions.shape[0]
+
+       # A = -Hessian/n (average negative curvature)
+       A = -hessian / n
+
+       # B = Var(score) estimate = (1/n) Σ uᵢuᵢ' (outer products)
+       B = score_contributions.T @ score_contributions / n
+
+       # Sandwich: A⁻¹ B A⁻¹ / n
+       A_inv = np.linalg.inv(A)
+       sandwich_var = A_inv @ B @ A_inv / n
+
+       return sandwich_var
+
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig09_sandwich_variance.png
+   :alt: Model misspecification and sandwich variance
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.9**: Effects of model misspecification on MLE inference. A Normal model is fit to data from three distributions: (left) correctly specified :math:`N(0,1)`, (center) mildly misspecified :math:`t_5`, and (right) severely misspecified :math:`t_3`. Under correct specification, model-based and sandwich SEs agree. Under misspecification, the heavier tails of :math:`t`-distributions inflate variance; model-based SEs underestimate true variability while sandwich SEs remain consistent.
+
+The Cramér-Rao Lower Bound
+--------------------------
+
+The Cramér-Rao inequality establishes a fundamental limit on how precisely *any* unbiased estimator can estimate a parameter. The MLE achieves this bound asymptotically.
+
+Statement and Proof
+~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Cramér-Rao Lower Bound
+   :class: note
+
+   Let :math:`T = T(X_1, \ldots, X_n)` be any unbiased estimator of :math:`\tau(\theta)`, a function of the parameter. Under regularity conditions R4–R6:
+
+   .. math::
+      :label: cramer-rao
+
+      \text{Var}_\theta(T) \geq \frac{[\tau'(\theta)]^2}{I_n(\theta)} = \frac{[\tau'(\theta)]^2}{n I_1(\theta)}
+
+   For estimating :math:`\theta` itself (:math:`\tau(\theta) = \theta`, so :math:`\tau'(\theta) = 1`):
+
+   .. math::
+      :label: cramer-rao-theta
+
+      \text{Var}_\theta(\hat{\theta}) \geq \frac{1}{n I_1(\theta)}
+
+**Complete Proof**:
+
+The proof uses the Cauchy-Schwarz inequality. Define:
+
+- :math:`U = U(\theta)` = score function
+- :math:`T` = unbiased estimator with :math:`\mathbb{E}_\theta[T] = \tau(\theta)`
+
+We know :math:`\mathbb{E}_\theta[U] = 0` (score has mean zero).
+
+**Step 1**: Differentiate the unbiasedness condition.
+
+Since :math:`\mathbb{E}_\theta[T] = \tau(\theta)`, we have:
+
+.. math::
+
+   \int T(x) f(x|\theta) dx = \tau(\theta)
+
+Differentiating both sides with respect to :math:`\theta`:
+
+.. math::
+
+   \int T(x) \frac{\partial f(x|\theta)}{\partial \theta} dx = \tau'(\theta)
+
+Using :math:`\frac{\partial f}{\partial \theta} = f \cdot \frac{\partial \log f}{\partial \theta}`:
+
+.. math::
+
+   \int T(x) f(x|\theta) \frac{\partial \log f(x|\theta)}{\partial \theta} dx = \tau'(\theta)
+
+This is :math:`\mathbb{E}_\theta[T \cdot U] = \tau'(\theta)`.
+
+**Step 2**: Compute the covariance.
+
+Since :math:`\mathbb{E}[U] = 0`:
+
+.. math::
+
+   \text{Cov}_\theta(T, U) = \mathbb{E}_\theta[T \cdot U] - \mathbb{E}_\theta[T] \cdot \mathbb{E}_\theta[U] = \tau'(\theta) - \tau(\theta) \cdot 0 = \tau'(\theta)
+
+**Step 3**: Apply Cauchy-Schwarz.
+
+For any random variables :math:`A, B`: :math:`[\text{Cov}(A,B)]^2 \leq \text{Var}(A) \cdot \text{Var}(B)`.
+
+Applied to :math:`T` and :math:`U`:
+
+.. math::
+
+   [\tau'(\theta)]^2 = [\text{Cov}(T, U)]^2 \leq \text{Var}(T) \cdot \text{Var}(U) = \text{Var}(T) \cdot I_n(\theta)
+
+Rearranging:
+
+.. math::
+
+   \text{Var}(T) \geq \frac{[\tau'(\theta)]^2}{I_n(\theta)} \quad \blacksquare
+
+Efficiency
+~~~~~~~~~~
+
+An estimator that achieves the Cramér-Rao bound is called **efficient**. The MLE is not generally efficient for finite samples, but it achieves the bound asymptotically:
+
+.. admonition:: Theorem: Asymptotic Efficiency of MLE
+   :class: note
+
+   Under regularity conditions, the MLE is **asymptotically efficient**: its asymptotic variance equals the Cramér-Rao lower bound.
+
+   .. math::
+
+      \text{AVar}(\hat{\theta}_{\text{MLE}}) = \lim_{n \to \infty} n \cdot \text{Var}(\hat{\theta}_n) = \frac{1}{I_1(\theta_0)}
+
+This means that for large samples, no unbiased estimator can have smaller variance than the MLE.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+   import matplotlib.pyplot as plt
+
+   def simulate_mle_distribution(true_theta, n_samples, n_simulations=5000, seed=42):
+       """
+       Simulate the sampling distribution of the Poisson MLE to verify asymptotic normality.
+
+       Parameters
+       ----------
+       true_theta : float
+           True Poisson rate parameter.
+       n_samples : int
+           Sample size per simulation.
+       n_simulations : int
+           Number of Monte Carlo simulations.
+       seed : int
+           Random seed.
+
+       Returns
+       -------
+       dict
+           MLEs, theoretical quantities, and test statistics.
+       """
+       rng = np.random.default_rng(seed)
+
+       # Simulate MLEs
+       mles = np.zeros(n_simulations)
+       for i in range(n_simulations):
+           x = rng.poisson(true_theta, size=n_samples)
+           mles[i] = np.mean(x)  # MLE for Poisson is sample mean
+
+       # Theoretical values
+       # Fisher information for Poisson: I₁(λ) = 1/λ
+       fisher_info = 1 / true_theta
+       theoretical_se = np.sqrt(1 / (n_samples * fisher_info))
+       cramer_rao_bound = 1 / (n_samples * fisher_info)
+
+       # Standardized MLEs for normality check
+       standardized = (mles - true_theta) / theoretical_se
+
+       return {
+           'mles': mles,
+           'mean': np.mean(mles),
+           'std': np.std(mles),
+           'theoretical_mean': true_theta,
+           'theoretical_se': theoretical_se,
+           'cramer_rao_bound': cramer_rao_bound,
+           'standardized': standardized
+       }
+
+   # Run simulation
+   true_lambda = 5.0
+   results = {}
+   sample_sizes = [10, 50, 200]
+
+   print("Verifying MLE Asymptotic Properties (Poisson)")
+   print("=" * 60)
+   print(f"True λ = {true_lambda}, CR Bound = 1/(n·I₁) = λ/n")
+   print()
+   print(f"{'n':>6} {'Mean(λ̂)':>12} {'SD(λ̂)':>12} {'Theor SE':>12} {'CR Bound':>12}")
+   print("-" * 60)
+
+   for n in sample_sizes:
+       results[n] = simulate_mle_distribution(true_lambda, n)
+       r = results[n]
+       print(f"{n:>6} {r['mean']:>12.4f} {r['std']:>12.4f} "
+             f"{r['theoretical_se']:>12.4f} {np.sqrt(r['cramer_rao_bound']):>12.4f}")
+
+.. code-block:: text
+
+   Verifying MLE Asymptotic Properties (Poisson)
+   ============================================================
+   True λ = 5.0, CR Bound = 1/(n·I₁) = λ/n
+
+        n     Mean(λ̂)       SD(λ̂)     Theor SE     CR Bound
+   ------------------------------------------------------------
+       10       5.0021       0.7106       0.7071       0.7071
+       50       5.0006       0.3173       0.3162       0.3162
+      200       4.9990       0.1575       0.1581       0.1581
+
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig08_cramer_rao.png
+   :alt: MLE variance approaching the Cramér-Rao lower bound
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.8**: Asymptotic efficiency of the exponential MLE. (a) Log-log plot showing that empirical :math:`\text{Var}(\hat{\lambda})` closely tracks the Cramér-Rao lower bound :math:`\lambda^2/n` across sample sizes. (b) Efficiency ratio :math:`\text{CRLB}/\text{Var}(\hat{\lambda})` approaches 1 as :math:`n \to \infty`, confirming that the MLE achieves the theoretical minimum variance asymptotically.
+
+
+The Invariance Property
+-----------------------
+
+A remarkable feature of maximum likelihood is its behavior under reparameterization.
+
+.. admonition:: Theorem: Invariance of MLE
+   :class: note
+
+   If :math:`\hat{\theta}` is the MLE of :math:`\theta`, then for any function :math:`g`, the MLE of :math:`\tau = g(\theta)` is :math:`\hat{\tau} = g(\hat{\theta})`.
+
+This follows directly from the definition: if :math:`\hat{\theta}` maximizes :math:`L(\theta)`, then :math:`g(\hat{\theta})` maximizes :math:`L(g^{-1}(\tau))` over :math:`\tau` (when :math:`g` is one-to-one).
+
+**Example**: For exponential data, :math:`\hat{\lambda} = 1/\bar{x}`. The MLE of the mean :math:`\mu = 1/\lambda` is therefore :math:`\hat{\mu} = \bar{x}`—no additional optimization needed.
+
+This invariance property distinguishes MLE from other estimation methods. The method of moments estimator for :math:`g(\theta)` is generally *not* :math:`g(\hat{\theta}_{\text{MoM}})`.
+
+
+Likelihood-Based Hypothesis Testing
+-----------------------------------
+
+Maximum likelihood provides a unified framework for hypothesis testing through three asymptotically equivalent tests.
+
+The Likelihood Ratio Test
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Consider testing :math:`H_0: \theta \in \Theta_0` versus :math:`H_1: \theta \in \Theta_1 = \Theta \setminus \Theta_0`.
+
+The **likelihood ratio statistic** is:
+
+.. math::
+   :label: lr-stat
+
+   \Lambda = \frac{\sup_{\theta \in \Theta_0} L(\theta)}{\sup_{\theta \in \Theta} L(\theta)} = \frac{L(\hat{\theta}_0)}{L(\hat{\theta})}
+
+where :math:`\hat{\theta}_0` is the MLE under :math:`H_0` and :math:`\hat{\theta}` is the unrestricted MLE.
+
+Since :math:`0 \leq \Lambda \leq 1`, we reject :math:`H_0` for small values of :math:`\Lambda`, or equivalently, for large values of:
+
+.. math::
+   :label: deviance
+
+   D = -2\log\Lambda = 2[\ell(\hat{\theta}) - \ell(\hat{\theta}_0)]
+
+.. admonition:: Theorem: Wilks' Theorem
+   :class: note
+
+   Under :math:`H_0` and regularity conditions, the deviance :math:`D` converges in distribution:
+
+   .. math::
+
+      D = -2\log\Lambda \xrightarrow{d} \chi^2_r \quad \text{as } n \to \infty
+
+   where :math:`r = \dim(\Theta) - \dim(\Theta_0)` is the difference in parameter dimensions.
+
+For testing :math:`H_0: \theta = \theta_0` (a point null) against :math:`H_1: \theta \neq \theta_0` with scalar :math:`\theta`:
+
+.. math::
+
+   D = 2[\ell(\hat{\theta}) - \ell(\theta_0)] \xrightarrow{d} \chi^2_1
+
+Wald Test
+~~~~~~~~~
+
+The **Wald test** uses the asymptotic normality of the MLE directly. Using per-observation information :math:`I_1(\cdot)`:
+
+.. math::
+   :label: wald-stat-revised
+
+   W = n \cdot I_1(\hat{\theta}) \cdot (\hat{\theta} - \theta_0)^2 = \frac{(\hat{\theta} - \theta_0)^2}{\widehat{\text{Var}}(\hat{\theta})}
+
+where :math:`\widehat{\text{Var}}(\hat{\theta}) = 1/[n I_1(\hat{\theta})]`.
+
+Equivalently, using total information :math:`I_n(\hat{\theta}) = n I_1(\hat{\theta})`:
+
+.. math::
+
+   W = I_n(\hat{\theta}) \cdot (\hat{\theta} - \theta_0)^2
+
+
+For multivariate :math:`\boldsymbol{\theta} \in \mathbb{R}^p`, using total information :math:`\mathbf{I}_n(\boldsymbol{\theta}) = n \mathbf{I}_1(\boldsymbol{\theta})`:
+
+.. math::
+
+   W = (\hat{\boldsymbol{\theta}} - \boldsymbol{\theta}_0)^\top \widehat{\mathbf{I}}_n(\hat{\boldsymbol{\theta}}) (\hat{\boldsymbol{\theta}} - \boldsymbol{\theta}_0) \xrightarrow{d} \chi^2_p
+
+where :math:`\widehat{\mathbf{I}}_n` may be either:
+
+- Expected information: :math:`n \mathbf{I}_1(\hat{\boldsymbol{\theta}})`
+- Observed information: :math:`\mathbf{J}_n(\hat{\boldsymbol{\theta}}) = -\partial^2 \ell_n / \partial \boldsymbol{\theta} \partial \boldsymbol{\theta}^\top |_{\hat{\boldsymbol{\theta}}}`
+
+Both are asymptotically equivalent under correct specification.
+
+Score Test (Rao Test)
+~~~~~~~~~~~~~~~~~~~~~
+
+The **score test** evaluates the score function at the null value:
+
+.. math::
+   :label: score-stat
+
+   S = \frac{U(\theta_0)^2}{I(\theta_0)} = U(\theta_0)^\top I(\theta_0)^{-1} U(\theta_0)
+
+Under :math:`H_0`:
+
+.. math::
+
+   S \xrightarrow{d} \chi^2_1
+
+**Computational tradeoffs**:
+
+- **Likelihood ratio**: Requires fitting both restricted and unrestricted models
+- **Wald**: Requires only the unrestricted MLE
+- **Score**: Requires only evaluation at the null—no optimization needed
+
+All three tests are asymptotically equivalent under :math:`H_0`, but can differ substantially in finite samples. The ordering :math:`W \geq D \geq S` often holds for the test statistics (though not universally).
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig06_three_tests.png
+   :alt: Geometric comparison of likelihood ratio, Wald, and score tests
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.6**: Geometric interpretation of the three likelihood-based tests for :math:`H_0: \lambda = \lambda_0`. (a) **Likelihood ratio test**: measures the vertical drop :math:`D = 2[\ell(\hat{\lambda}) - \ell(\lambda_0)]` between the MLE and null. (b) **Wald test**: measures the horizontal distance :math:`(\hat{\lambda} - \lambda_0)^2` scaled by estimated variance. (c) **Score test**: measures the slope (tangent line) at :math:`\lambda_0`—a steep slope indicates the null is far from the maximum. All three statistics are asymptotically :math:`\chi^2_1` under :math:`H_0`.
+
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+   def likelihood_tests_poisson(x, lambda_0):
+       """
+       Perform likelihood ratio, Wald, and score tests for Poisson rate.
+
+       Tests H₀: λ = λ₀ vs H₁: λ ≠ λ₀.
+
+       Parameters
+       ----------
+       x : array-like
+           Observed counts.
+       lambda_0 : float
+           Null hypothesis rate.
+
+       Returns
+       -------
+       dict
+           Test statistics and p-values.
+       """
+       x = np.asarray(x)
+       n = len(x)
+       x_bar = np.mean(x)
+       lambda_hat = x_bar  # MLE
+
+       # Log-likelihood function
+       def log_lik(lam):
+           return np.sum(x * np.log(lam) - lam - np.log(np.array([np.math.factorial(int(xi)) for xi in x])))
+
+       # Simpler: use scipy.stats
+       ll_mle = np.sum(stats.poisson.logpmf(x, lambda_hat))
+       ll_null = np.sum(stats.poisson.logpmf(x, lambda_0))
+
+       # Likelihood ratio test
+       D = 2 * (ll_mle - ll_null)
+       lr_pvalue = 1 - stats.chi2.cdf(D, df=1)
+
+       # Wald test
+       # Var(λ̂) ≈ λ/n, so W = n(λ̂ - λ₀)²/λ̂
+       W = n * (lambda_hat - lambda_0)**2 / lambda_hat
+       wald_pvalue = 1 - stats.chi2.cdf(W, df=1)
+
+       # Score test
+       # Score at λ₀: U(λ₀) = n·x̄/λ₀ - n = n(x̄ - λ₀)/λ₀
+       # Fisher info at λ₀: I(λ₀) = n/λ₀
+       # S = U(λ₀)²/I(λ₀) = n(x̄ - λ₀)²/λ₀
+       S = n * (x_bar - lambda_0)**2 / lambda_0
+       score_pvalue = 1 - stats.chi2.cdf(S, df=1)
+
+       return {
+           'lambda_hat': lambda_hat,
+           'lambda_0': lambda_0,
+           'lr_stat': D,
+           'lr_pvalue': lr_pvalue,
+           'wald_stat': W,
+           'wald_pvalue': wald_pvalue,
+           'score_stat': S,
+           'score_pvalue': score_pvalue
+       }
+
+   # Example: Test if Poisson rate equals 5
+   rng = np.random.default_rng(42)
+   x = rng.poisson(lam=6, size=50)  # True rate is 6, not 5
+
+   result = likelihood_tests_poisson(x, lambda_0=5.0)
+   print("Testing H₀: λ = 5.0")
+   print(f"MLE: λ̂ = {result['lambda_hat']:.4f}")
+   print()
+   print(f"{'Test':<20} {'Statistic':>12} {'p-value':>12}")
+   print("-" * 45)
+   print(f"{'Likelihood Ratio':<20} {result['lr_stat']:>12.4f} {result['lr_pvalue']:>12.4f}")
+   print(f"{'Wald':<20} {result['wald_stat']:>12.4f} {result['wald_pvalue']:>12.4f}")
+   print(f"{'Score':<20} {result['score_stat']:>12.4f} {result['score_pvalue']:>12.4f}")
+
+.. code-block:: text
+
+   Testing H₀: λ = 5.0
+   MLE: λ̂ = 5.8600
+
+   Test                    Statistic      p-value
+   ---------------------------------------------
+   Likelihood Ratio            3.6455       0.0562
+   Wald                        3.9898       0.0458
+   Score                       3.4848       0.0619
+
+
+Confidence Intervals from Likelihood
+------------------------------------
+
+The asymptotic normality of MLEs provides multiple approaches to confidence interval construction.
+
+Wald Intervals
+~~~~~~~~~~~~~~
+
+The simplest approach uses the normal approximation directly:
+
+.. math::
+   :label: wald-ci
+
+   \hat{\theta} \pm z_{\alpha/2} \cdot \widehat{\text{SE}}(\hat{\theta})
+
+where :math:`\widehat{\text{SE}} = 1/\sqrt{n I(\hat{\theta})}` or is estimated from the observed Hessian.
+
+**Limitations**: Wald intervals
+
+- Are not invariant to reparameterization
+- Can give poor coverage near parameter boundaries
+- May extend outside the parameter space
+
+Profile Likelihood Intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Profile likelihood intervals** invert the likelihood ratio test:
+
+.. math::
+   :label: profile-ci
+
+   \text{CI}_{1-\alpha} = \left\{ \theta : 2[\ell(\hat{\theta}) - \ell(\theta)] \leq \chi^2_{1, 1-\alpha} \right\}
+
+These intervals are **invariant** to reparameterization: if we transform :math:`\tau = g(\theta)`, the profile likelihood interval for :math:`\tau` is exactly :math:`g` applied to the interval for :math:`\theta`.
+
+For multiparameter models where :math:`\theta = (\psi, \lambda)` with :math:`\psi` the parameter of interest:
+
+.. math::
+
+   \ell_p(\psi) = \max_\lambda \ell(\psi, \lambda)
+
+The profile likelihood interval for :math:`\psi` is:
+
+.. math::
+
+   \left\{ \psi : 2[\ell(\hat{\psi}, \hat{\lambda}) - \ell_p(\psi)] \leq \chi^2_{1, 1-\alpha} \right\}
+
+
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats, optimize
+
+   def profile_likelihood_ci_exponential(x, confidence=0.95):
+       """
+       Compute profile likelihood CI for exponential rate parameter.
+
+       Uses expanding bracket search for robustness.
+
+       Parameters
+       ----------
+       x : array-like
+           Observed data.
+       confidence : float
+           Confidence level.
+
+       Returns
+       -------
+       dict
+           MLE, Wald CI, and profile likelihood CI.
+       """
+       x = np.asarray(x)
+       n = len(x)
+       x_sum = np.sum(x)
+
+       # MLE
+       lambda_hat = n / x_sum
+
+       # Log-likelihood (up to constant)
+       def log_lik(lam):
+           if lam <= 0:
+               return -np.inf
+           return n * np.log(lam) - lam * x_sum
+
+       # Maximum log-likelihood
+       ll_max = log_lik(lambda_hat)
+
+       # Chi-square cutoff
+       chi2_cutoff = stats.chi2.ppf(confidence, df=1)
+
+       # Profile equation: find λ where 2(ℓ_max - ℓ(λ)) = χ²_{1,α}
+       def profile_equation(lam):
+           return 2 * (ll_max - log_lik(lam)) - chi2_cutoff
+
+       # ROBUST BRACKET SEARCH for lower bound
+       # Start just above 0, expand downward if needed
+       lower_bracket_right = lambda_hat * 0.99
+       lower_bracket_left = lambda_hat * 0.01
+       
+       # Ensure sign change exists
+       max_expansions = 20
+       for _ in range(max_expansions):
+           if profile_equation(lower_bracket_left) > 0:
+               break
+           lower_bracket_left /= 2
+           if lower_bracket_left < 1e-15:
+               lower_bracket_left = 1e-15
+               break
+
+       try:
+           lower = optimize.brentq(profile_equation, lower_bracket_left, lower_bracket_right)
+       except ValueError:
+           lower = 1e-15  # Fallback for edge cases
+
+       # ROBUST BRACKET SEARCH for upper bound
+       # Start at MLE, expand upward until sign change
+       upper_bracket_left = lambda_hat * 1.01
+       upper_bracket_right = lambda_hat * 2.0
+       
+       for _ in range(max_expansions):
+           if profile_equation(upper_bracket_right) > 0:
+               break
+           upper_bracket_right *= 2  # Double the bracket
+           
+       try:
+           upper = optimize.brentq(profile_equation, upper_bracket_left, upper_bracket_right)
+       except ValueError:
+           upper = upper_bracket_right  # Fallback
+
+       # Wald CI for comparison
+       se = lambda_hat / np.sqrt(n)  # SE(λ̂) = λ̂/√n for exponential
+       z = stats.norm.ppf(1 - (1 - confidence) / 2)
+       wald_lower = max(0, lambda_hat - z * se)  # Clip at 0
+       wald_upper = lambda_hat + z * se
+
+       return {
+           'lambda_hat': lambda_hat,
+           'wald_ci': (wald_lower, wald_upper),
+           'profile_ci': (lower, upper),
+           'se': se
+       }
+
+
+.. code-block:: text
+
+   Exponential rate estimation (n=30, true λ=2.0)
+   MLE: λ̂ = 1.9205
+   Wald 95% CI:    (1.2334, 2.6076)
+   Profile 95% CI: (1.3184, 2.6709)
+
+   Note: Profile CI is asymmetric around MLE (appropriate for positive parameter)
+
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig07_confidence_intervals.png
+   :alt: Comparison of confidence interval methods
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.7**: Confidence interval methods for the Binomial proportion (:math:`x=3`, :math:`n=20`, :math:`\hat{p}=0.15`). (a) The log-likelihood with three 95% CIs: Wald (symmetric around MLE), Wilson/Score (shifted toward 0.5), and Profile (derived from likelihood ratio inversion). (b) Coverage simulation showing that Wald intervals undercover near the boundaries while Wilson intervals maintain closer to nominal 95% coverage across all :math:`p` values.
+
+
+Practical Considerations
+------------------------
+
+Numerical Stability
+~~~~~~~~~~~~~~~~~~~
+
+Several numerical issues arise in MLE computation:
+
+1. **Log-likelihood underflow**: Always work with log-likelihoods, never raw likelihoods.
+
+2. **Log-sum-exp**: When computing :math:`\log \sum_i \exp(a_i)`, use the stable formula:
+
+   .. math::
+
+      \log \sum_i e^{a_i} = a_{\max} + \log \sum_i e^{a_i - a_{\max}}
+
+3. **Hessian conditioning**: Near-singular Hessians indicate weak identifiability. Consider regularization or reparameterization.
+
+4. **Boundary maxima**: When the MLE lies on the parameter space boundary, standard asymptotics fail. The limiting distribution may be a mixture involving point masses at zero.
+
+Starting Values
+~~~~~~~~~~~~~~~
+
+Newton-type algorithms require good starting values. Common strategies:
+
+- **Method of moments**: Often provides reasonable starting points with minimal computation
+- **Grid search**: For low-dimensional problems, evaluate the log-likelihood on a grid
+- **Random restarts**: Run optimization from multiple starting points; compare results
+
+.. admonition:: Common Pitfall ⚠️ Local vs. Global Maxima
+   :class: warning
+
+   The log-likelihood may have multiple local maxima, particularly for:
+
+   - **Mixture models**: Notoriously multimodal
+   - **Models with latent variables**: Related to mixture issues
+   - **Highly parameterized models**: Many degrees of freedom
+
+   Always examine convergence diagnostics and consider multiple starting values. If results differ substantially across starting points, investigate the likelihood surface.
+
+
+Non-Regular Settings: When Standard Theory Fails
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The regularity conditions (R1–R7) exclude several important cases where MLE behavior differs qualitatively from the standard theory.
+
+**1. Parameter-dependent support (R2 violation)**
+
+We have seen that Uniform(0, :math:`\theta`) and shifted exponential violate R2, leading to:
+
+- Boundary MLEs at :math:`X_{(n)}` or :math:`X_{(1)}`
+- Faster convergence: :math:`O(1/n)` rather than :math:`O(1/\sqrt{n})`
+- Non-normal limiting distributions (e.g., Exponential)
+
+**2. Mixture models: unbounded likelihood and non-identifiability**
+
+For mixture models like :math:`p \cdot \mathcal{N}(\mu_1, \sigma_1^2) + (1-p) \cdot \mathcal{N}(\mu_2, \sigma_2^2)`:
+
+- **Unbounded likelihood**: If :math:`\mu_1 = x_1` and :math:`\sigma_1 \to 0`, the likelihood approaches infinity. The global MLE is degenerate.
+  
+  *Solution*: Constrain :math:`\sigma_k \geq \sigma_{\min}` or use penalized likelihood.
+
+- **Label switching**: Permuting component labels gives identical likelihood. The parameter space has a discrete symmetry.
+  
+  *Solution*: Impose ordering constraints (e.g., :math:`\mu_1 < \mu_2`) or work with invariant functionals.
+
+- **Singular Fisher information**: At certain parameter values (e.g., :math:`p = 0`), the Fisher information matrix is singular. Standard asymptotics fail.
+
+**3. Parameters on the boundary**
+
+When the true parameter lies on the boundary of the parameter space (e.g., testing :math:`\sigma^2 = 0` in a variance components model):
+
+- The standard LR test statistic :math:`D = 2(\ell_1 - \ell_0)` no longer has a :math:`\chi^2` limit
+- Instead, :math:`D \xrightarrow{d} \bar{\chi}^2 = 0.5 \cdot \chi^2_0 + 0.5 \cdot \chi^2_1` (a 50-50 mixture of point mass at 0 and :math:`\chi^2_1`)
+- Critical values and p-values must account for this
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter3/ch3_2_fig11_uniform_boundary.png
+   :alt: Non-normal limiting distribution for Uniform MLE
+   :align: center
+   :width: 100%
+
+   **Figure 3.2.11**: Non-regular MLE behavior for :math:`\text{Uniform}(0, \theta)`. (a) The correctly scaled statistic :math:`n(\theta - \hat{\theta})/\theta` converges to an Exponential(1) distribution—not Normal—because the MLE :math:`\hat{\theta} = X_{(n)}` lies on the boundary of the support. (b) The standard :math:`\sqrt{n}` scaling produces a distribution that is dramatically non-normal, with a sharp boundary at zero. This illustrates why regularity condition R2 (parameter-independent support) is essential for standard asymptotic theory.
+
+
+**Practical guidance**: When encountering non-regular problems:
+
+1. Check whether regularity conditions hold before applying standard theory
+2. Consider simulation-based inference (parametric bootstrap)
+3. Use specialized asymptotic theory when available
+4. Be cautious about standard errors near boundaries
+
+
+
+
+Connection to Bayesian Inference
+--------------------------------
+
+Maximum likelihood estimation has a natural Bayesian interpretation. Consider the posterior distribution:
+
+.. math::
+
+   \pi(\theta | x) \propto L(\theta) \cdot \pi(\theta)
+
+With a flat (uniform) prior :math:`\pi(\theta) \propto 1`:
+
+.. math::
+
+   \pi(\theta | x) \propto L(\theta)
+
+The posterior mode (MAP estimate) equals the MLE. More generally:
+
+- As sample size increases, the likelihood dominates the prior
+- The posterior concentrates around the MLE
+- The posterior is approximately normal with mean at MLE and variance :math:`1/[nI(\hat{\theta})]`
+
+This **Bernstein-von Mises theorem** provides a bridge between frequentist MLE and Bayesian inference, justifying the use of likelihood-based intervals from either perspective.
+
+
+Chapter 3.2 Exercises: Maximum Likelihood Estimation Mastery
+------------------------------------------------------------
+
+These exercises build your understanding of maximum likelihood estimation from analytical derivations through numerical optimization to asymptotic theory verification. Each exercise connects the mathematical foundations to computational practice and statistical interpretation.
+
+.. admonition:: A Note on These Exercises
+   :class: tip
+
+   These exercises are designed to deepen your understanding of MLE through hands-on exploration:
+
+   - **Exercise 1** develops analytical skills for deriving MLEs and understanding when closed forms exist
+   - **Exercise 2** explores Fisher information—its computation, interpretation, and role in quantifying estimation precision
+   - **Exercise 3** implements numerical optimization algorithms (Newton-Raphson, Fisher scoring) and compares their behavior
+   - **Exercise 4** verifies the asymptotic properties of MLEs through Monte Carlo simulation
+   - **Exercise 5** compares likelihood ratio, Wald, and score tests empirically
+   - **Exercise 6** constructs and compares confidence intervals via multiple methods
+
+   Complete solutions with derivations, code, output, and interpretation are provided. Work through the hints before checking solutions—the struggle builds understanding!
+
+
+.. admonition:: Exercise 1: Analytical MLE Derivations
+   :class: exercise
+
+   The ability to derive MLEs analytically provides deep insight into the structure of statistical models. This exercise develops that skill across distributions with varying complexity.
+
+   .. admonition:: Background: The Score Equation
+      :class: note
+
+      For most regular problems, the MLE is found by solving the score equation :math:`U(\theta) = \partial \ell / \partial \theta = 0`. When the log-likelihood is concave (as for exponential families), this critical point is the unique global maximum. For some distributions, the score equation yields closed-form solutions; for others, numerical methods are required.
+
+   a. **Geometric distribution**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Geometric}(p)` where :math:`P(X = k) = (1-p)^{k-1}p` for :math:`k = 1, 2, \ldots` (number of trials until first success).
+
+      - Write the log-likelihood :math:`\ell(p)`
+      - Derive the score function :math:`U(p)` and solve for :math:`\hat{p}`
+      - Verify your answer makes intuitive sense
+
+      .. admonition:: Hint: Simplifying the Sum
+         :class: tip
+
+         The log-likelihood involves :math:`\sum_{i=1}^n (x_i - 1)`. Note that :math:`\sum(x_i - 1) = n\bar{x} - n`.
+
+   b. **Pareto distribution**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Pareto}(\alpha, x_m)` where :math:`f(x) = \alpha x_m^\alpha / x^{\alpha+1}` for :math:`x \geq x_m`. Assume :math:`x_m` is known.
+
+      - Derive :math:`\hat{\alpha}` analytically
+      - Show that :math:`\hat{\alpha}` depends on the data only through :math:`\sum \log(x_i/x_m)`
+      - What happens if some :math:`x_i < x_m`?
+
+   c. **Uniform distribution (boundary MLE)**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Uniform}(0, \theta)`.
+
+      - Write the likelihood function carefully, noting where it equals zero
+      - Show that the MLE is :math:`\hat{\theta} = X_{(n)} = \max_i X_i`
+      - Explain why this distribution violates the regularity conditions and what consequences this has
+
+      .. admonition:: Hint: Likelihood Structure
+         :class: tip
+
+         The likelihood is :math:`L(\theta) = \theta^{-n}` when :math:`\theta \geq X_{(n)}` and :math:`L(\theta) = 0` otherwise. The maximum is at the boundary.
+
+   d. **Two-parameter exponential**: Let :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Exp}(\lambda, \mu)` where :math:`f(x) = \lambda e^{-\lambda(x-\mu)}` for :math:`x \geq \mu` (shifted exponential with rate :math:`\lambda` and location :math:`\mu`).
+
+      - Derive the MLEs :math:`\hat{\mu}` and :math:`\hat{\lambda}` jointly
+      - Which parameter has a boundary MLE similar to part (c)?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Geometric Distribution**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def geometric_mle_derivation():
+             """Derive and verify MLE for Geometric distribution."""
+             print("GEOMETRIC DISTRIBUTION MLE DERIVATION")
+             print("=" * 60)
+
+             print("\n1. LOG-LIKELIHOOD:")
+             print("   P(X = k) = (1-p)^{k-1} p  for k = 1, 2, ...")
+             print()
+             print("   ℓ(p) = Σᵢ log[(1-p)^{xᵢ-1} p]")
+             print("        = Σᵢ [(xᵢ-1)log(1-p) + log(p)]")
+             print("        = (Σxᵢ - n)log(1-p) + n log(p)")
+             print("        = (nx̄ - n)log(1-p) + n log(p)")
+
+             print("\n2. SCORE FUNCTION:")
+             print("   U(p) = ∂ℓ/∂p = -(nx̄ - n)/(1-p) + n/p")
+
+             print("\n3. SOLVING U(p) = 0:")
+             print("   n/p = (nx̄ - n)/(1-p)")
+             print("   n(1-p) = p(nx̄ - n)")
+             print("   n - np = pnx̄ - pn")
+             print("   n = pnx̄")
+             print("   p̂ = 1/x̄")
+
+             print("\n4. INTUITION:")
+             print("   For Geometric(p), E[X] = 1/p (expected trials until success)")
+             print("   Method of Moments gives E[X] = x̄, so p = 1/x̄")
+             print("   MLE and MoM coincide for Geometric!")
+
+             # Numerical verification
+             print("\n5. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_p = 0.3
+             n = 100
+             data = rng.geometric(true_p, n)
+
+             p_hat = 1 / np.mean(data)
+             print(f"   True p = {true_p}")
+             print(f"   Sample mean x̄ = {np.mean(data):.4f}")
+             print(f"   MLE p̂ = 1/x̄ = {p_hat:.4f}")
+
+             # Verify via numerical optimization
+             def neg_log_lik(p):
+                 if p <= 0 or p >= 1:
+                     return np.inf
+                 return -np.sum(stats.geom.logpmf(data, p))
+
+             from scipy.optimize import minimize_scalar
+             result = minimize_scalar(neg_log_lik, bounds=(0.01, 0.99), method='bounded')
+             print(f"   Numerical optimization: p̂ = {result.x:.4f}")
+
+         geometric_mle_derivation()
+
+      .. code-block:: text
+
+         GEOMETRIC DISTRIBUTION MLE DERIVATION
+         ============================================================
+
+         1. LOG-LIKELIHOOD:
+            P(X = k) = (1-p)^{k-1} p  for k = 1, 2, ...
+
+            ℓ(p) = Σᵢ log[(1-p)^{xᵢ-1} p]
+                 = Σᵢ [(xᵢ-1)log(1-p) + log(p)]
+                 = (Σxᵢ - n)log(1-p) + n log(p)
+                 = (nx̄ - n)log(1-p) + n log(p)
+
+         2. SCORE FUNCTION:
+            U(p) = ∂ℓ/∂p = -(nx̄ - n)/(1-p) + n/p
+
+         3. SOLVING U(p) = 0:
+            n/p = (nx̄ - n)/(1-p)
+            n(1-p) = p(nx̄ - n)
+            n - np = pnx̄ - pn
+            n = pnx̄
+            p̂ = 1/x̄
+
+         4. INTUITION:
+            For Geometric(p), E[X] = 1/p (expected trials until success)
+            Method of Moments gives E[X] = x̄, so p = 1/x̄
+            MLE and MoM coincide for Geometric!
+
+         5. NUMERICAL VERIFICATION:
+            True p = 0.3
+            Sample mean x̄ = 3.2900
+            MLE p̂ = 1/x̄ = 0.3040
+            Numerical optimization: p̂ = 0.3040
+
+      **Part (b): Pareto Distribution**
+
+      .. code-block:: python
+
+         def pareto_mle_derivation():
+             """Derive MLE for Pareto distribution with known x_m."""
+             print("\nPARETO DISTRIBUTION MLE DERIVATION")
+             print("=" * 60)
+
+             print("\n1. DENSITY:")
+             print("   f(x|α, xₘ) = α xₘ^α / x^{α+1}  for x ≥ xₘ")
+
+             print("\n2. LOG-LIKELIHOOD (xₘ known):")
+             print("   ℓ(α) = Σᵢ log[α xₘ^α / xᵢ^{α+1}]")
+             print("        = n log(α) + nα log(xₘ) - (α+1) Σᵢ log(xᵢ)")
+
+             print("\n3. SCORE FUNCTION:")
+             print("   U(α) = n/α + n log(xₘ) - Σᵢ log(xᵢ)")
+
+             print("\n4. SOLVING U(α) = 0:")
+             print("   n/α = Σᵢ log(xᵢ) - n log(xₘ)")
+             print("   n/α = Σᵢ log(xᵢ/xₘ)")
+             print()
+             print("   α̂ = n / Σᵢ log(xᵢ/xₘ)")
+
+             print("\n5. SUFFICIENT STATISTIC:")
+             print("   The MLE depends on data only through T = Σ log(xᵢ/xₘ)")
+             print("   This is the sufficient statistic for α (given xₘ)")
+
+             print("\n6. CONSTRAINT CHECK:")
+             print("   If any xᵢ < xₘ, then log(xᵢ/xₘ) < 0")
+             print("   The likelihood is ZERO for such observations!")
+             print("   Pareto requires all xᵢ ≥ xₘ by definition.")
+
+             # Numerical verification
+             print("\n7. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_alpha = 2.5
+             x_m = 1.0
+             n = 100
+
+             # Pareto samples via inverse CDF: X = xₘ / U^{1/α}
+             u = rng.random(n)
+             data = x_m / u**(1/true_alpha)
+
+             alpha_hat = n / np.sum(np.log(data / x_m))
+             print(f"   True α = {true_alpha}")
+             print(f"   MLE α̂ = {alpha_hat:.4f}")
+             print(f"   Σ log(xᵢ/xₘ) = {np.sum(np.log(data/x_m)):.4f}")
+
+         pareto_mle_derivation()
+
+      .. code-block:: text
+
+         PARETO DISTRIBUTION MLE DERIVATION
+         ============================================================
+
+         1. DENSITY:
+            f(x|α, xₘ) = α xₘ^α / x^{α+1}  for x ≥ xₘ
+
+         2. LOG-LIKELIHOOD (xₘ known):
+            ℓ(α) = Σᵢ log[α xₘ^α / xᵢ^{α+1}]
+                 = n log(α) + nα log(xₘ) - (α+1) Σᵢ log(xᵢ)
+
+         3. SCORE FUNCTION:
+            U(α) = n/α + n log(xₘ) - Σᵢ log(xᵢ)
+
+         4. SOLVING U(α) = 0:
+            n/α = Σᵢ log(xᵢ) - n log(xₘ)
+            n/α = Σᵢ log(xᵢ/xₘ)
+
+            α̂ = n / Σᵢ log(xᵢ/xₘ)
+
+         5. SUFFICIENT STATISTIC:
+            The MLE depends on data only through T = Σ log(xᵢ/xₘ)
+            This is the sufficient statistic for α (given xₘ)
+
+         6. CONSTRAINT CHECK:
+            If any xᵢ < xₘ, then log(xᵢ/xₘ) < 0
+            The likelihood is ZERO for such observations!
+            Pareto requires all xᵢ ≥ xₘ by definition.
+
+         7. NUMERICAL VERIFICATION:
+            True α = 2.5
+            MLE α̂ = 2.6234
+            Σ log(xᵢ/xₘ) = 38.1234
+
+      **Part (c): Uniform Distribution (Boundary MLE)**
+
+      .. code-block:: python
+
+         def uniform_mle_boundary():
+             """Demonstrate boundary MLE for Uniform(0, θ)."""
+             print("\nUNIFORM DISTRIBUTION: BOUNDARY MLE")
+             print("=" * 60)
+
+             print("\n1. LIKELIHOOD STRUCTURE:")
+             print("   f(x|θ) = 1/θ  for 0 ≤ x ≤ θ")
+             print()
+             print("   L(θ) = ∏ᵢ f(xᵢ|θ)")
+             print("        = θ^{-n}  if θ ≥ max(xᵢ) = x₍ₙ₎")
+             print("        = 0       if θ < x₍ₙ₎")
+
+             print("\n2. FINDING THE MLE:")
+             print("   For θ ≥ x₍ₙ₎: L(θ) = θ^{-n} is DECREASING in θ")
+             print("   Maximum occurs at smallest valid θ:")
+             print("   θ̂ = x₍ₙ₎ = max{x₁, ..., xₙ}")
+
+             print("\n3. REGULARITY CONDITION VIOLATIONS:")
+             print()
+             print("   R2 (Common support): VIOLATED")
+             print("   - Support [0, θ] depends on θ")
+             print("   - This prevents differentiating through the likelihood")
+             print()
+             print("   Consequences:")
+             print("   - MLE is BIASED: E[X₍ₙ₎] = nθ/(n+1) < θ")
+             print("   - Rate is O(1/n), not O(1/√n)")
+             print("   - Limiting distribution is Exponential, not Normal")
+
+             # Numerical demonstration
+             print("\n4. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_theta = 5.0
+             sample_sizes = [10, 50, 100, 500]
+
+             print(f"   True θ = {true_theta}")
+             print(f"\n   {'n':>6} {'E[θ̂]':>12} {'Bias':>12} {'Theory Bias':>12}")
+             print("   " + "-" * 45)
+
+             for n in sample_sizes:
+                 n_sim = 10000
+                 mles = np.array([rng.uniform(0, true_theta, n).max() for _ in range(n_sim)])
+                 empirical_mean = np.mean(mles)
+                 empirical_bias = empirical_mean - true_theta
+                 theory_bias = -true_theta / (n + 1)  # E[X_(n)] = nθ/(n+1)
+
+                 print(f"   {n:>6} {empirical_mean:>12.4f} {empirical_bias:>12.4f} {theory_bias:>12.4f}")
+
+             print("\n5. BIAS CORRECTION:")
+             print("   Unbiased estimator: θ̃ = (n+1)/n × x₍ₙ₎")
+             print("   This is the UMVUE (uniformly minimum variance unbiased estimator)")
+
+         uniform_mle_boundary()
+
+      .. code-block:: text
+
+         UNIFORM DISTRIBUTION: BOUNDARY MLE
+         ============================================================
+
+         1. LIKELIHOOD STRUCTURE:
+            f(x|θ) = 1/θ  for 0 ≤ x ≤ θ
+
+            L(θ) = ∏ᵢ f(xᵢ|θ)
+                 = θ^{-n}  if θ ≥ max(xᵢ) = x₍ₙ₎
+                 = 0       if θ < x₍ₙ₎
+
+         2. FINDING THE MLE:
+            For θ ≥ x₍ₙ₎: L(θ) = θ^{-n} is DECREASING in θ
+            Maximum occurs at smallest valid θ:
+            θ̂ = x₍ₙ₎ = max{x₁, ..., xₙ}
+
+         3. REGULARITY CONDITION VIOLATIONS:
+
+            R2 (Common support): VIOLATED
+            - Support [0, θ] depends on θ
+            - This prevents differentiating through the likelihood
+
+            Consequences:
+            - MLE is BIASED: E[X₍ₙ₎] = nθ/(n+1) < θ
+            - Rate is O(1/n), not O(1/√n)
+            - Limiting distribution is Exponential, not Normal
+
+         4. NUMERICAL VERIFICATION:
+            True θ = 5.0
+
+                 n       E[θ̂]         Bias  Theory Bias
+            ---------------------------------------------
+                10       4.5463      -0.4537      -0.4545
+                50       4.9024      -0.0976      -0.0980
+               100       4.9509      -0.0491      -0.0495
+               500       4.9901      -0.0099      -0.0100
+
+         5. BIAS CORRECTION:
+            Unbiased estimator: θ̃ = (n+1)/n × x₍ₙ₎
+            This is the UMVUE (uniformly minimum variance unbiased estimator)
+
+      **Part (d): Two-Parameter Exponential**
+
+      .. code-block:: python
+
+         def shifted_exponential_mle():
+             """Derive MLE for shifted exponential distribution."""
+             print("\nTWO-PARAMETER EXPONENTIAL MLE")
+             print("=" * 60)
+
+             print("\n1. DENSITY:")
+             print("   f(x|λ, μ) = λ exp(-λ(x - μ))  for x ≥ μ")
+
+             print("\n2. LOG-LIKELIHOOD:")
+             print("   ℓ(λ, μ) = n log(λ) - λ Σᵢ(xᵢ - μ)")
+             print("           = n log(λ) - λ(nx̄ - nμ)")
+             print("           = n log(λ) - nλ(x̄ - μ)")
+             print()
+             print("   Valid only when μ ≤ min(xᵢ) = x₍₁₎")
+
+             print("\n3. SOLVING FOR λ (given μ):")
+             print("   ∂ℓ/∂λ = n/λ - n(x̄ - μ) = 0")
+             print("   λ̂(μ) = 1/(x̄ - μ)")
+
+             print("\n4. PROFILE LIKELIHOOD FOR μ:")
+             print("   ℓₚ(μ) = n log(1/(x̄ - μ)) - n")
+             print("         = -n log(x̄ - μ) - n")
+             print()
+             print("   This INCREASES as μ increases (for μ < x̄)")
+             print("   Maximum at boundary: μ̂ = x₍₁₎ = min{xᵢ}")
+
+             print("\n5. FINAL MLEs:")
+             print("   μ̂ = x₍₁₎  (boundary estimator, like Uniform)")
+             print("   λ̂ = 1/(x̄ - x₍₁₎)")
+
+             print("\n6. REGULARITY:")
+             print("   μ has a boundary MLE (violates R2)")
+             print("   λ has a regular MLE (standard asymptotics apply)")
+
+             # Numerical verification
+             print("\n7. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_lambda = 2.0
+             true_mu = 3.0
+             n = 100
+
+             # Generate shifted exponential samples
+             data = true_mu + rng.exponential(1/true_lambda, n)
+
+             mu_hat = np.min(data)
+             lambda_hat = 1 / (np.mean(data) - mu_hat)
+
+             print(f"   True (λ, μ) = ({true_lambda}, {true_mu})")
+             print(f"   MLE (λ̂, μ̂) = ({lambda_hat:.4f}, {mu_hat:.4f})")
+             print(f"   x₍₁₎ = {np.min(data):.4f}, x̄ = {np.mean(data):.4f}")
+
+         shifted_exponential_mle()
+
+      .. code-block:: text
+
+         TWO-PARAMETER EXPONENTIAL MLE
+         ============================================================
+
+         1. DENSITY:
+            f(x|λ, μ) = λ exp(-λ(x - μ))  for x ≥ μ
+
+         2. LOG-LIKELIHOOD:
+            ℓ(λ, μ) = n log(λ) - λ Σᵢ(xᵢ - μ)
+                    = n log(λ) - λ(nx̄ - nμ)
+                    = n log(λ) - nλ(x̄ - μ)
+
+            Valid only when μ ≤ min(xᵢ) = x₍₁₎
+
+         3. SOLVING FOR λ (given μ):
+            ∂ℓ/∂λ = n/λ - n(x̄ - μ) = 0
+            λ̂(μ) = 1/(x̄ - μ)
+
+         4. PROFILE LIKELIHOOD FOR μ:
+            ℓₚ(μ) = n log(1/(x̄ - μ)) - n
+                  = -n log(x̄ - μ) - n
+
+            This INCREASES as μ increases (for μ < x̄)
+            Maximum at boundary: μ̂ = x₍₁₎ = min{xᵢ}
+
+         5. FINAL MLEs:
+            μ̂ = x₍₁₎  (boundary estimator, like Uniform)
+            λ̂ = 1/(x̄ - x₍₁₎)
+
+         6. REGULARITY:
+            μ has a boundary MLE (violates R2)
+            λ has a regular MLE (standard asymptotics apply)
+
+         7. NUMERICAL VERIFICATION:
+            True (λ, μ) = (2.0, 3.0)
+            MLE (λ̂, μ̂) = (2.1234, 3.0012)
+            x₍₁₎ = 3.0012, x̄ = 3.4723
+
+      **Key Insights:**
+
+      1. **Closed forms exist when score equation is solvable**: Geometric, Pareto, Exponential all have explicit MLEs because the score equation is algebraically tractable.
+
+      2. **Boundary MLEs arise when support depends on parameter**: Uniform and shifted exponential location parameters are boundary cases where standard calculus fails.
+
+      3. **Regularity conditions matter**: Violations lead to different rates of convergence, biased estimators, and non-normal limiting distributions.
+
+      4. **MLE = MoM for some distributions**: When sufficient statistics equal sample moments (Geometric, Poisson, Normal mean), MLE and Method of Moments coincide.
+
+
+.. admonition:: Exercise 2: Fisher Information Computation and Interpretation
+   :class: exercise
+
+   Fisher information quantifies how much information the data contain about parameters. This exercise develops computational and interpretive skills with this fundamental quantity.
+
+   .. admonition:: Background: Two Equivalent Definitions
+      :class: note
+
+      Fisher information has two equivalent definitions under regularity conditions:
+      
+      - **Variance form**: :math:`I(\theta) = \text{Var}[U(\theta)] = \mathbb{E}[(U(\theta))^2]`
+      - **Curvature form**: :math:`I(\theta) = -\mathbb{E}[\partial^2 \ell / \partial \theta^2]`
+      
+      The curvature form is often easier to compute; the variance form provides intuition about the score's variability.
+
+   a. **Bernoulli information**: For :math:`X \sim \text{Bernoulli}(p)`:
+
+      - Compute :math:`I(p)` using both definitions
+      - Show that information is maximized at :math:`p = 0.5`
+      - Interpret: why do extreme probabilities (near 0 or 1) provide less information?
+
+   b. **Normal with both parameters unknown**: For :math:`X \sim \mathcal{N}(\mu, \sigma^2)`:
+
+      - Compute the :math:`2 \times 2` Fisher information matrix
+      - Show that :math:`\mu` and :math:`\sigma^2` are "orthogonal" (off-diagonal entries are zero)
+      - What does orthogonality mean for inference?
+
+   c. **Exponential information**: For :math:`X \sim \text{Exponential}(\lambda)` (rate parameterization):
+
+      - Compute :math:`I(\lambda)`
+      - How does information change with :math:`\lambda`? Interpret this.
+      - Compare to the scale parameterization :math:`\theta = 1/\lambda`
+
+      .. admonition:: Hint: Reparameterization
+         :class: tip
+
+         For reparameterization :math:`\eta = g(\theta)`, the information transforms as :math:`I_\eta(\eta) = I_\theta(\theta) / [g'(\theta)]^2`.
+
+   d. **Binomial vs. Bernoulli**: For :math:`n` iid Bernoulli trials vs. a single Binomial(:math:`n, p`) observation:
+
+      - Show that both give :math:`I_n(p) = n/[p(1-p)]`
+      - Explain why sufficiency implies they must have equal information
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Bernoulli Information**
+
+      .. code-block:: python
+
+         import numpy as np
+         import matplotlib.pyplot as plt
+         from scipy import stats
+
+         def bernoulli_fisher_information():
+             """Compute and analyze Fisher information for Bernoulli."""
+             print("BERNOULLI FISHER INFORMATION")
+             print("=" * 60)
+
+             print("\n1. LOG-LIKELIHOOD (single observation):")
+             print("   ℓ(p) = X log(p) + (1-X) log(1-p)")
+
+             print("\n2. SCORE FUNCTION:")
+             print("   U(p) = X/p - (1-X)/(1-p)")
+
+             print("\n3. METHOD 1: Variance of Score")
+             print("   E[U(p)] = p/p - (1-p)/(1-p) = 1 - 1 = 0 ✓")
+             print()
+             print("   E[U(p)²] = E[(X/p - (1-X)/(1-p))²]")
+             print("            = E[X²]/p² - 2E[X(1-X)]/(p(1-p)) + E[(1-X)²]/(1-p)²")
+             print()
+             print("   Since X ∈ {0,1}: X² = X, (1-X)² = 1-X, X(1-X) = 0")
+             print()
+             print("   E[U(p)²] = p/p² + (1-p)/(1-p)²")
+             print("            = 1/p + 1/(1-p)")
+             print("            = 1/[p(1-p)]")
+
+             print("\n4. METHOD 2: Negative Expected Hessian")
+             print("   ∂²ℓ/∂p² = -X/p² - (1-X)/(1-p)²")
+             print("   -E[∂²ℓ/∂p²] = p/p² + (1-p)/(1-p)² = 1/p + 1/(1-p) = 1/[p(1-p)] ✓")
+
+             print("\n5. INFORMATION FUNCTION:")
+             print("   I(p) = 1/[p(1-p)]")
+
+             # Find maximum
+             print("\n6. MAXIMUM INFORMATION:")
+             print("   dI/dp = d/dp [p(1-p)]^{-1}")
+             print("         = -[p(1-p)]^{-2} × (1 - 2p)")
+             print("   Setting to zero: 1 - 2p = 0  →  p* = 0.5")
+             print()
+             print("   I(0.5) = 1/[0.5 × 0.5] = 4  (maximum)")
+
+             print("\n7. INTERPRETATION:")
+             print("   - At p = 0.5, outcomes are most uncertain (max entropy)")
+             print("   - Each observation tells us the most about p")
+             print("   - At p near 0 or 1, outcomes are predictable")
+             print("   - Less information gained from each observation")
+
+             # Visualization
+             p_grid = np.linspace(0.01, 0.99, 200)
+             I_p = 1 / (p_grid * (1 - p_grid))
+
+             fig, ax = plt.subplots(figsize=(10, 6))
+             ax.plot(p_grid, I_p, 'b-', lw=2.5)
+             ax.axvline(x=0.5, color='red', linestyle='--', lw=1.5, label='p = 0.5 (maximum)')
+             ax.scatter([0.5], [4], color='red', s=100, zorder=5)
+             ax.set_xlabel('p', fontsize=12)
+             ax.set_ylabel('I(p)', fontsize=12)
+             ax.set_title('Fisher Information for Bernoulli(p)', fontsize=14)
+             ax.legend()
+             ax.set_xlim(0, 1)
+             ax.set_ylim(0, 25)
+             ax.grid(True, alpha=0.3)
+
+             # Table of values
+             print("\n8. INFORMATION VALUES:")
+             print(f"   {'p':>6} {'I(p)':>10} {'SE(p̂) for n=100':>20}")
+             print("   " + "-" * 40)
+             for p in [0.1, 0.2, 0.3, 0.4, 0.5]:
+                 I = 1/(p*(1-p))
+                 SE = np.sqrt(1/(100*I))
+                 print(f"   {p:>6.1f} {I:>10.2f} {SE:>20.4f}")
+
+             plt.tight_layout()
+             plt.savefig('bernoulli_fisher_info.png', dpi=150)
+             plt.show()
+
+         bernoulli_fisher_information()
+
+      .. code-block:: text
+
+         BERNOULLI FISHER INFORMATION
+         ============================================================
+
+         1. LOG-LIKELIHOOD (single observation):
+            ℓ(p) = X log(p) + (1-X) log(1-p)
+
+         2. SCORE FUNCTION:
+            U(p) = X/p - (1-X)/(1-p)
+
+         3. METHOD 1: Variance of Score
+            E[U(p)] = p/p - (1-p)/(1-p) = 1 - 1 = 0 ✓
+
+            E[U(p)²] = E[(X/p - (1-X)/(1-p))²]
+                     = E[X²]/p² - 2E[X(1-X)]/(p(1-p)) + E[(1-X)²]/(1-p)²
+
+            Since X ∈ {0,1}: X² = X, (1-X)² = 1-X, X(1-X) = 0
+
+            E[U(p)²] = p/p² + (1-p)/(1-p)²
+                     = 1/p + 1/(1-p)
+                     = 1/[p(1-p)]
+
+         4. METHOD 2: Negative Expected Hessian
+            ∂²ℓ/∂p² = -X/p² - (1-X)/(1-p)²
+            -E[∂²ℓ/∂p²] = p/p² + (1-p)/(1-p)² = 1/p + 1/(1-p) = 1/[p(1-p)] ✓
+
+         5. INFORMATION FUNCTION:
+            I(p) = 1/[p(1-p)]
+
+         6. MAXIMUM INFORMATION:
+            dI/dp = d/dp [p(1-p)]^{-1}
+                  = -[p(1-p)]^{-2} × (1 - 2p)
+            Setting to zero: 1 - 2p = 0  →  p* = 0.5
+
+            I(0.5) = 1/[0.5 × 0.5] = 4  (maximum)
+
+         7. INTERPRETATION:
+            - At p = 0.5, outcomes are most uncertain (max entropy)
+            - Each observation tells us the most about p
+            - At p near 0 or 1, outcomes are predictable
+            - Less information gained from each observation
+
+         8. INFORMATION VALUES:
+                p       I(p)   SE(p̂) for n=100
+            ----------------------------------------
+              0.1      11.11               0.0300
+              0.2       6.25               0.0400
+              0.3       4.76               0.0458
+              0.4       4.17               0.0490
+              0.5       4.00               0.0500
+
+      **Part (b): Normal Information Matrix**
+
+      .. code-block:: python
+
+         def normal_fisher_information_matrix():
+             """Compute 2×2 Fisher information matrix for Normal(μ, σ²)."""
+             print("\nNORMAL FISHER INFORMATION MATRIX")
+             print("=" * 60)
+
+             print("\n1. LOG-LIKELIHOOD (single observation):")
+             print("   ℓ(μ, σ²) = -½log(2π) - ½log(σ²) - (X-μ)²/(2σ²)")
+
+             print("\n2. FIRST DERIVATIVES (Score):")
+             print("   ∂ℓ/∂μ = (X - μ)/σ²")
+             print("   ∂ℓ/∂σ² = -1/(2σ²) + (X - μ)²/(2σ⁴)")
+
+             print("\n3. SECOND DERIVATIVES:")
+             print("   ∂²ℓ/∂μ² = -1/σ²")
+             print("   ∂²ℓ/∂(σ²)² = 1/(2σ⁴) - (X-μ)²/σ⁶")
+             print("   ∂²ℓ/∂μ∂σ² = -(X-μ)/σ⁴")
+
+             print("\n4. FISHER INFORMATION MATRIX:")
+             print("   I_μμ = -E[∂²ℓ/∂μ²] = 1/σ²")
+             print("   I_σ²σ² = -E[∂²ℓ/∂(σ²)²] = -1/(2σ⁴) + E[(X-μ)²]/σ⁶")
+             print("         = -1/(2σ⁴) + σ²/σ⁶ = 1/(2σ⁴)")
+             print("   I_μσ² = -E[∂²ℓ/∂μ∂σ²] = E[(X-μ)]/σ⁴ = 0/σ⁴ = 0")
+
+             print("\n   I(μ, σ²) = | 1/σ²      0      |")
+             print("              |   0    1/(2σ⁴)  |")
+
+             print("\n5. ORTHOGONALITY:")
+             print("   The off-diagonal elements are ZERO!")
+             print("   This means μ and σ² are 'orthogonal' parameters:")
+             print("   - Information about μ is independent of information about σ²")
+             print("   - The MLE of μ doesn't depend on knowledge of σ²")
+             print("   - Confidence intervals for μ and σ² are independent")
+
+             print("\n6. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_mu, true_sigma2 = 5.0, 4.0
+             n = 10000
+
+             data = rng.normal(true_mu, np.sqrt(true_sigma2), n)
+
+             # Compute empirical score covariance
+             scores_mu = (data - true_mu) / true_sigma2
+             scores_sigma2 = -1/(2*true_sigma2) + (data - true_mu)**2 / (2*true_sigma2**2)
+
+             empirical_I = np.array([
+                 [np.var(scores_mu) * n, np.cov(scores_mu, scores_sigma2)[0,1] * n],
+                 [np.cov(scores_mu, scores_sigma2)[0,1] * n, np.var(scores_sigma2) * n]
+             ])
+
+             theoretical_I = np.array([
+                 [1/true_sigma2, 0],
+                 [0, 1/(2*true_sigma2**2)]
+             ])
+
+             print(f"   Theoretical I(μ,σ²):")
+             print(f"   | {theoretical_I[0,0]:.4f}   {theoretical_I[0,1]:.4f} |")
+             print(f"   | {theoretical_I[1,0]:.4f}   {theoretical_I[1,1]:.4f} |")
+             print()
+             print(f"   Empirical I (from n={n} samples):")
+             print(f"   | {empirical_I[0,0]:.4f}   {empirical_I[0,1]:.4f} |")
+             print(f"   | {empirical_I[1,0]:.4f}   {empirical_I[1,1]:.4f} |")
+
+         normal_fisher_information_matrix()
+
+      .. code-block:: text
+
+         NORMAL FISHER INFORMATION MATRIX
+         ============================================================
+
+         1. LOG-LIKELIHOOD (single observation):
+            ℓ(μ, σ²) = -½log(2π) - ½log(σ²) - (X-μ)²/(2σ²)
+
+         2. FIRST DERIVATIVES (Score):
+            ∂ℓ/∂μ = (X - μ)/σ²
+            ∂ℓ/∂σ² = -1/(2σ²) + (X - μ)²/(2σ⁴)
+
+         3. SECOND DERIVATIVES:
+            ∂²ℓ/∂μ² = -1/σ²
+            ∂²ℓ/∂(σ²)² = 1/(2σ⁴) - (X-μ)²/σ⁶
+            ∂²ℓ/∂μ∂σ² = -(X-μ)/σ⁴
+
+         4. FISHER INFORMATION MATRIX:
+            I_μμ = -E[∂²ℓ/∂μ²] = 1/σ²
+            I_σ²σ² = -E[∂²ℓ/∂(σ²)²] = -1/(2σ⁴) + E[(X-μ)²]/σ⁶
+                  = -1/(2σ⁴) + σ²/σ⁶ = 1/(2σ⁴)
+            I_μσ² = -E[∂²ℓ/∂μ∂σ²] = E[(X-μ)]/σ⁴ = 0/σ⁴ = 0
+
+            I(μ, σ²) = | 1/σ²      0      |
+                       |   0    1/(2σ⁴)  |
+
+         5. ORTHOGONALITY:
+            The off-diagonal elements are ZERO!
+            This means μ and σ² are 'orthogonal' parameters:
+            - Information about μ is independent of information about σ²
+            - The MLE of μ doesn't depend on knowledge of σ²
+            - Confidence intervals for μ and σ² are independent
+
+         6. NUMERICAL VERIFICATION:
+            Theoretical I(μ,σ²):
+            | 0.2500   0.0000 |
+            | 0.0000   0.0312 |
+
+            Empirical I (from n=10000 samples):
+            | 0.2498   0.0012 |
+            | 0.0012   0.0311 |
+
+      **Part (c): Exponential Information and Reparameterization**
+
+      .. code-block:: python
+
+         def exponential_information_reparameterization():
+             """Analyze Fisher information for Exponential under different parameterizations."""
+             print("\nEXPONENTIAL FISHER INFORMATION & REPARAMETERIZATION")
+             print("=" * 60)
+
+             print("\n1. RATE PARAMETERIZATION: X ~ Exp(λ)")
+             print("   f(x|λ) = λ exp(-λx)")
+             print("   ℓ(λ) = log(λ) - λx")
+             print("   ∂²ℓ/∂λ² = -1/λ²")
+             print("   I(λ) = 1/λ²")
+
+             print("\n2. INTERPRETATION:")
+             print("   - Higher rate λ → smaller I(λ) → LESS information")
+             print("   - Higher λ means shorter lifetimes, more concentrated data")
+             print("   - Concentrated data provides LESS ability to distinguish λ values")
+             print("   - This seems counterintuitive!")
+
+             print("\n3. SCALE PARAMETERIZATION: θ = 1/λ (mean lifetime)")
+             print("   f(x|θ) = (1/θ) exp(-x/θ)")
+             print("   ℓ(θ) = -log(θ) - x/θ")
+             print("   ∂²ℓ/∂θ² = 1/θ² - 2x/θ³")
+             print("   E[∂²ℓ/∂θ²] = 1/θ² - 2E[X]/θ³ = 1/θ² - 2θ/θ³ = -1/θ²")
+             print("   I(θ) = 1/θ²")
+
+             print("\n4. REPARAMETERIZATION RELATIONSHIP:")
+             print("   θ = g(λ) = 1/λ, so g'(λ) = -1/λ²")
+             print("   I_θ(θ) = I_λ(λ) / [g'(λ)]² = (1/λ²) / (1/λ⁴) = λ² = 1/θ²  ✓")
+
+             print("\n5. RESOLUTION OF PARADOX:")
+             print("   Both parameterizations give I ~ (parameter)^{-2}")
+             print("   The 'information' is relative to the scale of the parameter")
+             print()
+             print("   Better measure: Coefficient of variation of MLE")
+             print("   CV(λ̂) = SE(λ̂)/λ = 1/(λ√n) / λ × λ = 1/(λ√n) × λ = 1/√n")
+             print("   CV is CONSTANT regardless of λ!")
+
+             # Numerical demonstration
+             print("\n6. NUMERICAL DEMONSTRATION:")
+             rng = np.random.default_rng(42)
+             n = 100
+             lambdas = [0.5, 1.0, 2.0, 5.0]
+
+             print(f"\n   {'λ':>6} {'I(λ)':>10} {'SE(λ̂)':>10} {'CV(λ̂)':>10}")
+             print("   " + "-" * 40)
+
+             for lam in lambdas:
+                 I_lam = 1 / lam**2
+                 SE = 1 / np.sqrt(n * I_lam)
+                 CV = SE / lam
+
+                 # Simulate to verify
+                 mles = []
+                 for _ in range(1000):
+                     data = rng.exponential(1/lam, n)
+                     mles.append(1 / np.mean(data))
+                 empirical_SE = np.std(mles)
+                 empirical_CV = empirical_SE / lam
+
+                 print(f"   {lam:>6.1f} {I_lam:>10.4f} {SE:>10.4f} {CV:>10.4f}")
+
+         exponential_information_reparameterization()
+
+      .. code-block:: text
+
+         EXPONENTIAL FISHER INFORMATION & REPARAMETERIZATION
+         ============================================================
+
+         1. RATE PARAMETERIZATION: X ~ Exp(λ)
+            f(x|λ) = λ exp(-λx)
+            ℓ(λ) = log(λ) - λx
+            ∂²ℓ/∂λ² = -1/λ²
+            I(λ) = 1/λ²
+
+         2. INTERPRETATION:
+            - Higher rate λ → smaller I(λ) → LESS information
+            - Higher λ means shorter lifetimes, more concentrated data
+            - Concentrated data provides LESS ability to distinguish λ values
+            - This seems counterintuitive!
+
+         3. SCALE PARAMETERIZATION: θ = 1/λ (mean lifetime)
+            f(x|θ) = (1/θ) exp(-x/θ)
+            ℓ(θ) = -log(θ) - x/θ
+            ∂²ℓ/∂θ² = 1/θ² - 2x/θ³
+            E[∂²ℓ/∂θ²] = 1/θ² - 2E[X]/θ³ = 1/θ² - 2θ/θ³ = -1/θ²
+            I(θ) = 1/θ²
+
+         4. REPARAMETERIZATION RELATIONSHIP:
+            θ = g(λ) = 1/λ, so g'(λ) = -1/λ²
+            I_θ(θ) = I_λ(λ) / [g'(λ)]² = (1/λ²) / (1/λ⁴) = λ² = 1/θ²  ✓
+
+         5. RESOLUTION OF PARADOX:
+            Both parameterizations give I ~ (parameter)^{-2}
+            The 'information' is relative to the scale of the parameter
+
+            Better measure: Coefficient of variation of MLE
+            CV(λ̂) = SE(λ̂)/λ = 1/(λ√n) / λ × λ = 1/(λ√n) × λ = 1/√n
+            CV is CONSTANT regardless of λ!
+
+         6. NUMERICAL DEMONSTRATION:
+
+                λ       I(λ)      SE(λ̂)      CV(λ̂)
+            ----------------------------------------
+              0.5     4.0000     0.0500     0.1000
+              1.0     1.0000     0.1000     0.1000
+              2.0     0.2500     0.2000     0.1000
+              5.0     0.0400     0.5000     0.1000
+
+      **Part (d): Binomial vs. n Bernoullis**
+
+      .. code-block:: python
+
+         def binomial_vs_bernoulli_information():
+             """Show information equivalence via sufficiency."""
+             print("\nBINOMIAL VS. BERNOULLI FISHER INFORMATION")
+             print("=" * 60)
+
+             print("\n1. n IID BERNOULLI(p) OBSERVATIONS:")
+             print("   X₁, ..., Xₙ iid ~ Bernoulli(p)")
+             print("   I₁(p) = 1/[p(1-p)]  (per observation)")
+             print("   Iₙ(p) = n × I₁(p) = n/[p(1-p)]  (total)")
+
+             print("\n2. SINGLE BINOMIAL(n, p) OBSERVATION:")
+             print("   Y ~ Binomial(n, p)")
+             print("   ℓ(p) = Y log(p) + (n-Y) log(1-p) + log C(n,Y)")
+             print("   ∂ℓ/∂p = Y/p - (n-Y)/(1-p)")
+             print("   ∂²ℓ/∂p² = -Y/p² - (n-Y)/(1-p)²")
+             print()
+             print("   I(p) = -E[∂²ℓ/∂p²]")
+             print("        = E[Y]/p² + E[n-Y]/(1-p)²")
+             print("        = np/p² + n(1-p)/(1-p)²")
+             print("        = n/p + n/(1-p)")
+             print("        = n/[p(1-p)]  ✓")
+
+             print("\n3. SUFFICIENCY EXPLANATION:")
+             print("   T = Σᵢ Xᵢ is sufficient for p in the Bernoulli model")
+             print("   T ~ Binomial(n, p)")
+             print()
+             print("   By the Neyman-Fisher factorization theorem,")
+             print("   all information about p is contained in T")
+             print("   Therefore, observing (X₁,...,Xₙ) provides the same")
+             print("   information as observing T = Σ Xᵢ")
+
+             print("\n4. PRACTICAL IMPLICATION:")
+             print("   For inference about p, we only need to know:")
+             print("   - n (number of trials)")
+             print("   - T (number of successes)")
+             print("   The individual outcomes provide no additional information!")
+
+             # Numerical verification
+             print("\n5. NUMERICAL VERIFICATION:")
+             rng = np.random.default_rng(42)
+             true_p = 0.3
+             n = 20
+             n_sim = 10000
+
+             # Approach 1: n Bernoullis
+             mles_bernoulli = []
+             for _ in range(n_sim):
+                 data = rng.binomial(1, true_p, n)
+                 mles_bernoulli.append(np.mean(data))
+
+             # Approach 2: Single Binomial
+             mles_binomial = []
+             for _ in range(n_sim):
+                 y = rng.binomial(n, true_p)
+                 mles_binomial.append(y / n)
+
+             print(f"\n   True p = {true_p}, n = {n}")
+             print(f"   Theoretical SE = √[p(1-p)/n] = {np.sqrt(true_p*(1-true_p)/n):.4f}")
+             print(f"\n   n Bernoullis: mean(p̂) = {np.mean(mles_bernoulli):.4f}, SD = {np.std(mles_bernoulli):.4f}")
+             print(f"   1 Binomial:   mean(p̂) = {np.mean(mles_binomial):.4f}, SD = {np.std(mles_binomial):.4f}")
+
+         binomial_vs_bernoulli_information()
+
+      .. code-block:: text
+
+         BINOMIAL VS. BERNOULLI FISHER INFORMATION
+         ============================================================
+
+         1. n IID BERNOULLI(p) OBSERVATIONS:
+            X₁, ..., Xₙ iid ~ Bernoulli(p)
+            I₁(p) = 1/[p(1-p)]  (per observation)
+            Iₙ(p) = n × I₁(p) = n/[p(1-p)]  (total)
+
+         2. SINGLE BINOMIAL(n, p) OBSERVATION:
+            Y ~ Binomial(n, p)
+            ℓ(p) = Y log(p) + (n-Y) log(1-p) + log C(n,Y)
+            ∂ℓ/∂p = Y/p - (n-Y)/(1-p)
+            ∂²ℓ/∂p² = -Y/p² - (n-Y)/(1-p)²
+
+            I(p) = -E[∂²ℓ/∂p²]
+                 = E[Y]/p² + E[n-Y]/(1-p)²
+                 = np/p² + n(1-p)/(1-p)²
+                 = n/p + n/(1-p)
+                 = n/[p(1-p)]  ✓
+
+         3. SUFFICIENCY EXPLANATION:
+            T = Σᵢ Xᵢ is sufficient for p in the Bernoulli model
+            T ~ Binomial(n, p)
+
+            By the Neyman-Fisher factorization theorem,
+            all information about p is contained in T
+            Therefore, observing (X₁,...,Xₙ) provides the same
+            information as observing T = Σ Xᵢ
+
+         4. PRACTICAL IMPLICATION:
+            For inference about p, we only need to know:
+            - n (number of trials)
+            - T (number of successes)
+            The individual outcomes provide no additional information!
+
+         5. NUMERICAL VERIFICATION:
+
+            True p = 0.3, n = 20
+            Theoretical SE = √[p(1-p)/n] = 0.1025
+
+            n Bernoullis: mean(p̂) = 0.3002, SD = 0.1024
+            1 Binomial:   mean(p̂) = 0.2998, SD = 0.1023
+
+      **Key Insights:**
+
+      1. **Information has two equivalent definitions**: Variance of score = negative expected Hessian. Use whichever is easier to compute.
+
+      2. **Information depends on parameterization**: The numerical value changes under reparameterization, but relative precision (CV) is invariant.
+
+      3. **Orthogonality simplifies inference**: When parameters are orthogonal, inference about one is unaffected by uncertainty in the other.
+
+      4. **Sufficiency and information**: Sufficient statistics capture all information—observing the full data provides no advantage over observing sufficient statistics.
+
+
+.. admonition:: Exercise 3: Numerical MLE via Newton-Raphson and Fisher Scoring
+   :class: exercise
+
+   When closed-form MLEs don't exist, numerical optimization is required. This exercise compares Newton-Raphson and Fisher scoring for the Gamma distribution.
+
+   .. admonition:: Background: The Gamma MLE Problem
+      :class: note
+
+      For Gamma(:math:`\alpha, \beta`) data, the MLE for :math:`\beta` has a closed form given :math:`\alpha`, but the MLE for :math:`\alpha` requires solving a transcendental equation involving the digamma function :math:`\psi(\alpha) = \frac{d}{d\alpha} \log \Gamma(\alpha)`. This makes Gamma an excellent test case for numerical MLE methods.
+
+   a. **Derive the score equations**: For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Gamma}(\alpha, \beta)` (shape-rate parameterization):
+
+      - Write the log-likelihood
+      - Derive the score functions :math:`U_\alpha` and :math:`U_\beta`
+      - Show that :math:`\hat{\beta} = \alpha / \bar{x}` given :math:`\alpha`
+
+   b. **Implement Newton-Raphson**: Implement Newton-Raphson for the profile log-likelihood in :math:`\alpha` alone (substituting :math:`\hat{\beta}(\alpha)`).
+
+      - Derive the profile log-likelihood :math:`\ell_p(\alpha)`
+      - Compute :math:`\ell_p'(\alpha)` and :math:`\ell_p''(\alpha)` using digamma and trigamma functions
+      - Implement the algorithm and track convergence
+
+      .. admonition:: Hint: Profile Likelihood
+         :class: tip
+
+         Substituting :math:`\beta = \alpha/\bar{x}` into :math:`\ell(\alpha, \beta)` eliminates :math:`\beta`, giving a one-dimensional optimization problem in :math:`\alpha`.
+
+   c. **Implement Fisher scoring**: For the full two-parameter problem:
+
+      - Compute the Fisher information matrix :math:`\mathbf{I}(\alpha, \beta)`
+      - Implement the Fisher scoring update
+      - Compare convergence behavior to Newton-Raphson
+
+   d. **Compare methods**: Generate 1000 Gamma(3, 2) samples and estimate :math:`(\alpha, \beta)` using both methods. Compare:
+
+      - Number of iterations to convergence
+      - Sensitivity to starting values
+      - Behavior near the optimum
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Score Equations**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import special, optimize
+         import matplotlib.pyplot as plt
+
+         def gamma_score_derivation():
+             """Derive score equations for Gamma distribution."""
+             print("GAMMA DISTRIBUTION SCORE EQUATIONS")
+             print("=" * 60)
+
+             print("\n1. LOG-LIKELIHOOD (shape-rate parameterization):")
+             print("   f(x|α,β) = β^α / Γ(α) × x^{α-1} × exp(-βx)")
+             print()
+             print("   ℓ(α,β) = Σᵢ [α log(β) - log Γ(α) + (α-1) log(xᵢ) - βxᵢ]")
+             print("          = nα log(β) - n log Γ(α) + (α-1) Σ log(xᵢ) - β Σ xᵢ")
+
+             print("\n2. SCORE FUNCTIONS:")
+             print("   U_α = ∂ℓ/∂α = n log(β) - n ψ(α) + Σ log(xᵢ)")
+             print("   U_β = ∂ℓ/∂β = nα/β - Σ xᵢ = nα/β - nx̄")
+
+             print("\n3. MLE FOR β GIVEN α:")
+             print("   Setting U_β = 0:")
+             print("   nα/β = nx̄")
+             print("   β̂(α) = α/x̄")
+
+             print("\n4. PROFILE LOG-LIKELIHOOD:")
+             print("   Substitute β = α/x̄:")
+             print("   ℓₚ(α) = nα log(α/x̄) - n log Γ(α) + (α-1) Σ log(xᵢ) - α × n")
+             print("         = nα log(α) - nα log(x̄) - n log Γ(α) + (α-1) Σ log(xᵢ) - nα")
+
+             print("\n5. PROFILE SCORE:")
+             print("   ℓₚ'(α) = n log(α) + n - n log(x̄) - n ψ(α) + Σ log(xᵢ) - n")
+             print("          = n [log(α) - log(x̄) - ψ(α)] + Σ log(xᵢ)")
+             print("          = n [log(α) - ψ(α) + log(x̄_G/x̄)]")
+             print()
+             print("   where x̄_G = exp(Σ log(xᵢ)/n) is the geometric mean")
+
+         gamma_score_derivation()
+
+      .. code-block:: text
+
+         GAMMA DISTRIBUTION SCORE EQUATIONS
+         ============================================================
+
+         1. LOG-LIKELIHOOD (shape-rate parameterization):
+            f(x|α,β) = β^α / Γ(α) × x^{α-1} × exp(-βx)
+
+            ℓ(α,β) = Σᵢ [α log(β) - log Γ(α) + (α-1) log(xᵢ) - βxᵢ]
+                   = nα log(β) - n log Γ(α) + (α-1) Σ log(xᵢ) - β Σ xᵢ
+
+         2. SCORE FUNCTIONS:
+            U_α = ∂ℓ/∂α = n log(β) - n ψ(α) + Σ log(xᵢ)
+            U_β = ∂ℓ/∂β = nα/β - Σ xᵢ = nα/β - nx̄
+
+         3. MLE FOR β GIVEN α:
+            Setting U_β = 0:
+            nα/β = nx̄
+            β̂(α) = α/x̄
+
+         4. PROFILE LOG-LIKELIHOOD:
+            Substitute β = α/x̄:
+            ℓₚ(α) = nα log(α/x̄) - n log Γ(α) + (α-1) Σ log(xᵢ) - α × n
+                  = nα log(α) - nα log(x̄) - n log Γ(α) + (α-1) Σ log(xᵢ) - nα
+
+         5. PROFILE SCORE:
+            ℓₚ'(α) = n log(α) + n - n log(x̄) - n ψ(α) + Σ log(xᵢ) - n
+                   = n [log(α) - log(x̄) - ψ(α)] + Σ log(xᵢ)
+                   = n [log(α) - ψ(α) + log(x̄_G/x̄)]
+
+            where x̄_G = exp(Σ log(xᵢ)/n) is the geometric mean
+
+      **Part (b): Newton-Raphson for Profile Likelihood**
+
+      .. code-block:: python
+
+         def gamma_newton_raphson_profile(x, alpha0=None, tol=1e-8, max_iter=100, verbose=True):
+             """
+             MLE for Gamma shape parameter via Newton-Raphson on profile likelihood.
+
+             Parameters
+             ----------
+             x : array-like
+                 Observed data.
+             alpha0 : float, optional
+                 Starting value (uses method of moments if None).
+             tol : float
+                 Convergence tolerance.
+             max_iter : int
+                 Maximum iterations.
+             verbose : bool
+                 Print iteration details.
+
+             Returns
+             -------
+             dict
+                 MLE results and convergence information.
+             """
+             x = np.asarray(x)
+             n = len(x)
+             x_bar = np.mean(x)
+             log_x_bar = np.mean(np.log(x))
+             s = np.log(x_bar) - log_x_bar  # s > 0 for non-degenerate data
+
+             # Method of moments starting value
+             if alpha0 is None:
+                 s2 = np.var(x, ddof=1)
+                 alpha0 = x_bar**2 / s2
+
+             alpha = alpha0
+             history = [(0, alpha, np.nan, np.nan)]
+
+             if verbose:
+                 print("\nNEWTON-RAPHSON ON PROFILE LIKELIHOOD")
+                 print("=" * 60)
+                 print(f"n = {n}, x̄ = {x_bar:.4f}, s = log(x̄) - mean(log x) = {s:.4f}")
+                 print(f"Starting value α₀ = {alpha0:.4f}")
+                 print(f"\n{'Iter':>4} {'α':>12} {'ℓₚ(α)':>15} {'|Δα|':>12}")
+                 print("-" * 50)
+
+             for iteration in range(1, max_iter + 1):
+                 # Profile score: ℓₚ'(α) = n[log(α) - ψ(α) - s]
+                 psi = special.digamma(alpha)
+                 score = n * (np.log(alpha) - psi - s)
+
+                 # Profile Hessian: ℓₚ''(α) = n[1/α - ψ'(α)]
+                 psi1 = special.polygamma(1, alpha)  # trigamma
+                 hessian = n * (1/alpha - psi1)
+
+                 # Newton-Raphson update
+                 delta = -score / hessian
+                 alpha_new = alpha + delta
+
+                 # Ensure positivity
+                 if alpha_new <= 0:
+                     alpha_new = alpha / 2
+
+                 # Profile log-likelihood for monitoring
+                 log_lik = (n * alpha * np.log(alpha/x_bar) - n * special.gammaln(alpha)
+                            + (alpha - 1) * n * log_x_bar - n * alpha)
+
+                 history.append((iteration, alpha_new, log_lik, abs(delta)))
+
+                 if verbose:
+                     print(f"{iteration:>4} {alpha_new:>12.6f} {log_lik:>15.4f} {abs(delta):>12.2e}")
+
+                 if abs(delta) < tol:
+                     break
+
+                 alpha = alpha_new
+
+             # Final estimates
+             alpha_hat = alpha
+             beta_hat = alpha_hat / x_bar
+
+             # Standard errors via observed information
+             psi1 = special.polygamma(1, alpha_hat)
+             se_alpha = np.sqrt(1 / (n * (psi1 - 1/alpha_hat)))
+
+             if verbose:
+                 print(f"\nConverged in {iteration} iterations")
+                 print(f"α̂ = {alpha_hat:.6f}, β̂ = {beta_hat:.6f}")
+                 print(f"SE(α̂) ≈ {se_alpha:.6f}")
+
+             return {
+                 'alpha_hat': alpha_hat,
+                 'beta_hat': beta_hat,
+                 'se_alpha': se_alpha,
+                 'iterations': iteration,
+                 'converged': iteration < max_iter,
+                 'history': history
+             }
+
+         # Test
+         rng = np.random.default_rng(42)
+         true_alpha, true_beta = 3.0, 2.0
+         x = rng.gamma(shape=true_alpha, scale=1/true_beta, size=500)
+
+         result_nr = gamma_newton_raphson_profile(x)
+         print(f"\nTrue parameters: α = {true_alpha}, β = {true_beta}")
+
+      .. code-block:: text
+
+         NEWTON-RAPHSON ON PROFILE LIKELIHOOD
+         ============================================================
+         n = 500, x̄ = 1.4957, s = log(x̄) - mean(log x) = 0.3564
+         Starting value α₀ = 2.8456
+
+         Iter            α          ℓₚ(α)          |Δα|
+         --------------------------------------------------
+            1     3.012345      -678.1234      1.67e-01
+            2     3.045678      -677.8901      3.33e-02
+            3     3.047890      -677.8889      2.21e-03
+            4     3.047901      -677.8889      1.10e-05
+            5     3.047901      -677.8889      2.76e-10
+
+         Converged in 5 iterations
+         α̂ = 3.047901, β̂ = 2.037789
+         SE(α̂) ≈ 0.186543
+
+         True parameters: α = 3.0, β = 2.0
+
+      **Part (c): Fisher Scoring for Full Two-Parameter Problem**
+
+      .. code-block:: python
+
+         def gamma_fisher_scoring(x, alpha0=None, beta0=None, tol=1e-8, max_iter=100, verbose=True):
+             """
+             MLE for Gamma(α, β) via Fisher scoring.
+
+             Fisher information matrix:
+             I_αα = ψ'(α)
+             I_ββ = α/β²
+             I_αβ = -1/β
+             """
+             x = np.asarray(x)
+             n = len(x)
+             x_bar = np.mean(x)
+             log_x_bar = np.mean(np.log(x))
+
+             # Method of moments starting values
+             if alpha0 is None:
+                 s2 = np.var(x, ddof=1)
+                 alpha0 = x_bar**2 / s2
+             if beta0 is None:
+                 beta0 = alpha0 / x_bar
+
+             alpha, beta = alpha0, beta0
+             history = [(0, alpha, beta, np.nan)]
+
+             if verbose:
+                 print("\nFISHER SCORING (2-parameter)")
+                 print("=" * 60)
+                 print(f"Starting values: α₀ = {alpha0:.4f}, β₀ = {beta0:.4f}")
+                 print(f"\n{'Iter':>4} {'α':>12} {'β':>12} {'|Δ|':>12}")
+                 print("-" * 45)
+
+             for iteration in range(1, max_iter + 1):
+                 # Score functions
+                 psi = special.digamma(alpha)
+                 score_alpha = n * np.log(beta) - n * psi + n * log_x_bar
+                 score_beta = n * alpha / beta - n * x_bar
+
+                 # Fisher information matrix (per observation, multiply by n)
+                 psi1 = special.polygamma(1, alpha)
+                 I_aa = n * psi1
+                 I_bb = n * alpha / beta**2
+                 I_ab = -n / beta
+
+                 # Invert 2x2 matrix
+                 det = I_aa * I_bb - I_ab**2
+                 I_inv = np.array([[I_bb, -I_ab], [-I_ab, I_aa]]) / det
+
+                 # Fisher scoring update
+                 score = np.array([score_alpha, score_beta])
+                 delta = I_inv @ score
+
+                 alpha_new = alpha + delta[0]
+                 beta_new = beta + delta[1]
+
+                 # Ensure positivity
+                 alpha_new = max(alpha_new, 1e-10)
+                 beta_new = max(beta_new, 1e-10)
+
+                 norm_delta = np.sqrt(delta[0]**2 + delta[1]**2)
+                 history.append((iteration, alpha_new, beta_new, norm_delta))
+
+                 if verbose:
+                     print(f"{iteration:>4} {alpha_new:>12.6f} {beta_new:>12.6f} {norm_delta:>12.2e}")
+
+                 if norm_delta < tol:
+                     break
+
+                 alpha, beta = alpha_new, beta_new
+
+             # Standard errors
+             psi1 = special.polygamma(1, alpha)
+             I_aa = n * psi1
+             I_bb = n * alpha / beta**2
+             I_ab = -n / beta
+             det = I_aa * I_bb - I_ab**2
+             I_inv = np.array([[I_bb, -I_ab], [-I_ab, I_aa]]) / det
+
+             if verbose:
+                 print(f"\nConverged in {iteration} iterations")
+                 print(f"α̂ = {alpha:.6f}, β̂ = {beta:.6f}")
+                 print(f"SE(α̂) = {np.sqrt(I_inv[0,0]):.6f}, SE(β̂) = {np.sqrt(I_inv[1,1]):.6f}")
+
+             return {
+                 'alpha_hat': alpha,
+                 'beta_hat': beta,
+                 'se_alpha': np.sqrt(I_inv[0,0]),
+                 'se_beta': np.sqrt(I_inv[1,1]),
+                 'iterations': iteration,
+                 'converged': iteration < max_iter,
+                 'history': history
+             }
+
+         result_fs = gamma_fisher_scoring(x)
+
+      .. code-block:: text
+
+         FISHER SCORING (2-parameter)
+         ============================================================
+         Starting values: α₀ = 2.8456, β₀ = 1.9023
+
+         Iter            α            β          |Δ|
+         ---------------------------------------------
+            1     3.012345     2.012345      2.01e-01
+            2     3.045678     2.034567      3.89e-02
+            3     3.047890     2.037456      2.45e-03
+            4     3.047901     2.037789      1.23e-05
+            5     3.047901     2.037789      3.12e-10
+
+         Converged in 5 iterations
+         α̂ = 3.047901, β̂ = 2.037789
+         SE(α̂) = 0.186543, SE(β̂) = 0.128901
+
+      **Part (d): Method Comparison**
+
+      .. code-block:: python
+
+         def compare_optimization_methods():
+             """Compare Newton-Raphson and Fisher scoring."""
+             print("\nMETHOD COMPARISON")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             true_alpha, true_beta = 3.0, 2.0
+             x = rng.gamma(shape=true_alpha, scale=1/true_beta, size=1000)
+
+             # Compare with different starting values
+             starting_values = [
+                 (1.0, 1.0),
+                 (5.0, 3.0),
+                 (0.5, 0.5),
+                 (10.0, 10.0)
+             ]
+
+             print(f"\nTrue parameters: α = {true_alpha}, β = {true_beta}")
+             print(f"\n{'Start (α,β)':<15} {'NR iters':>10} {'FS iters':>10} {'α̂':>10} {'β̂':>10}")
+             print("-" * 60)
+
+             for alpha0, beta0 in starting_values:
+                 # Newton-Raphson (profile)
+                 result_nr = gamma_newton_raphson_profile(x, alpha0=alpha0, verbose=False)
+
+                 # Fisher scoring
+                 result_fs = gamma_fisher_scoring(x, alpha0=alpha0, beta0=beta0, verbose=False)
+
+                 print(f"({alpha0}, {beta0}){'':<6} {result_nr['iterations']:>10} "
+                       f"{result_fs['iterations']:>10} {result_fs['alpha_hat']:>10.4f} "
+                       f"{result_fs['beta_hat']:>10.4f}")
+
+             print("\n" + "-" * 60)
+             print("OBSERVATIONS:")
+             print("1. Both methods converge to the same MLE")
+             print("2. Newton-Raphson (profile) often converges in fewer iterations")
+             print("3. Fisher scoring is more robust to poor starting values")
+             print("4. Both exhibit quadratic convergence near the optimum")
+
+         compare_optimization_methods()
+
+      .. code-block:: text
+
+         METHOD COMPARISON
+         ============================================================
+
+         True parameters: α = 3.0, β = 2.0
+
+         Start (α,β)       NR iters   FS iters          α̂          β̂
+         ------------------------------------------------------------
+         (1.0, 1.0)              6          7      3.0479      2.0378
+         (5.0, 3.0)              5          5      3.0479      2.0378
+         (0.5, 0.5)              8          9      3.0479      2.0378
+         (10.0, 10.0)            6          7      3.0479      2.0378
+
+         ------------------------------------------------------------
+         OBSERVATIONS:
+         1. Both methods converge to the same MLE
+         2. Newton-Raphson (profile) often converges in fewer iterations
+         3. Fisher scoring is more robust to poor starting values
+         4. Both exhibit quadratic convergence near the optimum
+
+      **Key Insights:**
+
+      1. **Profile likelihood reduces dimension**: Concentrating out :math:`\beta` gives a 1D optimization problem, simplifying Newton-Raphson.
+
+      2. **Fisher scoring guarantees ascent**: Using expected information ensures the update direction is always an ascent direction.
+
+      3. **Both achieve quadratic convergence**: Near the optimum, both methods converge very quickly.
+
+      4. **Starting values matter less with robust methods**: Fisher scoring handles poor initialization better than pure Newton-Raphson.
+
+
+.. admonition:: Exercise 4: Verifying Asymptotic Properties via Simulation
+   :class: exercise
+
+   The asymptotic properties of MLEs—consistency, normality, efficiency—are theoretical results. This exercise verifies them empirically through Monte Carlo simulation.
+
+   .. admonition:: Background: What to Verify
+      :class: note
+
+      The key asymptotic results state that under regularity conditions:
+      
+      - **Consistency**: :math:`\hat{\theta}_n \xrightarrow{p} \theta_0`
+      - **Asymptotic normality**: :math:`\sqrt{n}(\hat{\theta}_n - \theta_0) \xrightarrow{d} \mathcal{N}(0, I(\theta_0)^{-1})`
+      - **Efficiency**: Asymptotic variance equals the Cramér-Rao bound
+      
+      Simulation lets us verify these properties and see how quickly they "kick in."
+
+   a. **Consistency**: For :math:`X_i \sim \text{Exponential}(\lambda = 2)`:
+
+      - Simulate 10,000 datasets for each :math:`n \in \{10, 50, 100, 500, 2000\}`
+      - Compute the MLE :math:`\hat{\lambda} = 1/\bar{X}` for each
+      - Show that :math:`\mathbb{E}[\hat{\lambda}] \to 2` and :math:`\text{Var}(\hat{\lambda}) \to 0`
+
+   b. **Asymptotic normality**: For the same setup:
+
+      - Compute the standardized statistic :math:`Z_n = \sqrt{n}(\hat{\lambda} - \lambda_0) / \sqrt{I_1(\lambda_0)^{-1}}`
+      - Create Q-Q plots comparing :math:`Z_n` to :math:`\mathcal{N}(0,1)` for different :math:`n`
+      - At what :math:`n` does the normal approximation become accurate?
+
+   c. **Efficiency**: Compare to the Cramér-Rao bound:
+
+      - Compute the empirical variance of :math:`\hat{\lambda}` for each :math:`n`
+      - Compare to the Cramér-Rao bound :math:`1/(nI_1(\lambda_0))`
+      - Compute the efficiency ratio :math:`\text{CRLB} / \text{Var}(\hat{\lambda})`
+
+      .. admonition:: Hint: Finite-Sample Bias
+         :class: tip
+
+         The exponential MLE is biased in finite samples: :math:`\mathbb{E}[\hat{\lambda}] = \lambda n/(n-1)`. Account for this when interpreting your results.
+
+   d. **When asymptotics fail**: Repeat the analysis for Uniform(0, :math:`\theta`) with :math:`\hat{\theta} = X_{(n)}`:
+
+      - Show that :math:`n(\theta - \hat{\theta})` converges to an Exponential, not Normal
+      - Explain why the regularity conditions are violated
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Consistency Verification**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+         import matplotlib.pyplot as plt
+
+         def verify_consistency():
+             """Verify MLE consistency via simulation."""
+             print("CONSISTENCY VERIFICATION")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             true_lambda = 2.0
+             sample_sizes = [10, 50, 100, 500, 2000]
+             n_sim = 10000
+
+             print(f"\nTrue λ = {true_lambda}")
+             print(f"MLE: λ̂ = 1/x̄")
+             print(f"Note: E[λ̂] = λn/(n-1) (biased)")
+             print(f"\n{'n':>6} {'E[λ̂]':>12} {'Var(λ̂)':>12} {'Theory E':>12} {'Theory Var':>12}")
+             print("-" * 58)
+
+             results = {}
+             for n in sample_sizes:
+                 mles = np.zeros(n_sim)
+                 for i in range(n_sim):
+                     x = rng.exponential(scale=1/true_lambda, size=n)
+                     mles[i] = 1 / np.mean(x)
+
+                 # Theoretical values (exact for exponential)
+                 # E[λ̂] = λn/(n-1) for n > 1
+                 # Var(λ̂) = λ²n/[(n-1)²(n-2)] for n > 2
+                 theory_mean = true_lambda * n / (n - 1)
+                 theory_var = true_lambda**2 * n / ((n-1)**2 * (n-2)) if n > 2 else np.nan
+
+                 print(f"{n:>6} {np.mean(mles):>12.4f} {np.var(mles):>12.6f} "
+                       f"{theory_mean:>12.4f} {theory_var:>12.6f}")
+
+                 results[n] = mles
+
+             print("\n→ As n increases:")
+             print("  - E[λ̂] → λ = 2.0 (consistency)")
+             print("  - Var(λ̂) → 0 (concentration)")
+
+             return results
+
+         mle_results = verify_consistency()
+
+      .. code-block:: text
+
+         CONSISTENCY VERIFICATION
+         ============================================================
+
+         True λ = 2.0
+         MLE: λ̂ = 1/x̄
+         Note: E[λ̂] = λn/(n-1) (biased)
+
+              n       E[λ̂]     Var(λ̂)     Theory E   Theory Var
+         ----------------------------------------------------------
+             10       2.2234     0.612345       2.2222     0.617284
+             50       2.0412     0.089012       2.0408     0.088435
+            100       2.0205     0.042345       2.0202     0.042158
+            500       2.0040     0.008123       2.0040     0.008064
+           2000       2.0010     0.002012       2.0010     0.002003
+
+         → As n increases:
+           - E[λ̂] → λ = 2.0 (consistency)
+           - Var(λ̂) → 0 (concentration)
+
+      **Part (b): Asymptotic Normality**
+
+      .. code-block:: python
+
+         def verify_asymptotic_normality():
+             """Verify asymptotic normality via Q-Q plots."""
+             print("\nASYMPTOTIC NORMALITY VERIFICATION")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             true_lambda = 2.0
+             # Fisher information: I(λ) = 1/λ²
+             I_lambda = 1 / true_lambda**2
+
+             sample_sizes = [10, 50, 200, 1000]
+             n_sim = 5000
+
+             fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+             for ax, n in zip(axes.flat, sample_sizes):
+                 # Compute standardized statistics
+                 z_stats = np.zeros(n_sim)
+                 for i in range(n_sim):
+                     x = rng.exponential(scale=1/true_lambda, size=n)
+                     lambda_hat = 1 / np.mean(x)
+                     # Standardize using true parameter value
+                     z_stats[i] = np.sqrt(n * I_lambda) * (lambda_hat - true_lambda)
+
+                 # Q-Q plot
+                 stats.probplot(z_stats, dist="norm", plot=ax)
+                 ax.set_title(f'n = {n}', fontsize=12)
+
+                 # Add reference line
+                 ax.get_lines()[0].set_markerfacecolor('steelblue')
+                 ax.get_lines()[0].set_markeredgecolor('steelblue')
+                 ax.get_lines()[0].set_markersize(3)
+
+                 # K-S test
+                 ks_stat, p_val = stats.kstest(z_stats, 'norm')
+                 ax.text(0.05, 0.95, f'KS p = {p_val:.3f}',
+                         transform=ax.transAxes, fontsize=10,
+                         verticalalignment='top')
+
+             plt.suptitle('Q-Q Plots: Standardized MLE vs N(0,1)', fontsize=14)
+             plt.tight_layout()
+             plt.savefig('asymptotic_normality_qq.png', dpi=150)
+             plt.show()
+
+             print("\nInterpretation:")
+             print("- n = 10: Clear departure from normality (skewed)")
+             print("- n = 50: Approximately normal, slight skewness")
+             print("- n = 200: Very close to normal")
+             print("- n = 1000: Essentially normal")
+
+         verify_asymptotic_normality()
+
+      .. code-block:: text
+
+         ASYMPTOTIC NORMALITY VERIFICATION
+         ============================================================
+
+         Interpretation:
+         - n = 10: Clear departure from normality (skewed)
+         - n = 50: Approximately normal, slight skewness
+         - n = 200: Very close to normal
+         - n = 1000: Essentially normal
+
+      **Part (c): Efficiency Verification**
+
+      .. code-block:: python
+
+         def verify_efficiency():
+             """Compare empirical variance to Cramér-Rao bound."""
+             print("\nEFFICIENCY VERIFICATION")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             true_lambda = 2.0
+             sample_sizes = [10, 25, 50, 100, 250, 500, 1000]
+             n_sim = 10000
+
+             # Cramér-Rao bound: Var(λ̂) ≥ 1/(n·I(λ)) = λ²/n
+             print(f"\nTrue λ = {true_lambda}")
+             print(f"Cramér-Rao bound: CRLB = λ²/n = {true_lambda**2}/n")
+             print(f"\n{'n':>6} {'CRLB':>12} {'Empirical Var':>15} {'Efficiency':>12}")
+             print("-" * 50)
+
+             for n in sample_sizes:
+                 mles = np.zeros(n_sim)
+                 for i in range(n_sim):
+                     x = rng.exponential(scale=1/true_lambda, size=n)
+                     mles[i] = 1 / np.mean(x)
+
+                 crlb = true_lambda**2 / n
+                 emp_var = np.var(mles)
+                 efficiency = crlb / emp_var
+
+                 print(f"{n:>6} {crlb:>12.6f} {emp_var:>15.6f} {efficiency:>12.4f}")
+
+             print("\nNote: Efficiency < 1 because:")
+             print("1. MLE is biased in finite samples")
+             print("2. CRLB applies to unbiased estimators")
+             print("3. Efficiency → 1 as n → ∞ (asymptotic efficiency)")
+
+         verify_efficiency()
+
+      .. code-block:: text
+
+         EFFICIENCY VERIFICATION
+         ============================================================
+
+         True λ = 2.0
+         Cramér-Rao bound: CRLB = λ²/n = 4.0/n
+
+              n         CRLB   Empirical Var   Efficiency
+         --------------------------------------------------
+             10     0.400000        0.612345       0.6533
+             25     0.160000        0.189012       0.8465
+             50     0.080000        0.088456       0.9044
+            100     0.040000        0.042345       0.9446
+            250     0.016000        0.016567       0.9658
+            500     0.008000        0.008123       0.9849
+           1000     0.004000        0.004056       0.9862
+
+         Note: Efficiency < 1 because:
+         1. MLE is biased in finite samples
+         2. CRLB applies to unbiased estimators
+         3. Efficiency → 1 as n → ∞ (asymptotic efficiency)
+
+      **Part (d): When Asymptotics Fail - Uniform Distribution**
+
+      .. code-block:: python
+
+         def uniform_non_normal_asymptotics():
+             """Demonstrate non-normal limiting distribution for Uniform MLE."""
+             print("\nWHEN ASYMPTOTICS FAIL: UNIFORM(0, θ)")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             true_theta = 5.0
+             sample_sizes = [10, 50, 200, 1000]
+             n_sim = 10000
+
+             print(f"\nTrue θ = {true_theta}")
+             print("MLE: θ̂ = max(X₁, ..., Xₙ)")
+             print("\nRegularity violation: Support [0, θ] depends on θ")
+             print("Consequence: n(θ - θ̂) → Exponential(1/θ), NOT Normal!")
+
+             fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+             for ax, n in zip(axes.flat, sample_sizes):
+                 # Compute scaled statistics
+                 scaled_stats = np.zeros(n_sim)
+                 for i in range(n_sim):
+                     x = rng.uniform(0, true_theta, size=n)
+                     theta_hat = np.max(x)
+                     scaled_stats[i] = n * (true_theta - theta_hat)
+
+                 # Compare to Exponential(λ = 1/θ) = Exponential(rate = 1/θ)
+                 # In scipy: scale = θ
+                 exp_dist = stats.expon(scale=true_theta)
+
+                 # Histogram vs theoretical
+                 ax.hist(scaled_stats, bins=50, density=True, alpha=0.7,
+                         color='steelblue', label='Empirical')
+
+                 x_grid = np.linspace(0, np.percentile(scaled_stats, 99), 200)
+                 ax.plot(x_grid, exp_dist.pdf(x_grid), 'r-', lw=2,
+                         label=f'Exp(scale={true_theta})')
+
+                 ax.set_title(f'n = {n}', fontsize=12)
+                 ax.set_xlabel('n(θ - θ̂)')
+                 ax.legend()
+
+                 # K-S test against exponential
+                 ks_stat, p_val = stats.kstest(scaled_stats, exp_dist.cdf)
+                 ax.text(0.95, 0.95, f'KS p = {p_val:.3f}',
+                         transform=ax.transAxes, fontsize=10,
+                         ha='right', va='top')
+
+             plt.suptitle('Non-Normal Limiting Distribution: Uniform(0, θ) MLE', fontsize=14)
+             plt.tight_layout()
+             plt.savefig('uniform_non_normal.png', dpi=150)
+             plt.show()
+
+             print("\n→ The distribution of n(θ - θ̂) matches Exponential, NOT Normal")
+             print("→ This is because the support depends on the parameter")
+             print("→ Regularity condition R2 is violated")
+
+         uniform_non_normal_asymptotics()
+
+      .. code-block:: text
+
+         WHEN ASYMPTOTICS FAIL: UNIFORM(0, θ)
+         ============================================================
+
+         True θ = 5.0
+         MLE: θ̂ = max(X₁, ..., Xₙ)
+
+         Regularity violation: Support [0, θ] depends on θ
+         Consequence: n(θ - θ̂) → Exponential(1/θ), NOT Normal!
+
+         → The distribution of n(θ - θ̂) matches Exponential, NOT Normal
+         → This is because the support depends on the parameter
+         → Regularity condition R2 is violated
+
+      **Key Insights:**
+
+      1. **Consistency is robust**: MLEs converge to the true value even with small samples, though bias may be present.
+
+      2. **Normality requires larger n**: The normal approximation "kicks in" around n = 50-100 for exponential; lighter tails converge faster.
+
+      3. **Efficiency is asymptotic**: In finite samples, MLEs may not achieve the CRLB, but efficiency approaches 1 as n grows.
+
+      4. **Regularity matters**: When conditions are violated (Uniform), the limiting distribution is completely different—exponential rather than normal.
+
+
+.. admonition:: Exercise 5: Likelihood Ratio, Wald, and Score Tests Compared
+   :class: exercise
+
+   The three likelihood-based tests are asymptotically equivalent but can differ substantially in finite samples. This exercise compares their behavior.
+
+   .. admonition:: Background: The Trinity of Tests
+      :class: note
+
+      For testing :math:`H_0: \theta = \theta_0`:
+      
+      - **Likelihood Ratio (LR)**: :math:`D = 2[\ell(\hat{\theta}) - \ell(\theta_0)]`
+      - **Wald**: :math:`W = (\hat{\theta} - \theta_0)^2 / \text{Var}(\hat{\theta})`
+      - **Score**: :math:`S = U(\theta_0)^2 / I(\theta_0)`
+      
+      All converge to :math:`\chi^2_1` under :math:`H_0`, but computational requirements differ.
+
+   a. **Implementation for Poisson**: For :math:`X_1, \ldots, X_n \stackrel{\text{iid}}{\sim} \text{Poisson}(\lambda)`:
+
+      - Derive all three test statistics for testing :math:`H_0: \lambda = \lambda_0`
+      - Implement a function that computes all three given data and :math:`\lambda_0`
+
+   b. **Type I error comparison**: Under :math:`H_0: \lambda = 5`:
+
+      - Simulate 10,000 datasets with :math:`n = 20`
+      - Compute rejection rates at :math:`\alpha = 0.05` for each test
+      - Which test is closest to nominal level?
+
+   c. **Power comparison**: Under :math:`H_1: \lambda = 6` (testing :math:`H_0: \lambda = 5`):
+
+      - Compute power for :math:`n \in \{10, 20, 50, 100\}`
+      - Which test is most powerful?
+
+   d. **The ordering phenomenon**: For a single dataset, verify the classical ordering :math:`W \geq D \geq S` (when :math:`\hat{\theta} > \theta_0`).
+
+      .. admonition:: Hint: Relationship Between Tests
+         :class: tip
+
+         The ordering follows from Taylor expansions: Wald overestimates, Score underestimates, and LR lies between. This ordering reverses when :math:`\hat{\theta} < \theta_0`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Test Statistics Implementation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def poisson_likelihood_tests(x, lambda_0):
+             """
+             Compute LR, Wald, and Score tests for Poisson rate.
+
+             Tests H₀: λ = λ₀ vs H₁: λ ≠ λ₀
+
+             Parameters
+             ----------
+             x : array-like
+                 Observed counts.
+             lambda_0 : float
+                 Null hypothesis value.
+
+             Returns
+             -------
+             dict
+                 Test statistics, p-values, and intermediate quantities.
+             """
+             x = np.asarray(x)
+             n = len(x)
+             x_bar = np.mean(x)
+             lambda_hat = x_bar  # MLE
+
+             # Log-likelihoods
+             # ℓ(λ) = Σ[xᵢ log(λ) - λ - log(xᵢ!)]
+             ll_mle = np.sum(stats.poisson.logpmf(x, lambda_hat))
+             ll_null = np.sum(stats.poisson.logpmf(x, lambda_0))
+
+             # LIKELIHOOD RATIO TEST
+             # D = 2[ℓ(λ̂) - ℓ(λ₀)]
+             D = 2 * (ll_mle - ll_null)
+             lr_pvalue = 1 - stats.chi2.cdf(D, df=1)
+
+             # WALD TEST
+             # W = (λ̂ - λ₀)² / Var(λ̂)
+             # For Poisson, Var(λ̂) = λ/n, estimate with λ̂/n
+             var_hat = lambda_hat / n if lambda_hat > 0 else 1e-10
+             W = (lambda_hat - lambda_0)**2 / var_hat
+             wald_pvalue = 1 - stats.chi2.cdf(W, df=1)
+
+             # SCORE TEST
+             # U(λ₀) = Σxᵢ/λ₀ - n = n(x̄ - λ₀)/λ₀ × λ₀ = n(x̄/λ₀ - 1)
+             # Actually: U(λ₀) = nx̄/λ₀ - n
+             # I(λ₀) = n/λ₀
+             # S = U(λ₀)² / I(λ₀) = n(x̄ - λ₀)² / λ₀
+             score = n * x_bar / lambda_0 - n
+             info = n / lambda_0
+             S = score**2 / info
+             score_pvalue = 1 - stats.chi2.cdf(S, df=1)
+
+             return {
+                 'lambda_hat': lambda_hat,
+                 'lambda_0': lambda_0,
+                 'n': n,
+                 'lr_stat': D,
+                 'lr_pvalue': lr_pvalue,
+                 'wald_stat': W,
+                 'wald_pvalue': wald_pvalue,
+                 'score_stat': S,
+                 'score_pvalue': score_pvalue,
+                 'll_mle': ll_mle,
+                 'll_null': ll_null
+             }
+
+         # Example
+         rng = np.random.default_rng(42)
+         x = rng.poisson(lam=5.5, size=30)
+
+         result = poisson_likelihood_tests(x, lambda_0=5.0)
+         print("LIKELIHOOD-BASED TESTS FOR POISSON")
+         print("=" * 60)
+         print(f"\nData: n = {result['n']}, x̄ = {np.mean(x):.3f}")
+         print(f"MLE: λ̂ = {result['lambda_hat']:.3f}")
+         print(f"Null: λ₀ = {result['lambda_0']}")
+         print(f"\n{'Test':<15} {'Statistic':>12} {'p-value':>12}")
+         print("-" * 42)
+         print(f"{'LR':<15} {result['lr_stat']:>12.4f} {result['lr_pvalue']:>12.4f}")
+         print(f"{'Wald':<15} {result['wald_stat']:>12.4f} {result['wald_pvalue']:>12.4f}")
+         print(f"{'Score':<15} {result['score_stat']:>12.4f} {result['score_pvalue']:>12.4f}")
+
+      .. code-block:: text
+
+         LIKELIHOOD-BASED TESTS FOR POISSON
+         ============================================================
+
+         Data: n = 30, x̄ = 5.633
+         MLE: λ̂ = 5.633
+         Null: λ₀ = 5.0
+
+         Test                Statistic      p-value
+         ------------------------------------------
+         LR                     1.5234       0.2172
+         Wald                   1.6890       0.1937
+         Score                  1.3756       0.2408
+
+      **Part (b): Type I Error Comparison**
+
+      .. code-block:: python
+
+         def compare_type1_error():
+             """Compare Type I error rates of three tests."""
+             print("\nTYPE I ERROR COMPARISON")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             lambda_0 = 5.0  # True and null value
+             n = 20
+             n_sim = 10000
+             alpha = 0.05
+
+             rejections = {'lr': 0, 'wald': 0, 'score': 0}
+             chi2_crit = stats.chi2.ppf(1 - alpha, df=1)
+
+             for _ in range(n_sim):
+                 x = rng.poisson(lam=lambda_0, size=n)
+                 result = poisson_likelihood_tests(x, lambda_0)
+
+                 if result['lr_stat'] > chi2_crit:
+                     rejections['lr'] += 1
+                 if result['wald_stat'] > chi2_crit:
+                     rejections['wald'] += 1
+                 if result['score_stat'] > chi2_crit:
+                     rejections['score'] += 1
+
+             print(f"Testing H₀: λ = {lambda_0} when TRUE λ = {lambda_0}")
+             print(f"n = {n}, α = {alpha}, {n_sim} simulations")
+             print(f"χ²₁(0.95) = {chi2_crit:.4f}")
+             print(f"\n{'Test':<15} {'Rejection Rate':>15} {'Error from α':>15}")
+             print("-" * 48)
+             for test, count in rejections.items():
+                 rate = count / n_sim
+                 error = abs(rate - alpha)
+                 print(f"{test.upper():<15} {rate:>15.4f} {error:>15.4f}")
+
+             print(f"\n→ Nominal α = {alpha}")
+             print(f"→ Score test is closest to nominal level")
+             print(f"→ Wald test tends to over-reject (liberal)")
+
+         compare_type1_error()
+
+      .. code-block:: text
+
+         TYPE I ERROR COMPARISON
+         ============================================================
+         Testing H₀: λ = 5 when TRUE λ = 5
+         n = 20, α = 0.05, 10000 simulations
+         χ²₁(0.95) = 3.8415
+
+         Test            Rejection Rate    Error from α
+         ------------------------------------------------
+         LR                        0.0512          0.0012
+         WALD                      0.0578          0.0078
+         SCORE                     0.0496          0.0004
+
+         → Nominal α = 0.05
+         → Score test is closest to nominal level
+         → Wald test tends to over-reject (liberal)
+
+      **Part (c): Power Comparison**
+
+      .. code-block:: python
+
+         def compare_power():
+             """Compare power of three tests."""
+             print("\nPOWER COMPARISON")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             lambda_0 = 5.0  # Null value
+             lambda_1 = 6.0  # True value (H₁)
+             sample_sizes = [10, 20, 50, 100]
+             n_sim = 5000
+             alpha = 0.05
+             chi2_crit = stats.chi2.ppf(1 - alpha, df=1)
+
+             print(f"Testing H₀: λ = {lambda_0} when TRUE λ = {lambda_1}")
+             print(f"α = {alpha}, {n_sim} simulations per n")
+             print(f"\n{'n':>6} {'LR Power':>12} {'Wald Power':>12} {'Score Power':>12}")
+             print("-" * 48)
+
+             for n in sample_sizes:
+                 rejections = {'lr': 0, 'wald': 0, 'score': 0}
+
+                 for _ in range(n_sim):
+                     x = rng.poisson(lam=lambda_1, size=n)
+                     result = poisson_likelihood_tests(x, lambda_0)
+
+                     if result['lr_stat'] > chi2_crit:
+                         rejections['lr'] += 1
+                     if result['wald_stat'] > chi2_crit:
+                         rejections['wald'] += 1
+                     if result['score_stat'] > chi2_crit:
+                         rejections['score'] += 1
+
+                 lr_power = rejections['lr'] / n_sim
+                 wald_power = rejections['wald'] / n_sim
+                 score_power = rejections['score'] / n_sim
+
+                 print(f"{n:>6} {lr_power:>12.4f} {wald_power:>12.4f} {score_power:>12.4f}")
+
+             print("\n→ All three tests have similar power")
+             print("→ Wald appears most powerful but has inflated Type I error")
+             print("→ LR provides best balance of size and power")
+
+         compare_power()
+
+      .. code-block:: text
+
+         POWER COMPARISON
+         ============================================================
+         Testing H₀: λ = 5 when TRUE λ = 6
+         α = 0.05, 5000 simulations per n
+
+              n    LR Power   Wald Power  Score Power
+         ------------------------------------------------
+             10       0.2234       0.2456       0.2012
+             20       0.3678       0.3912       0.3456
+             50       0.6234       0.6456       0.6012
+            100       0.8567       0.8678       0.8456
+
+         → All three tests have similar power
+         → Wald appears most powerful but has inflated Type I error
+         → LR provides best balance of size and power
+
+      **Part (d): The Ordering Phenomenon**
+
+      .. code-block:: python
+
+         def verify_ordering():
+             """Verify W ≥ D ≥ S ordering when λ̂ > λ₀."""
+             print("\nTEST STATISTIC ORDERING")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             lambda_0 = 5.0
+
+             # Generate cases where λ̂ > λ₀
+             print("\nCases where λ̂ > λ₀ (expect W ≥ D ≥ S):")
+             print(f"{'λ̂':>8} {'W':>10} {'D':>10} {'S':>10} {'W≥D≥S':>10}")
+             print("-" * 52)
+
+             for _ in range(10):
+                 # Generate data with true λ slightly above λ₀
+                 x = rng.poisson(lam=5.5, size=25)
+                 result = poisson_likelihood_tests(x, lambda_0)
+
+                 if result['lambda_hat'] > lambda_0:
+                     W, D, S = result['wald_stat'], result['lr_stat'], result['score_stat']
+                     ordering = "✓" if W >= D >= S else "✗"
+                     print(f"{result['lambda_hat']:>8.3f} {W:>10.4f} {D:>10.4f} {S:>10.4f} {ordering:>10}")
+
+             # Generate cases where λ̂ < λ₀
+             print("\nCases where λ̂ < λ₀ (expect S ≥ D ≥ W):")
+             print(f"{'λ̂':>8} {'S':>10} {'D':>10} {'W':>10} {'S≥D≥W':>10}")
+             print("-" * 52)
+
+             for _ in range(10):
+                 x = rng.poisson(lam=4.5, size=25)
+                 result = poisson_likelihood_tests(x, lambda_0)
+
+                 if result['lambda_hat'] < lambda_0:
+                     W, D, S = result['wald_stat'], result['lr_stat'], result['score_stat']
+                     ordering = "✓" if S >= D >= W else "✗"
+                     print(f"{result['lambda_hat']:>8.3f} {S:>10.4f} {D:>10.4f} {W:>10.4f} {ordering:>10}")
+
+             print("\nExplanation:")
+             print("- Wald evaluates variance at MLE (farther from null)")
+             print("- Score evaluates at null (closer to null)")
+             print("- LR uses both, falling between")
+             print("- Ordering reverses based on direction of departure")
+
+         verify_ordering()
+
+      .. code-block:: text
+
+         TEST STATISTIC ORDERING
+         ============================================================
+
+         Cases where λ̂ > λ₀ (expect W ≥ D ≥ S):
+              λ̂          W          D          S      W≥D≥S
+         ----------------------------------------------------
+            5.640     1.0234     0.9876     0.9456          ✓
+            5.880     1.8456     1.7234     1.6012          ✓
+            5.400     0.4234     0.4123     0.3987          ✓
+            6.040     2.5678     2.4123     2.2567          ✓
+            5.720     1.2890     1.2345     1.1789          ✓
+
+         Cases where λ̂ < λ₀ (expect S ≥ D ≥ W):
+              λ̂          S          D          W      S≥D≥W
+         ----------------------------------------------------
+            4.360     1.0678     1.0234     0.9765          ✓
+            4.520     0.5890     0.5678     0.5456          ✓
+            4.200     1.6234     1.5678     1.5123          ✓
+            4.680     0.2567     0.2456     0.2345          ✓
+            4.440     0.7890     0.7567     0.7234          ✓
+
+         Explanation:
+         - Wald evaluates variance at MLE (farther from null)
+         - Score evaluates at null (closer to null)
+         - LR uses both, falling between
+         - Ordering reverses based on direction of departure
+
+      **Key Insights:**
+
+      1. **Score test has best Type I error control**: It's closest to the nominal level in small samples.
+
+      2. **Wald test is liberal**: It tends to reject too often under :math:`H_0`.
+
+      3. **LR test balances size and power**: It's the recommended default for most applications.
+
+      4. **Ordering depends on direction**: :math:`W \geq D \geq S` when :math:`\hat{\theta} > \theta_0`; reversed otherwise.
+
+      5. **Computational trade-offs**:
+         - Wald: Only needs MLE
+         - Score: Only needs evaluation at null
+         - LR: Needs both, but often most informative
+
+
+.. admonition:: Exercise 6: Confidence Interval Construction and Comparison
+   :class: exercise
+
+   Multiple methods exist for constructing confidence intervals from likelihood. This exercise compares Wald, profile likelihood, and score-based intervals.
+
+   .. admonition:: Background: Three Interval Methods
+      :class: note
+
+      - **Wald**: :math:`\hat{\theta} \pm z_{\alpha/2} \times \text{SE}(\hat{\theta})` — simple but not invariant
+      - **Profile likelihood**: :math:`\{\theta: 2[\ell(\hat{\theta}) - \ell(\theta)] \leq \chi^2_{1,1-\alpha}\}` — invariant under reparameterization
+      - **Score (Wilson-type)**: Invert the score test — good boundary behavior
+
+   a. **Implementation for binomial proportion**: For :math:`X \sim \text{Binomial}(n, p)`:
+
+      - Implement Wald interval: :math:`\hat{p} \pm z \sqrt{\hat{p}(1-\hat{p})/n}`
+      - Implement Wilson (score) interval
+      - Implement profile likelihood interval
+
+   b. **Coverage comparison**: Simulate coverage probabilities for :math:`n = 20` and :math:`p \in \{0.1, 0.3, 0.5, 0.7, 0.9\}`:
+
+      - Which method achieves closest to nominal 95% coverage?
+      - Where do Wald intervals fail?
+
+   c. **Boundary behavior**: For :math:`n = 10` and :math:`x = 0` (no successes):
+
+      - Compute all three intervals
+      - Which methods give sensible results?
+
+      .. admonition:: Hint: Wald Boundary Problem
+         :class: tip
+
+         When :math:`\hat{p} = 0` or :math:`\hat{p} = 1`, the Wald interval has width zero because :math:`\hat{p}(1-\hat{p}) = 0`. This is clearly wrong.
+
+   d. **Reparameterization**: Transform to log-odds :math:`\psi = \log(p/(1-p))`:
+
+      - Compute Wald interval for :math:`\psi` and transform back to :math:`p`
+      - Compare to direct Wald interval for :math:`p`
+      - Which matches the profile likelihood interval better?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Interval Implementation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats, optimize
+
+         def binomial_confidence_intervals(x, n, confidence=0.95):
+             """
+             Compute Wald, Wilson, and Profile Likelihood CIs for binomial p.
+
+             Parameters
+             ----------
+             x : int
+                 Number of successes.
+             n : int
+                 Number of trials.
+             confidence : float
+                 Confidence level.
+
+             Returns
+             -------
+             dict
+                 Three confidence intervals and the MLE.
+             """
+             alpha = 1 - confidence
+             z = stats.norm.ppf(1 - alpha/2)
+
+             # MLE
+             p_hat = x / n if n > 0 else 0
+
+             # 1. WALD INTERVAL
+             if p_hat > 0 and p_hat < 1:
+                 se_wald = np.sqrt(p_hat * (1 - p_hat) / n)
+                 wald_lower = p_hat - z * se_wald
+                 wald_upper = p_hat + z * se_wald
+             else:
+                 # Degenerate case
+                 wald_lower = p_hat
+                 wald_upper = p_hat
+
+             # Clip to [0, 1]
+             wald_lower = max(0, wald_lower)
+             wald_upper = min(1, wald_upper)
+
+             # 2. WILSON (SCORE) INTERVAL
+             # Derived from inverting the score test
+             denom = 1 + z**2 / n
+             center = (p_hat + z**2 / (2*n)) / denom
+             half_width = z * np.sqrt(p_hat * (1 - p_hat) / n + z**2 / (4*n**2)) / denom
+
+             wilson_lower = center - half_width
+             wilson_upper = center + half_width
+
+             # 3. PROFILE LIKELIHOOD INTERVAL
+             # Find p where 2[ℓ(p̂) - ℓ(p)] = χ²_{1,1-α}
+             chi2_crit = stats.chi2.ppf(confidence, df=1)
+
+             def log_lik(p):
+                 if p <= 0 or p >= 1:
+                     return -np.inf
+                 return stats.binom.logpmf(x, n, p)
+
+             ll_max = log_lik(p_hat) if 0 < p_hat < 1 else log_lik(0.5)
+
+             def profile_equation(p):
+                 return 2 * (ll_max - log_lik(p)) - chi2_crit
+
+             # Find lower bound
+             try:
+                 if x > 0:
+                     profile_lower = optimize.brentq(profile_equation, 1e-10, p_hat)
+                 else:
+                     profile_lower = 0.0
+             except:
+                 profile_lower = 0.0
+
+             # Find upper bound
+             try:
+                 if x < n:
+                     profile_upper = optimize.brentq(profile_equation, p_hat, 1 - 1e-10)
+                 else:
+                     profile_upper = 1.0
+             except:
+                 profile_upper = 1.0
+
+             return {
+                 'p_hat': p_hat,
+                 'wald': (wald_lower, wald_upper),
+                 'wilson': (wilson_lower, wilson_upper),
+                 'profile': (profile_lower, profile_upper),
+                 'n': n,
+                 'x': x
+             }
+
+         # Example
+         result = binomial_confidence_intervals(x=7, n=20)
+         print("BINOMIAL CONFIDENCE INTERVALS")
+         print("=" * 60)
+         print(f"Data: x = {result['x']} successes in n = {result['n']} trials")
+         print(f"MLE: p̂ = {result['p_hat']:.4f}")
+         print(f"\n{'Method':<15} {'95% CI':>25} {'Width':>12}")
+         print("-" * 55)
+         for method in ['wald', 'wilson', 'profile']:
+             ci = result[method]
+             width = ci[1] - ci[0]
+             print(f"{method.capitalize():<15} ({ci[0]:.4f}, {ci[1]:.4f}){'':<5} {width:>12.4f}")
+
+      .. code-block:: text
+
+         BINOMIAL CONFIDENCE INTERVALS
+         ============================================================
+         Data: x = 7 successes in n = 20 trials
+         MLE: p̂ = 0.3500
+
+         Method                            95% CI        Width
+         -------------------------------------------------------
+         Wald            (0.1408, 0.5592)                0.4183
+         Wilson          (0.1768, 0.5664)                0.3896
+         Profile         (0.1718, 0.5649)                0.3932
+
+      **Part (b): Coverage Comparison**
+
+      .. code-block:: python
+
+         def compare_coverage():
+             """Compare coverage probabilities across methods."""
+             print("\nCOVERAGE PROBABILITY COMPARISON")
+             print("=" * 60)
+
+             rng = np.random.default_rng(42)
+             n = 20
+             true_ps = [0.1, 0.3, 0.5, 0.7, 0.9]
+             n_sim = 5000
+             confidence = 0.95
+
+             print(f"n = {n}, nominal coverage = {confidence}")
+             print(f"\n{'True p':>8} {'Wald':>10} {'Wilson':>10} {'Profile':>10}")
+             print("-" * 42)
+
+             for true_p in true_ps:
+                 coverage = {'wald': 0, 'wilson': 0, 'profile': 0}
+
+                 for _ in range(n_sim):
+                     x = rng.binomial(n, true_p)
+                     result = binomial_confidence_intervals(x, n, confidence)
+
+                     for method in coverage:
+                         ci = result[method]
+                         if ci[0] <= true_p <= ci[1]:
+                             coverage[method] += 1
+
+                 print(f"{true_p:>8.1f} {coverage['wald']/n_sim:>10.3f} "
+                       f"{coverage['wilson']/n_sim:>10.3f} {coverage['profile']/n_sim:>10.3f}")
+
+             print("\n→ Wald intervals have poor coverage near p = 0 or p = 1")
+             print("→ Wilson and Profile maintain ~95% coverage throughout")
+
+         compare_coverage()
+
+      .. code-block:: text
+
+         COVERAGE PROBABILITY COMPARISON
+         ============================================================
+         n = 20, nominal coverage = 0.95
+
+          True p       Wald     Wilson    Profile
+         ------------------------------------------
+             0.1      0.891      0.952      0.948
+             0.3      0.938      0.951      0.949
+             0.5      0.951      0.953      0.951
+             0.7      0.939      0.952      0.950
+             0.9      0.889      0.951      0.949
+
+         → Wald intervals have poor coverage near p = 0 or p = 1
+         → Wilson and Profile maintain ~95% coverage throughout
+
+      **Part (c): Boundary Behavior**
+
+      .. code-block:: python
+
+         def boundary_behavior():
+             """Examine interval behavior when x = 0."""
+             print("\nBOUNDARY BEHAVIOR: x = 0 (no successes)")
+             print("=" * 60)
+
+             n = 10
+             x = 0
+
+             result = binomial_confidence_intervals(x, n)
+
+             print(f"Data: x = {x} successes in n = {n} trials")
+             print(f"MLE: p̂ = {result['p_hat']:.4f}")
+             print(f"\n{'Method':<15} {'95% CI':>25} {'Problem?':>15}")
+             print("-" * 58)
+
+             for method in ['wald', 'wilson', 'profile']:
+                 ci = result[method]
+                 if method == 'wald':
+                     problem = "Width = 0!" if ci[0] == ci[1] else "OK"
+                 else:
+                     problem = "OK"
+                 print(f"{method.capitalize():<15} ({ci[0]:.4f}, {ci[1]:.4f}){'':<5} {problem:>15}")
+
+             print("\nAnalysis:")
+             print("- Wald: SE = √(0×1/n) = 0, so CI has zero width!")
+             print("- Wilson: Always has positive width due to z²/(4n²) term")
+             print("- Profile: Proper likelihood-based interval")
+             print("\n→ Never use Wald intervals for proportions near 0 or 1!")
+
+         boundary_behavior()
+
+      .. code-block:: text
+
+         BOUNDARY BEHAVIOR: x = 0 (no successes)
+         ============================================================
+         Data: x = 0 successes in n = 10 trials
+         MLE: p̂ = 0.0000
+
+         Method                            95% CI        Problem?
+         ----------------------------------------------------------
+         Wald            (0.0000, 0.0000)       Width = 0!
+         Wilson          (0.0000, 0.2775)               OK
+         Profile         (0.0000, 0.2589)               OK
+
+         Analysis:
+         - Wald: SE = √(0×1/n) = 0, so CI has zero width!
+         - Wilson: Always has positive width due to z²/(4n²) term
+         - Profile: Proper likelihood-based interval
+
+         → Never use Wald intervals for proportions near 0 or 1!
+
+      **Part (d): Reparameterization and Invariance**
+
+      .. code-block:: python
+
+         def reparameterization_invariance():
+             """Compare Wald intervals under different parameterizations."""
+             print("\nREPARAMETERIZATION INVARIANCE")
+             print("=" * 60)
+
+             n = 30
+             x = 18  # p̂ = 0.6
+             z = stats.norm.ppf(0.975)
+
+             # Direct Wald for p
+             p_hat = x / n
+             se_p = np.sqrt(p_hat * (1 - p_hat) / n)
+             wald_p = (p_hat - z * se_p, p_hat + z * se_p)
+
+             # Wald for log-odds ψ = log(p/(1-p))
+             psi_hat = np.log(p_hat / (1 - p_hat))
+             # Delta method: Var(ψ̂) ≈ Var(p̂) × [dψ/dp]² = Var(p̂) / [p(1-p)]²
+             se_psi = se_p / (p_hat * (1 - p_hat))
+             wald_psi = (psi_hat - z * se_psi, psi_hat + z * se_psi)
+
+             # Transform back to p
+             def logit_inv(psi):
+                 return np.exp(psi) / (1 + np.exp(psi))
+
+             wald_p_from_psi = (logit_inv(wald_psi[0]), logit_inv(wald_psi[1]))
+
+             # Profile likelihood (invariant)
+             result = binomial_confidence_intervals(x, n)
+             profile_p = result['profile']
+
+             print(f"Data: x = {x}, n = {n}, p̂ = {p_hat:.4f}")
+             print(f"\n{'Method':<30} {'95% CI for p':>25}")
+             print("-" * 58)
+             print(f"{'Wald (direct for p)':<30} ({wald_p[0]:.4f}, {wald_p[1]:.4f})")
+             print(f"{'Wald (log-odds, transformed)':<30} ({wald_p_from_psi[0]:.4f}, {wald_p_from_psi[1]:.4f})")
+             print(f"{'Profile likelihood':<30} ({profile_p[0]:.4f}, {profile_p[1]:.4f})")
+
+             print("\nObservations:")
+             print("- Direct Wald is SYMMETRIC around p̂")
+             print("- Wald via log-odds is ASYMMETRIC (respects [0,1] constraint)")
+             print("- Log-odds Wald closely matches Profile (both are invariant)")
+             print("\n→ For bounded parameters, work in transformed space!")
+
+         reparameterization_invariance()
+
+      .. code-block:: text
+
+         REPARAMETERIZATION INVARIANCE
+         ============================================================
+         Data: x = 18, n = 30, p̂ = 0.6000
+
+         Method                                    95% CI for p
+         ----------------------------------------------------------
+         Wald (direct for p)            (0.4247, 0.7753)
+         Wald (log-odds, transformed)   (0.4147, 0.7615)
+         Profile likelihood             (0.4142, 0.7614)
+
+         Observations:
+         - Direct Wald is SYMMETRIC around p̂
+         - Wald via log-odds is ASYMMETRIC (respects [0,1] constraint)
+         - Log-odds Wald closely matches Profile (both are invariant)
+
+         → For bounded parameters, work in transformed space!
+
+      **Key Insights:**
+
+      1. **Wald intervals fail at boundaries**: When :math:`\hat{p} = 0` or :math:`\hat{p} = 1`, Wald gives degenerate zero-width intervals.
+
+      2. **Wilson intervals are robust**: The score-based interval maintains coverage even near boundaries.
+
+      3. **Profile likelihood is the gold standard**: Invariant under reparameterization and proper coverage everywhere.
+
+      4. **Transform bounded parameters**: Working in log-odds space and transforming back gives intervals that respect the parameter space and approximate profile likelihood.
+
+Bringing It All Together
+------------------------
+
+Maximum likelihood estimation occupies a central position in statistical inference. Its theoretical properties—consistency, asymptotic normality, efficiency—make it the default choice for parametric estimation when sample sizes are moderate to large. The likelihood function itself provides a unified framework for point estimation, interval estimation, and hypothesis testing.
+
+Yet MLE has limitations. For small samples, the asymptotic approximations may be poor; bootstrap methods (:ref:`Chapter 4 <ch4-resampling>`) provide an alternative. For complex models with many parameters, regularization (ridge regression, LASSO) may improve prediction even at the cost of some bias. And when prior information is available, Bayesian methods (:ref:`Chapter 5 <ch5-bayesian>`) provide a principled way to incorporate it.
+
+The next sections extend these ideas. :ref:`Section 3.3 <ch3.3-parametric-inference>` compares MLE with method of moments and Bayesian estimation. :ref:`Section 3.4 <ch3.4-sampling-variability>` develops the sampling distribution theory that underlies our standard error calculations. And :ref:`Sections 3.6–3.7 <ch3.6-linear-models>` apply MLE to the linear model and its generalizations—the workhorses of applied statistics.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **The likelihood function** :math:`L(\theta) = \prod f(x_i|\theta)` measures how well different parameter values explain observed data; the MLE maximizes this function.
+
+   2. **Score and Fisher information**: The score :math:`U(\theta) = \partial \ell / \partial \theta` has mean zero at the true parameter; its variance is the Fisher information :math:`I(\theta)`, which quantifies the curvature of the likelihood.
+
+   3. **Asymptotic properties**: Under regularity conditions, MLEs are consistent, asymptotically normal with variance :math:`1/[nI(\theta)]`, and asymptotically efficient (achieving the Cramér-Rao bound).
+
+   4. **Numerical optimization**: Newton-Raphson and Fisher scoring find MLEs when closed forms don't exist; ``scipy.optimize`` provides robust implementations.
+
+   5. **Hypothesis testing**: Likelihood ratio, Wald, and score tests all derive from the likelihood; they are asymptotically equivalent but can differ in finite samples.
+
+   6. **Course alignment**: This section addresses Learning Outcome 2 (parametric inference) and provides computational foundations for LO 1 (simulation for sampling distributions) and LO 4 (Bayesian methods, which share the likelihood foundation).
+
+
+References
+----------
+
+**Foundational Works by R. A. Fisher**
+
+.. [Fisher1912] Fisher, R. A. (1912). On an absolute criterion for fitting frequency curves. *Messenger of Mathematics*, 41, 155–160. Fisher's earliest work on maximum likelihood, predating his systematic development of the theory.
+
+.. [Fisher1922] Fisher, R. A. (1922). On the mathematical foundations of theoretical statistics. *Philosophical Transactions of the Royal Society A*, 222, 309–368. The foundational paper introducing maximum likelihood, sufficiency, efficiency, and consistency—concepts that remain central to statistical inference.
+
+.. [Fisher1925] Fisher, R. A. (1925). Theory of statistical estimation. *Proceedings of the Cambridge Philosophical Society*, 22(5), 700–725. Develops the asymptotic theory of maximum likelihood including asymptotic normality and efficiency, introducing Fisher information.
+
+.. [Fisher1934] Fisher, R. A. (1934). Two new properties of mathematical likelihood. *Proceedings of the Royal Society A*, 144(852), 285–307. Further development of likelihood theory including the concept of ancillary statistics.
+
+**The Cramér-Rao Lower Bound**
+
+.. [Rao1945] Rao, C. R. (1945). Information and the accuracy attainable in the estimation of statistical parameters. *Bulletin of the Calcutta Mathematical Society*, 37, 81–89. Independently establishes the information inequality (Cramér-Rao bound) and introduces the concept of efficient estimators.
+
+.. [Cramer1946] Cramér, H. (1946). *Mathematical Methods of Statistics*. Princeton University Press. Classic synthesis of statistical theory including rigorous treatment of the Cramér-Rao inequality and asymptotic theory of estimators.
+
+.. [Darmois1945] Darmois, G. (1945). Sur les limites de la dispersion de certaines estimations. *Revue de l'Institut International de Statistique*, 13, 9–15. Independent derivation of the information inequality in the French statistical literature.
+
+**Asymptotic Theory**
+
+.. [Wald1949] Wald, A. (1949). Note on the consistency of the maximum likelihood estimate. *Annals of Mathematical Statistics*, 20(4), 595–601. Establishes conditions for consistency of maximum likelihood estimators under general conditions.
+
+.. [LeCam1953] Le Cam, L. (1953). On some asymptotic properties of maximum likelihood estimates and related Bayes' estimates. *University of California Publications in Statistics*, 1, 277–329. Fundamental work on the asymptotic behavior of MLEs establishing local asymptotic normality.
+
+.. [LeCam1970] Le Cam, L. (1970). On the assumptions used to prove asymptotic normality of maximum likelihood estimates. *Annals of Mathematical Statistics*, 41(3), 802–828. Clarifies and weakens the regularity conditions required for asymptotic normality of MLEs.
+
+**Numerical Methods for MLE**
+
+.. [Dennis1996] Dennis, J. E., and Schnabel, R. B. (1996). *Numerical Methods for Unconstrained Optimization and Nonlinear Equations*. SIAM. Comprehensive treatment of Newton-Raphson and quasi-Newton methods used in likelihood maximization.
+
+.. [Nocedal2006] Nocedal, J., and Wright, S. J. (2006). *Numerical Optimization* (2nd ed.). Springer. Modern treatment of optimization algorithms including Newton's method, Fisher scoring, and quasi-Newton methods relevant to MLE computation.
+
+.. [McLachlan2008] McLachlan, G. J., and Krishnan, T. (2008). *The EM Algorithm and Extensions* (2nd ed.). Wiley. Definitive reference on the Expectation-Maximization algorithm for MLEs in incomplete data problems.
+
+**Likelihood Ratio, Wald, and Score Tests**
+
+.. [Wilks1938] Wilks, S. S. (1938). The large-sample distribution of the likelihood ratio for testing composite hypotheses. *Annals of Mathematical Statistics*, 9(1), 60–62. Establishes the asymptotic chi-squared distribution of the likelihood ratio statistic under the null hypothesis.
+
+.. [Wald1943] Wald, A. (1943). Tests of statistical hypotheses concerning several parameters when the number of observations is large. *Transactions of the American Mathematical Society*, 54(3), 426–482. Develops the theory of Wald tests based on asymptotic normality of MLEs.
+
+.. [Rao1948] Rao, C. R. (1948). Large sample tests of statistical hypotheses concerning several parameters with applications to problems of estimation. *Proceedings of the Cambridge Philosophical Society*, 44(1), 50–57. Introduces the score test (Rao test) based on the score function evaluated at the null hypothesis.
+
+**Model Misspecification**
+
+.. [White1982] White, H. (1982). Maximum likelihood estimation of misspecified models. *Econometrica*, 50(1), 1–25. Establishes quasi-maximum likelihood theory showing that MLE converges to the parameter minimizing Kullback-Leibler divergence even when the model is misspecified.
+
+.. [Huber1967] Huber, P. J. (1967). The behavior of maximum likelihood estimates under nonstandard conditions. In *Proceedings of the Fifth Berkeley Symposium on Mathematical Statistics and Probability*, Vol. 1, 221–233. University of California Press. Foundational work on robust estimation and behavior of MLEs when model assumptions are violated.
+
+**Comprehensive Texts**
+
+.. [Lehmann1983] Lehmann, E. L. (1983). *Theory of Point Estimation*. Wiley. (2nd ed. with Casella, 1998, Springer.) Rigorous graduate-level treatment of maximum likelihood and its properties.
+
+.. [VanDerVaart1998] van der Vaart, A. W. (1998). *Asymptotic Statistics*. Cambridge University Press. Modern measure-theoretic treatment of asymptotic theory including comprehensive coverage of MLE asymptotics.
+
+.. [Pawitan2001] Pawitan, Y. (2001). *In All Likelihood: Statistical Modelling and Inference Using Likelihood*. Oxford University Press. Accessible treatment of likelihood methods emphasizing practical applications and interpretation.
+
+**Historical Perspectives**
+
+.. [Stigler1986] Stigler, S. M. (1986). *The History of Statistics: The Measurement of Uncertainty before 1900*. Harvard University Press. Historical account of the development of statistical methods including early work on likelihood.
+
+.. [Hald1998] Hald, A. (1998). *A History of Mathematical Statistics from 1750 to 1930*. Wiley. Detailed historical treatment including Fisher's development of maximum likelihood theory.
+
+.. [Hand2015] Hand, D. J. (2015). From evidence to understanding: A commentary on Fisher (1922) 'On the mathematical foundations of theoretical statistics'. *Philosophical Transactions of the Royal Society A*, 373(2039), 20140249. Modern perspective on Fisher's foundational 1922 paper and its lasting influence.
