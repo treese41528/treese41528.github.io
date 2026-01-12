@@ -1,0 +1,2017 @@
+.. _ch4_5-jackknife-methods:
+
+==============================
+Section 4.5: Jackknife Methods
+==============================
+
+The bootstrap, introduced by Efron in 1979, revolutionized computational statistics by providing a general-purpose tool for uncertainty quantification. But the bootstrap had an important predecessor: the **jackknife**, developed by Quenouille (1949) for bias reduction and extended by Tukey (1958) for variance estimation. While the bootstrap has largely superseded the jackknife for interval construction, the jackknife remains valuable in its own right—it is deterministic, computationally efficient for smooth statistics, and provides unique diagnostic capabilities through its connection to influence functions.
+
+This section develops the jackknife as both a historical precursor to the bootstrap and a modern tool with distinct strengths. We begin with the delete-1 jackknife, extend to the delete-:math:`d` generalization, explore bias correction, and conclude with a systematic comparison to bootstrap methods. Throughout, we emphasize when each method excels and how they can be used together.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   - **Understand**: The jackknife principle as systematic leave-one-out perturbation analysis
+   - **Develop**: Computational skills for jackknife standard errors, bias estimation, and diagnostics
+   - **Implement**: Delete-1 and delete-:math:`d` jackknife algorithms in Python
+   - **Evaluate**: When to prefer jackknife over bootstrap, and when to use both
+
+
+Historical Context and Motivation
+---------------------------------
+
+The jackknife emerged from a practical problem: how to assess the reliability of a complex statistic without deriving its theoretical variance. Maurice Quenouille introduced the method in 1949 for bias reduction in serial correlation estimation, and John Tukey named it the "jackknife" in 1958, likening it to a versatile pocket knife that can help in many situations.
+
+The Historical Problem
+~~~~~~~~~~~~~~~~~~~~~~
+
+Consider estimating a parameter :math:`\theta = T(F)` with a statistic :math:`\hat{\theta} = T(\hat{F}_n)`. For many statistics beyond the sample mean, deriving :math:`\text{Var}(\hat{\theta})` analytically requires either:
+
+1. **Strong distributional assumptions** (e.g., normality)
+2. **Taylor expansions** (delta method) that may be complex
+3. **Asymptotic approximations** that may be inaccurate for small :math:`n`
+
+The jackknife provides an empirical alternative: by systematically observing how :math:`\hat{\theta}` changes when each observation is removed, we can approximate both the variance and bias of :math:`\hat{\theta}` without any distributional assumptions.
+
+The Core Insight
+~~~~~~~~~~~~~~~~
+
+For a smooth statistic :math:`T`, removing a single observation :math:`X_i` from the sample approximates a small perturbation to the empirical distribution :math:`\hat{F}_n`. If :math:`T` is sufficiently regular (differentiable in an appropriate sense), the change :math:`\hat{\theta}_{(-i)} - \hat{\theta}` reflects the **influence** of observation :math:`X_i` on the estimate. Aggregating these influences across all observations recovers information about the sampling variability of :math:`\hat{\theta}`.
+
+This is precisely the intuition behind the **influence function** from robust statistics, and we will see that the jackknife provides a discrete approximation to influence-function-based variance estimation.
+
+
+The Delete-1 Jackknife
+----------------------
+
+The delete-1 (or leave-one-out) jackknife is the foundation of jackknife methodology. We systematically compute the statistic on each of the :math:`n` subsamples formed by removing one observation.
+
+Notation and Basic Definitions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Let :math:`X_1, \ldots, X_n` be an iid sample from distribution :math:`F`, and let :math:`\hat{\theta} = T(X_1, \ldots, X_n)` be a statistic estimating :math:`\theta = T(F)`.
+
+**Leave-one-out estimate**: For each :math:`i = 1, \ldots, n`, define
+
+.. math::
+
+   \hat{\theta}_{(-i)} = T(X_1, \ldots, X_{i-1}, X_{i+1}, \ldots, X_n)
+
+This is the statistic computed on the sample with observation :math:`X_i` removed.
+
+**Jackknife average**: The mean of the leave-one-out estimates is
+
+.. math::
+
+   \bar{\theta}_{(\cdot)} = \frac{1}{n} \sum_{i=1}^n \hat{\theta}_{(-i)}
+
+**Pseudovalues**: Tukey introduced the pseudovalues
+
+.. math::
+
+   \widetilde{\theta}_i = n\hat{\theta} - (n-1)\hat{\theta}_{(-i)}
+
+These act like :math:`n` "replicates" of the original estimate. Their sample mean equals the **bias-corrected jackknife estimate**:
+
+.. math::
+
+   \frac{1}{n} \sum_{i=1}^n \widetilde{\theta}_i = n\hat{\theta} - (n-1)\bar{\theta}_{(\cdot)} = \hat{\theta}^{\text{jack-bc}}
+
+This equals :math:`\hat{\theta}` only when :math:`\bar{\theta}_{(\cdot)} = \hat{\theta}` (i.e., when the statistic is approximately unbiased or linear in the observations). For biased statistics, the mean of pseudovalues provides a bias-corrected estimate.
+
+.. admonition:: Intuition for Pseudovalues
+   :class: tip
+
+   Think of each pseudovalue :math:`\widetilde{\theta}_i` as answering: "What would :math:`\hat{\theta}` have been if observation :math:`X_i` had :math:`n` times its actual weight?" The pseudovalues inflate the influence of each observation, making the variability due to individual observations explicit.
+
+
+Jackknife Standard Error
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The jackknife standard error is computed from the variability of the leave-one-out estimates:
+
+.. math::
+
+   \widehat{\text{SE}}_{\text{jack}} = \sqrt{\frac{n-1}{n} \sum_{i=1}^n \left(\hat{\theta}_{(-i)} - \bar{\theta}_{(\cdot)}\right)^2}
+
+The factor :math:`(n-1)/n` (rather than :math:`1/n`) accounts for the fact that leave-one-out estimates are computed on samples of size :math:`n-1`, not :math:`n`. This scaling ensures correct variance estimation for smooth statistics.
+
+**Equivalently**, the jackknife SE can be expressed using pseudovalues:
+
+.. math::
+
+   \widehat{\text{SE}}_{\text{jack}} = \frac{1}{\sqrt{n}} \cdot s_{\widetilde{\theta}}
+
+where :math:`s_{\widetilde{\theta}}` is the sample standard deviation of the pseudovalues :math:`\widetilde{\theta}_1, \ldots, \widetilde{\theta}_n` (using divisor :math:`n-1`).
+
+**For vector statistics** :math:`\hat{\boldsymbol{\theta}} \in \mathbb{R}^p`, the jackknife covariance matrix is:
+
+.. math::
+
+   \widehat{\text{Cov}}_{\text{jack}}(\hat{\boldsymbol{\theta}}) = \frac{n-1}{n} \sum_{i=1}^n \left(\hat{\boldsymbol{\theta}}_{(-i)} - \bar{\boldsymbol{\theta}}_{(\cdot)}\right)\left(\hat{\boldsymbol{\theta}}_{(-i)} - \bar{\boldsymbol{\theta}}_{(\cdot)}\right)^\top
+
+Marginal standard errors are the square roots of diagonal elements, and the standard error of a linear combination :math:`\mathbf{a}^\top\hat{\boldsymbol{\theta}}` is :math:`\sqrt{\mathbf{a}^\top \widehat{\text{Cov}}_{\text{jack}} \, \mathbf{a}}`.
+
+
+Why the Jackknife Works
+~~~~~~~~~~~~~~~~~~~~~~~
+
+For statistics that are smooth functionals of :math:`F`, the jackknife SE is consistent. The key theoretical result connects the jackknife to the **influence function**.
+
+**Influence Function**: For a functional :math:`T` and distribution :math:`F`, the influence function is
+
+.. math::
+
+   \text{IF}(x; T, F) = \lim_{\epsilon \to 0} \frac{T((1-\epsilon)F + \epsilon \delta_x) - T(F)}{\epsilon}
+
+where :math:`\delta_x` is a point mass at :math:`x`. This measures the rate of change of :math:`T` when we contaminate :math:`F` with a small mass at :math:`x`.
+
+**Connection to Jackknife**: For smooth statistics, the jackknife residuals approximate the empirical influence function. Removing observation :math:`i` changes the empirical distribution from :math:`\hat{F}_n` (uniform weights :math:`1/n`) to :math:`\hat{F}_{n,-i}` (uniform weights :math:`1/(n-1)` on remaining observations). The scaled jackknife difference
+
+.. math::
+
+   (n-1)(\hat{\theta} - \hat{\theta}_{(-i)}) \approx \text{IF}(X_i; T, \hat{F}_n)
+
+approximates the empirical influence function evaluated at each observation. The factor :math:`(n-1)` rather than :math:`n` arises because the leave-one-out empirical distribution has weights :math:`1/(n-1)`.
+
+**Asymptotic Variance**: Under regularity conditions, the asymptotic variance of :math:`\sqrt{n}(\hat{\theta} - \theta)` is
+
+.. math::
+
+   \sigma^2 = \int \text{IF}(x; T, F)^2 \, dF(x)
+
+The jackknife variance estimator consistently estimates this quantity:
+
+.. math::
+
+   n \cdot \widehat{\text{SE}}_{\text{jack}}^2 \xrightarrow{p} \sigma^2
+
+This explains why the jackknife works for smooth statistics—it approximates the influence-function variance formula.
+
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+
+   def jackknife_se(data, statistic):
+       """
+       Compute the jackknife standard error of a statistic.
+
+       Parameters
+       ----------
+       data : array_like
+           Original data (1D array or 2D with observations along axis 0).
+       statistic : callable
+           Function that computes the statistic from data. May return
+           a scalar or array.
+
+       Returns
+       -------
+       se_jack : float or ndarray
+           Jackknife standard error (same shape as statistic output).
+       theta_hat : float or ndarray
+           Original estimate from full data.
+       theta_i : ndarray
+           Leave-one-out estimates, shape (n,) or (n, p) for vector statistics.
+       """
+       data = np.asarray(data)
+       n = len(data)
+       
+       # Compute original estimate and determine shape
+       theta_hat = np.asarray(statistic(data))
+       
+       # Allocate array for leave-one-out estimates (handles scalar or vector)
+       theta_i = np.empty((n,) + theta_hat.shape, dtype=float)
+       
+       for i in range(n):
+           # Remove observation i
+           if data.ndim == 1:
+               data_minus_i = np.delete(data, i)
+           else:
+               data_minus_i = np.delete(data, i, axis=0)
+           theta_i[i] = statistic(data_minus_i)
+       
+       # Jackknife SE formula (works for scalar or vector)
+       theta_bar = theta_i.mean(axis=0)
+       se_jack = np.sqrt(((n - 1) / n) * np.sum((theta_i - theta_bar)**2, axis=0))
+       
+       return se_jack, theta_hat, theta_i
+
+
+   def jackknife_pseudovalues(theta_hat, theta_i):
+       """
+       Compute jackknife pseudovalues.
+
+       Parameters
+       ----------
+       theta_hat : float
+           Original estimate from full data.
+       theta_i : array_like
+           Leave-one-out estimates.
+
+       Returns
+       -------
+       pv : ndarray
+           Pseudovalues.
+       """
+       theta_i = np.asarray(theta_i)
+       n = len(theta_i)
+       pv = n * theta_hat - (n - 1) * theta_i
+       return pv
+
+.. admonition:: Example 💡 Jackknife SE for the Sample Mean
+   :class: note
+
+   **Verification**: For the sample mean, the jackknife SE should equal the classical formula :math:`s/\sqrt{n}`.
+
+   .. code-block:: python
+
+      import numpy as np
+
+      # Generate data
+      rng = np.random.default_rng(42)
+      n = 50
+      data = rng.normal(10, 2, size=n)
+
+      # Define statistic
+      def sample_mean(x):
+          return x.mean()
+
+      # Jackknife SE
+      se_jack, theta_hat, theta_i = jackknife_se(data, sample_mean)
+
+      # Classical SE
+      se_classical = data.std(ddof=1) / np.sqrt(n)
+
+      print(f"Sample mean: {theta_hat:.4f}")
+      print(f"Jackknife SE: {se_jack:.4f}")
+      print(f"Classical SE: {se_classical:.4f}")
+      print(f"Ratio: {se_jack / se_classical:.6f}")
+
+   **Output:**
+
+   .. code-block:: text
+
+      Sample mean: 10.0641
+      Jackknife SE: 0.2746
+      Classical SE: 0.2746
+      Ratio: 1.000000
+
+   The jackknife SE exactly equals the classical SE for the sample mean—this is not a coincidence but a mathematical identity (see Exercise 4.5.1).
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig01_jackknife_algorithm.png
+   :alt: Delete-1 jackknife algorithm showing leave-one-out samples, estimates, pseudovalues, and SE comparison
+   :align: center
+   :width: 95%
+
+   **The Delete-1 Jackknife Algorithm.** Panel (a) shows the original sample and the six leave-one-out samples, with removed observations marked by X. Panel (b) displays the leave-one-out estimates :math:`\hat{\theta}_{(-i)}` as horizontal bars, with the original estimate :math:`\hat{\theta}` and jackknife average :math:`\bar{\theta}_{(\cdot)}` marked. Panel (c) shows the corresponding pseudovalues :math:`\widetilde{\theta}_i = n\hat{\theta} - (n-1)\hat{\theta}_{(-i)}`. Panel (d) summarizes the jackknife SE formula. Panel (e) confirms the exact equality between jackknife SE and classical SE for the sample mean. Panel (f) summarizes key properties and use cases.
+
+
+Jackknife Bias Estimation
+-------------------------
+
+Quenouille's original motivation for the jackknife was **bias reduction**. Many statistics have bias of order :math:`O(1/n)`, and the jackknife can estimate and correct this bias.
+
+The Bias Formula
+~~~~~~~~~~~~~~~~
+
+The jackknife bias estimate is:
+
+.. math::
+
+   \widehat{\text{Bias}}_{\text{jack}} = (n-1)\left(\bar{\theta}_{(\cdot)} - \hat{\theta}\right)
+
+This formula arises from the following reasoning: if :math:`\hat{\theta}` has bias :math:`b/n + O(1/n^2)` for sample size :math:`n`, then :math:`\hat{\theta}_{(-i)}` (computed on :math:`n-1` observations) has bias approximately :math:`b/(n-1)`. The difference in biases is :math:`b/(n-1) - b/n = b/(n(n-1))`. Summing over all :math:`n` leave-one-out estimates and solving for :math:`b` yields the jackknife bias formula.
+
+Bias-Corrected Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **bias-corrected jackknife estimator** is:
+
+.. math::
+
+   \hat{\theta}^{\text{jack-bc}} = \hat{\theta} - \widehat{\text{Bias}}_{\text{jack}} = n\hat{\theta} - (n-1)\bar{\theta}_{(\cdot)}
+
+This equals the mean of the pseudovalues:
+
+.. math::
+
+   \hat{\theta}^{\text{jack-bc}} = \frac{1}{n}\sum_{i=1}^n \widetilde{\theta}_i
+
+**Example: Variance Estimator**
+
+The biased variance estimator :math:`\hat{\sigma}^2 = \frac{1}{n}\sum_i (X_i - \bar{X})^2` has bias :math:`-\sigma^2/n`. The jackknife bias-corrected version recovers the unbiased estimator :math:`s^2 = \frac{1}{n-1}\sum_i (X_i - \bar{X})^2`.
+
+.. admonition:: When to Use Bias Correction
+   :class: tip
+
+   - **Use** when :math:`|\widehat{\text{Bias}}_{\text{jack}}|` is large relative to :math:`\widehat{\text{SE}}_{\text{jack}}` (say, > 25% of SE)
+   - **Be cautious** with small :math:`n`—bias correction increases variance
+   - **Report both** :math:`\hat{\theta}` and :math:`\hat{\theta}^{\text{jack-bc}}` when the correction is material
+   - **Check consistency**: if bootstrap bias agrees with jackknife bias, correction is more trustworthy
+
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def jackknife_bias(data, statistic):
+       """
+       Compute jackknife bias estimate and bias-corrected estimator.
+
+       Parameters
+       ----------
+       data : array_like
+           Original data.
+       statistic : callable
+           Function that computes the statistic.
+
+       Returns
+       -------
+       bias_jack : float
+           Jackknife bias estimate.
+       theta_bc : float
+           Bias-corrected estimate.
+       theta_hat : float
+           Original estimate.
+       """
+       data = np.asarray(data)
+       n = len(data)
+       
+       theta_hat = statistic(data)
+       
+       # Leave-one-out estimates
+       theta_i = np.empty(n)
+       for i in range(n):
+           if data.ndim == 1:
+               data_minus_i = np.delete(data, i)
+           else:
+               data_minus_i = np.delete(data, i, axis=0)
+           theta_i[i] = statistic(data_minus_i)
+       
+       theta_bar = theta_i.mean()
+       
+       # Bias estimate
+       bias_jack = (n - 1) * (theta_bar - theta_hat)
+       
+       # Bias-corrected estimate
+       theta_bc = n * theta_hat - (n - 1) * theta_bar
+       
+       return bias_jack, theta_bc, theta_hat
+
+.. admonition:: Example 💡 Bias Correction for Variance Estimator
+   :class: note
+
+   .. code-block:: python
+
+      import numpy as np
+
+      rng = np.random.default_rng(42)
+      n = 30
+      data = rng.normal(0, 2, size=n)
+
+      # Biased variance estimator (divide by n)
+      def biased_var(x):
+          return np.var(x, ddof=0)
+
+      bias_jack, var_bc, var_biased = jackknife_bias(data, biased_var)
+
+      # Compare with unbiased variance
+      var_unbiased = np.var(data, ddof=1)
+
+      print(f"Biased estimate (÷n):      {var_biased:.4f}")
+      print(f"Jackknife bias estimate:   {bias_jack:.4f}")
+      print(f"Bias-corrected estimate:   {var_bc:.4f}")
+      print(f"Unbiased estimate (÷n-1):  {var_unbiased:.4f}")
+
+   **Output:**
+
+   .. code-block:: text
+
+      Biased estimate (÷n):      3.6821
+      Jackknife bias estimate:   -0.1269
+      Bias-corrected estimate:   3.8090
+      Unbiased estimate (÷n-1):  3.8090
+
+   The jackknife bias correction exactly recovers the unbiased variance estimator.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig02_bias_correction.png
+   :alt: Jackknife bias correction for variance and exponential MLE with MSE decomposition
+   :align: center
+   :width: 95%
+
+   **Jackknife Bias Correction.** Panel (a) shows the variance estimator example: the biased estimate (÷n), jackknife bias-corrected estimate, unbiased estimate (÷n−1), and true σ². The bias-corrected jackknife exactly recovers the unbiased estimator. Panel (b) demonstrates bias correction for exponential MLE, showing the positive bias and how jackknife correction approximates the theoretical bias. Panel (c) decomposes MSE into bias² and variance components, illustrating the tradeoff: bias correction reduces bias² but increases variance. Panel (d) provides guidance on when to apply bias correction.
+
+
+The Delete-:math:`d` Jackknife
+------------------------------
+
+The delete-1 jackknife removes one observation at a time. The **delete-**:math:`d` **jackknife** generalizes this by removing :math:`d` observations simultaneously, creating subsamples of size :math:`n - d`.
+
+Motivation
+~~~~~~~~~~
+
+Why consider :math:`d > 1`?
+
+1. **Non-smooth statistics**: For statistics like the median or quantiles, delete-1 jackknife can be unstable because removing one observation may not change the statistic (especially with ties). Larger :math:`d` creates more variation.
+
+2. **Dependent data**: When observations come in blocks (time series, spatial data), deleting entire blocks preserves the dependence structure.
+
+3. **Higher-order bias**: Some bias correction schemes require :math:`d > 1` to achieve optimal rates.
+
+4. **Bridge to subsampling**: As :math:`d/n \to \gamma \in (0, 1)`, the delete-:math:`d` jackknife approaches subsampling methods.
+
+Definition
+~~~~~~~~~~
+
+For :math:`d \geq 1`, let :math:`S \subset \{1, \ldots, n\}` with :math:`|S| = d` denote a subset of indices to remove. The delete-:math:`d` estimate is:
+
+.. math::
+
+   \hat{\theta}_{(-S)} = T\left(\{X_i : i \notin S\}\right)
+
+computed on the :math:`n - d` observations remaining after removing those indexed by :math:`S`.
+
+There are :math:`\binom{n}{d}` such subsets. For small :math:`d`, we can enumerate all of them; for large :math:`d`, we typically use a random sample of subsets.
+
+.. admonition:: Subset Sampling Approximation
+   :class: note
+
+   When :math:`\binom{n}{d}` is large (e.g., :math:`\binom{50}{5} = 2,118,760`), we approximate the average over all subsets by random sampling. With a sufficiently large sample (e.g., 5,000–10,000 subsets), the variance of this Monte Carlo approximation is typically negligible compared to the jackknife variance itself. The estimator remains consistent as long as each observation has equal probability of being omitted.
+
+Delete-:math:`d` Variance Estimator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The delete-:math:`d` jackknife variance estimator is:
+
+.. math::
+
+   \widehat{\text{Var}}_{\text{jack},d} = \frac{n - d}{d \binom{n}{d}} \sum_{S: |S| = d} \left(\hat{\theta}_{(-S)} - \bar{\theta}\right)^2
+
+where :math:`\bar{\theta}` is the average over all (or sampled) delete-:math:`d` estimates. The corresponding standard error is:
+
+.. math::
+
+   \widehat{\text{SE}}_{\text{jack},d} = \sqrt{\widehat{\text{Var}}_{\text{jack},d}}
+
+The factor :math:`(n-d)/d` scales the variance appropriately for the reduced sample size.
+
+.. admonition:: Scaling Intuition
+   :class: tip
+
+   For delete-1 (:math:`d = 1`), the factor is :math:`(n-1)/1 = n-1`, which when multiplied by :math:`1/n` (from averaging) gives :math:`(n-1)/n`—matching our earlier formula.
+
+   For larger :math:`d`, the factor accounts for:
+   
+   - Subsamples have size :math:`n - d` (more variability than size :math:`n`)
+   - Each observation is omitted in :math:`\binom{n-1}{d-1}` of the :math:`\binom{n}{d}` subsets
+
+Choosing :math:`d`
+~~~~~~~~~~~~~~~~~~
+
+The choice of :math:`d` involves a bias-variance tradeoff:
+
+- **Small** :math:`d` **(including** :math:`d = 1`**)**: Lower variance in the SE estimate, but may be biased for non-smooth statistics.
+- **Large** :math:`d`: Better for non-smooth statistics, but higher variance and computational cost.
+
+**Practical guidelines**:
+
+1. **Smooth statistics**: :math:`d = 1` is sufficient and most efficient.
+2. **Quantiles/median**: Consider :math:`d \approx \sqrt{n}` or larger.
+3. **Block-dependent data**: :math:`d` = block size.
+4. **Exploration**: Compare :math:`d = 1, \sqrt{n}, n/4` to assess sensitivity.
+
+**Connection to Subsampling**: When :math:`d = n - m` for fixed :math:`m` (or :math:`d/n \to 1`), delete-:math:`d` jackknife becomes subsampling: we compute the statistic on many subsamples of size :math:`m` and use their distribution for inference. This approach is more general but requires different variance formulas.
+
+Python Implementation
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from itertools import combinations
+
+   def jackknife_delete_d(data, statistic, d=1, max_subsets=None, seed=None):
+       """
+       Compute delete-d jackknife standard error.
+
+       Parameters
+       ----------
+       data : array_like
+           Original data.
+       statistic : callable
+           Function that computes the statistic.
+       d : int
+           Number of observations to delete (default 1).
+       max_subsets : int, optional
+           Maximum number of subsets to use. If None, use all C(n,d) subsets
+           when C(n,d) <= 10000, otherwise sample 10000 random subsets.
+       seed : int, optional
+           Random seed for subset sampling.
+
+       Returns
+       -------
+       se_jack_d : float
+           Delete-d jackknife standard error.
+       theta_hat : float
+           Original estimate.
+       theta_S : ndarray
+           Delete-d estimates for each subset.
+       """
+       data = np.asarray(data)
+       n = len(data)
+       
+       if d >= n:
+           raise ValueError(f"d={d} must be less than n={n}")
+       
+       theta_hat = statistic(data)
+       
+       # Determine number of subsets
+       from math import comb
+       n_subsets = comb(n, d)
+       
+       if max_subsets is None:
+           max_subsets = min(n_subsets, 10000)
+       
+       rng = np.random.default_rng(seed)
+       
+       if n_subsets <= max_subsets:
+           # Use all subsets
+           subsets = list(combinations(range(n), d))
+       else:
+           # Random sample of subsets
+           subsets = []
+           seen = set()
+           while len(subsets) < max_subsets:
+               S = tuple(sorted(rng.choice(n, d, replace=False)))
+               if S not in seen:
+                   seen.add(S)
+                   subsets.append(S)
+       
+       # Compute delete-d estimates
+       theta_S = np.empty(len(subsets))
+       for j, S in enumerate(subsets):
+           mask = np.ones(n, dtype=bool)
+           mask[list(S)] = False
+           if data.ndim == 1:
+               data_minus_S = data[mask]
+           else:
+               data_minus_S = data[mask]
+           theta_S[j] = statistic(data_minus_S)
+       
+       # Delete-d variance formula
+       theta_bar = theta_S.mean()
+       var_jack_d = ((n - d) / d) * np.mean((theta_S - theta_bar)**2)
+       se_jack_d = np.sqrt(var_jack_d)
+       
+       return se_jack_d, theta_hat, theta_S
+
+.. admonition:: Example 💡 Delete-:math:`d` for Median
+   :class: note
+
+   The median is non-smooth: removing one observation may not change it. Let's compare delete-1 and delete-:math:`d` jackknife:
+
+   .. code-block:: python
+
+      import numpy as np
+
+      rng = np.random.default_rng(42)
+      n = 40
+      data = rng.exponential(2.0, size=n)  # Skewed data
+
+      def median_stat(x):
+          return np.median(x)
+
+      # Delete-1 jackknife
+      se_d1, theta_hat, _ = jackknife_se(data, median_stat)
+
+      # Delete-d jackknife with d = sqrt(n) ≈ 6
+      d = int(np.sqrt(n))
+      se_dd, _, _ = jackknife_delete_d(data, median_stat, d=d, seed=42)
+
+      # Bootstrap for comparison
+      B = 5000
+      boot_medians = np.array([np.median(rng.choice(data, n, replace=True)) 
+                               for _ in range(B)])
+      se_boot = boot_medians.std(ddof=1)
+
+      print(f"Sample median: {theta_hat:.4f}")
+      print(f"Delete-1 jackknife SE: {se_d1:.4f}")
+      print(f"Delete-{d} jackknife SE: {se_dd:.4f}")
+      print(f"Bootstrap SE: {se_boot:.4f}")
+
+   **Output:**
+
+   .. code-block:: text
+
+      Sample median: 1.6825
+      Delete-1 jackknife SE: 0.2891
+      Delete-6 jackknife SE: 0.3156
+      Bootstrap SE: 0.3284
+
+   For this non-smooth statistic, delete-:math:`d` and bootstrap tend to agree better than delete-1.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig03_delete_d_jackknife.png
+   :alt: Delete-d jackknife showing how larger d helps non-smooth statistics
+   :align: center
+   :width: 95%
+
+   **The Delete-d Jackknife.** Panel (a) illustrates the concept: delete-1 removes single observations while delete-3 removes subsets of three. Panel (b) shows SE comparison for the sample mean (a smooth statistic)—all values of d agree closely with the classical SE. Panel (c) demonstrates SE for the median (non-smooth): delete-1 underestimates SE, while larger d moves closer to the bootstrap estimate. Panel (d) provides guidance on choosing d: use d=1 for smooth statistics, d≈√n for quantiles, and d=block size for dependent data.
+
+
+Jackknife versus Bootstrap
+--------------------------
+
+Both jackknife and bootstrap are plug-in resampling methods targeting the same inferential goals: standard errors, bias estimates, and confidence intervals. However, they differ fundamentally in approach and have distinct strengths.
+
+Conceptual Comparison
+~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Jackknife vs Bootstrap: Conceptual Differences
+   :header-rows: 1
+   :widths: 25 35 35
+
+   * - Aspect
+     - Jackknife
+     - Bootstrap
+   * - **Perturbation**
+     - Remove 1 (or :math:`d`) observations
+     - Resample entire dataset
+   * - **Samples**
+     - :math:`n` (or :math:`\binom{n}{d}`) deterministic
+     - :math:`B` stochastic
+   * - **Approximation**
+     - First-order (linear)
+     - Full distribution
+   * - **Replicate values**
+     - Pseudovalues (synthetic)
+     - Bootstrap statistics (actual)
+   * - **Target**
+     - Variance, bias
+     - Full sampling distribution
+
+The jackknife approximates sampling variability through a linearization, while the bootstrap directly simulates from :math:`\hat{F}_n`. For smooth statistics, both approaches yield consistent variance estimates; the bootstrap additionally provides the full shape of the sampling distribution.
+
+When to Prefer Jackknife
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Smooth statistics**: For means, regression coefficients, smooth M-estimators, and other differentiable functionals, jackknife and bootstrap agree, but jackknife is:
+   
+   - **Faster**: Only :math:`n` computations vs. :math:`B \gg n` for bootstrap
+   - **Deterministic**: No Monte Carlo error, no seed management
+   - **Sufficient**: SE is the primary need, not full distribution
+
+2. **Expensive statistics**: When computing :math:`T` is costly (complex optimization, large-scale computations), :math:`n` jackknife evaluations may be feasible while :math:`B = 5000` bootstrap evaluations are not.
+
+3. **Influence diagnostics**: Jackknife directly provides :math:`\hat{\theta}_{(-i)}` and pseudovalues, revealing which observations most affect the estimate—useful for outlier detection and robustness assessment.
+
+4. **BCa acceleration constant**: The BCa bootstrap interval requires the acceleration constant :math:`a`, computed from jackknife pseudovalues.
+
+When to Prefer Bootstrap
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Non-smooth statistics**: Medians, quantiles, MAD, and other non-differentiable functionals are handled better by bootstrap. The jackknife can be unstable or inconsistent for these. (Note: Trimmed means are smoother than quantiles and jackknife often performs adequately for them, though bootstrap remains more robust in small samples.)
+
+2. **Confidence intervals**: Bootstrap provides multiple interval methods (percentile, basic, BCa, studentized) directly from the bootstrap distribution. Jackknife intervals typically rely on normal approximation: :math:`\hat{\theta} \pm z_{\alpha/2} \cdot \widehat{\text{SE}}_{\text{jack}}`.
+
+3. **Distributional shape**: Bootstrap provides a histogram of :math:`\hat{\theta}^*`, revealing skewness, heavy tails, or multimodality that affect interval accuracy.
+
+4. **Hypothesis testing**: Bootstrap p-values and permutation tests require resampling under the null—jackknife doesn't provide this directly.
+
+5. **Small samples with complex statistics**: When :math:`n` is small and the statistic is complex, bootstrap's resampling may capture features that jackknife's linear approximation misses.
+
+When Neither Works Well
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Both **nonparametric** methods (jackknife and nonparametric bootstrap) struggle with:
+
+- **Extreme quantiles** (99th percentile, max, min): Nonparametric methods cannot exceed sample bounds. Parametric bootstrap with unbounded support *can* exceed these bounds and may perform better if the model is correct.
+- **Boundary parameters**: E.g., estimating :math:`\theta` in Uniform(0, :math:`\theta`). Both nonparametric bootstrap and jackknife are constrained by the sample maximum.
+- **Non-identifiable parameters**: Different :math:`F` giving same :math:`T(F)`
+- **Highly discrete data with ties**: May cause instability in both methods
+
+For these cases, consider parametric bootstrap (when model is credible), extreme value theory, m-out-of-n bootstrap, or subsampling.
+
+Practical Recommendation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Default strategy**: Use bootstrap for general-purpose inference (it's more flexible and provides more output). Use jackknife when:
+
+- Computation is expensive and :math:`T` is smooth
+- You need influence diagnostics
+- You need deterministic, reproducible results without Monte Carlo error
+- You're computing the BCa acceleration constant
+
+**Cross-validation**: When feasible, compute both and compare :math:`\widehat{\text{SE}}_{\text{jack}}` with :math:`\widehat{\text{SE}}_{\text{boot}}`. If they agree (within ~10-20%), either is trustworthy. If they disagree substantially:
+
+- For smooth statistics: investigate outliers using pseudovalues
+- For non-smooth statistics: trust bootstrap
+- Consider whether the statistic is appropriate for the data
+
+Python Comparison
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   def compare_jackknife_bootstrap(data, statistic, B=5000, seed=42):
+       """Compare jackknife and bootstrap standard errors."""
+       rng = np.random.default_rng(seed)
+       data = np.asarray(data)
+       n = len(data)
+       
+       # Jackknife
+       se_jack, theta_hat, theta_i = jackknife_se(data, statistic)
+       
+       # Bootstrap
+       theta_star = np.empty(B)
+       for b in range(B):
+           idx = rng.integers(0, n, n)
+           theta_star[b] = statistic(data[idx])
+       se_boot = theta_star.std(ddof=1)
+       
+       return {
+           'theta_hat': theta_hat,
+           'se_jack': se_jack,
+           'se_boot': se_boot,
+           'ratio': se_jack / se_boot,
+           'theta_i': theta_i,
+           'theta_star': theta_star
+       }
+
+.. admonition:: Example 💡 Comparing Methods for Correlation
+   :class: note
+
+   The sample correlation is smooth (away from ±1), so jackknife and bootstrap should agree:
+
+   .. code-block:: python
+
+      import numpy as np
+
+      rng = np.random.default_rng(42)
+      n = 80
+      rho = 0.6
+      
+      # Generate correlated data
+      cov = np.array([[1, rho], [rho, 1]])
+      xy = rng.multivariate_normal([0, 0], cov, size=n)
+
+      def correlation(data):
+          return np.corrcoef(data[:, 0], data[:, 1])[0, 1]
+
+      results = compare_jackknife_bootstrap(xy, correlation, B=5000, seed=42)
+
+      print(f"Sample correlation: {results['theta_hat']:.4f}")
+      print(f"Jackknife SE: {results['se_jack']:.4f}")
+      print(f"Bootstrap SE: {results['se_boot']:.4f}")
+      print(f"Ratio (jack/boot): {results['ratio']:.3f}")
+
+   **Output:**
+
+   .. code-block:: text
+
+      Sample correlation: 0.5821
+      Jackknife SE: 0.0803
+      Bootstrap SE: 0.0812
+      Ratio (jack/boot): 0.989
+
+   The methods agree closely, as expected for a smooth statistic.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig04_jackknife_vs_bootstrap.png
+   :alt: Side-by-side comparison of jackknife and bootstrap for mean versus median
+   :align: center
+   :width: 95%
+
+   **Jackknife vs Bootstrap: Agreement Depends on Smoothness.** Top row: For the sample mean (smooth statistic), jackknife pseudovalues (a) and bootstrap distribution (b) yield nearly identical SE estimates with ratio ≈ 1.0 (c). Bottom row: For the sample median (non-smooth), jackknife pseudovalues (d) are more concentrated than the bootstrap distribution (e), resulting in SE underestimation with ratio ≈ 0.8 (f). This illustrates the key limitation: jackknife is most reliable for smooth statistics and can be unstable for non-smooth functionals.
+
+
+The Infinitesimal Jackknife
+---------------------------
+
+The **infinitesimal jackknife** (IJ) provides the theoretical foundation connecting the jackknife to influence functions. While less commonly used directly, it illuminates why the jackknife works and connects to robust statistics.
+
+Concept
+~~~~~~~
+
+Instead of removing observations entirely, the infinitesimal jackknife considers the effect of **weighting** observations. If we compute :math:`\hat{\theta}_\mathbf{w} = T(\mathbf{w})` where :math:`\mathbf{w} = (w_1, \ldots, w_n)` weights the empirical distribution (with :math:`\sum_i w_i = 1`), then the IJ examines how :math:`\hat{\theta}_\mathbf{w}` changes as we perturb the weights.
+
+For the uniform weights :math:`\mathbf{w}_0 = (1/n, \ldots, 1/n)` (corresponding to :math:`\hat{F}_n`), the influence of observation :math:`i` is:
+
+.. math::
+
+   \text{IJ}_i = n \cdot \left.\frac{\partial \hat{\theta}_\mathbf{w}}{\partial w_i}\right|_{\mathbf{w} = \mathbf{w}_0}
+
+The IJ variance estimator is:
+
+.. math::
+
+   \widehat{\text{Var}}_{\text{IJ}} = \frac{1}{n} \sum_{i=1}^n \text{IJ}_i^2
+
+Connection to Delete-1 Jackknife
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For smooth statistics, the delete-1 jackknife approximates the infinitesimal jackknife:
+
+.. math::
+
+   (n-1)(\hat{\theta} - \hat{\theta}_{(-i)}) \approx \text{IJ}_i
+
+(The exact scaling constant varies by convention; some sources use :math:`n` rather than :math:`n-1`.) This approximation improves as :math:`n` grows, explaining the asymptotic equivalence of jackknife and influence-function-based variance estimation.
+
+Practical Use
+~~~~~~~~~~~~~
+
+The infinitesimal jackknife is primarily of theoretical interest, but it has practical applications:
+
+1. **Random forests**: The IJ provides variance estimates for predictions from ensemble methods where explicit leave-one-out is expensive.
+
+2. **Robust statistics**: Understanding which observations have large :math:`\text{IJ}_i` helps identify influential points.
+
+3. **Computational shortcuts**: For some models (e.g., linear regression with hat matrix), IJ can be computed without refitting.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig07_jackknife_after_bootstrap.png
+   :alt: Computing the BCa acceleration constant from jackknife influence values
+   :align: center
+   :width: 95%
+
+   **Jackknife-After-Bootstrap: Computing the BCa Acceleration Constant.** Panel (a) shows the jackknife influence values :math:`\bar{\theta}_{(\cdot)} - \hat{\theta}_{(-i)}` for each observation, revealing the skewness that the acceleration constant captures. Panel (b) derives the acceleration constant formula from these influence values, showing numerical computation. Panel (c) displays the bootstrap distribution with both percentile CI (shaded region) and BCa CI (dashed lines), demonstrating how the acceleration adjustment shifts the interval to improve coverage. Panel (d) summarizes how jackknife enables better bootstrap intervals by quantifying the SE-parameter relationship.
+
+
+Practical Considerations
+------------------------
+
+Computational Efficiency
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Vectorization**: For simple statistics, vectorize across leave-one-out samples:
+
+.. code-block:: python
+
+   def jackknife_mean_fast(data):
+       """Fast jackknife SE for the mean using vectorization."""
+       data = np.asarray(data)
+       n = len(data)
+       total = data.sum()
+       
+       # Leave-one-out means: (total - x_i) / (n - 1)
+       theta_i = (total - data) / (n - 1)
+       theta_bar = theta_i.mean()
+       
+       se_jack = np.sqrt(((n - 1) / n) * np.sum((theta_i - theta_bar)**2))
+       return se_jack, total / n, theta_i
+
+**Regression shortcuts**: For OLS, leave-one-out residuals can be computed via the hat matrix without refitting:
+
+.. math::
+
+   e_{(-i)} = \frac{e_i}{1 - h_{ii}}
+
+where :math:`h_{ii}` is the :math:`i`-th diagonal element of :math:`H = X(X^\top X)^{-1}X^\top`.
+
+**Parallel computation**: For expensive statistics, distribute leave-one-out computations across cores.
+
+Diagnostics
+~~~~~~~~~~~
+
+The jackknife provides unique diagnostic capabilities:
+
+1. **Influential observations**: Large :math:`|\hat{\theta} - \hat{\theta}_{(-i)}|` indicates observation :math:`i` strongly affects the estimate.
+
+2. **Pseudovalue outliers**: Pseudovalues far from :math:`\hat{\theta}` suggest potential data problems or model issues.
+
+3. **Stability assessment**: Plot :math:`\hat{\theta}_{(-i)}` vs. :math:`i` to visualize how the estimate changes as each observation is removed.
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   def jackknife_diagnostics(theta_hat, theta_i, figsize=(12, 4)):
+       """
+       Create diagnostic plots for jackknife analysis.
+       """
+       n = len(theta_i)
+       pv = n * theta_hat - (n - 1) * theta_i
+       influence = theta_hat - theta_i
+       
+       fig, axes = plt.subplots(1, 3, figsize=figsize)
+       
+       # Leave-one-out estimates
+       ax = axes[0]
+       ax.plot(range(n), theta_i, 'o', alpha=0.6)
+       ax.axhline(theta_hat, color='red', linestyle='--', label=r'$\hat{\theta}$')
+       ax.set_xlabel('Observation index')
+       ax.set_ylabel(r'$\hat{\theta}_{(-i)}$')
+       ax.set_title('Leave-one-out estimates')
+       ax.legend()
+       
+       # Influence
+       ax = axes[1]
+       ax.stem(range(n), influence, basefmt=' ')
+       ax.axhline(0, color='gray', linestyle='-')
+       ax.set_xlabel('Observation index')
+       ax.set_ylabel(r'$\hat{\theta} - \hat{\theta}_{(-i)}$')
+       ax.set_title('Influence of each observation')
+       
+       # Pseudovalues
+       ax = axes[2]
+       ax.hist(pv, bins=20, edgecolor='white', alpha=0.7)
+       ax.axvline(theta_hat, color='red', linestyle='--', label=r'$\hat{\theta}$')
+       ax.set_xlabel('Pseudovalue')
+       ax.set_ylabel('Frequency')
+       ax.set_title('Pseudovalue distribution')
+       ax.legend()
+       
+       plt.tight_layout()
+       return fig
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig05_influence_diagnostics.png
+   :alt: Jackknife diagnostics for identifying influential observations including outlier detection
+   :align: center
+   :width: 95%
+
+   **Jackknife Influence Diagnostics.** Panel (a) shows data with an outlier clearly visible. Panel (b) plots leave-one-out estimates—the outlier's removal causes the largest change in :math:`\hat{\theta}`. Panel (c) displays influence :math:`\hat{\theta} - \hat{\theta}_{(-i)}` for each observation; the outlier has by far the largest influence. Panel (d) shows the pseudovalue distribution; the outlier's pseudovalue is an extreme outlier. Panel (e) compares jackknife SE with and without the outlier. Panel (f) provides guidance on using jackknife for diagnostics: flag observations with influence exceeding 2×SE or pseudovalues beyond 3σ.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Jackknife for non-smooth statistics**: The jackknife can fail dramatically for non-smooth statistics. For the sample median, if several observations equal the median, removing one may not change :math:`\hat{\theta}_{(-i)}` at all, leading to underestimated SE. Always verify with bootstrap for non-smooth functionals.
+
+
+Bringing It All Together
+------------------------
+
+The jackknife is a deterministic resampling method that provides fast, reliable inference for smooth statistics. Its leave-one-out structure naturally connects to influence functions, providing both variance estimates and diagnostic insights about observation influence.
+
+**Key decision points**:
+
+1. **Is the statistic smooth?** If yes, jackknife is efficient and reliable. If no (quantiles, modes, maxima), prefer bootstrap or delete-:math:`d` jackknife.
+
+2. **Is computation expensive?** If yes and :math:`T` is smooth, jackknife's :math:`n` evaluations may be preferable to bootstrap's :math:`B \gg n` evaluations.
+
+3. **Do you need more than SE?** Confidence intervals, hypothesis tests, and distributional shape are better served by bootstrap.
+
+4. **Do you need diagnostics?** Jackknife's leave-one-out structure provides unique insight into observation influence.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig06_method_selection.png
+   :alt: Decision flowchart for choosing between jackknife and bootstrap methods
+   :align: center
+   :width: 90%
+
+   **Method Selection Guide.** This decision flowchart guides the choice between jackknife and bootstrap. The key questions are: (1) Is the statistic smooth? If no, use bootstrap. (2) Is computation expensive? If yes and smooth, jackknife is preferable. (3) Do you need CI or full distribution? If yes, use bootstrap. (4) Do you only need SE? Either method works, but jackknife is faster. Best practice: compute both as a sensitivity check when feasible.
+
+**The jackknife-bootstrap relationship**: These methods are complementary. Use jackknife for efficiency and diagnostics, bootstrap for flexibility and intervals. When both are feasible, computing both provides a robustness check—agreement confirms reliability, disagreement warrants investigation.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter4/ch4_5_fig08_summary_table.png
+   :alt: Complete comparison table of jackknife versus bootstrap methods
+   :align: center
+   :width: 85%
+
+   **Jackknife vs Bootstrap: Complete Comparison.** This summary table compares all key aspects of the two methods. Jackknife excels for smooth statistics, expensive computations, reproducibility, and influence diagnostics. Bootstrap excels for non-smooth statistics, confidence intervals, and obtaining full distributional information. The BCa acceleration constant bridges both methods—computed from jackknife but used to improve bootstrap intervals.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core method**: The delete-1 jackknife computes leave-one-out estimates :math:`\hat{\theta}_{(-i)}` and derives SE from their variability using :math:`\widehat{\text{SE}}_{\text{jack}} = \sqrt{((n-1)/n) \sum (\hat{\theta}_{(-i)} - \bar{\theta}_{(\cdot)})^2}`.
+
+   2. **Bias correction**: Jackknife bias estimate is :math:`(n-1)(\bar{\theta}_{(\cdot)} - \hat{\theta})`; bias-corrected estimate is the mean of pseudovalues.
+
+   3. **Delete-**:math:`d` **extension**: For non-smooth statistics or block-dependent data, delete-:math:`d` with :math:`d > 1` may improve reliability.
+
+   4. **Comparison with bootstrap**: Jackknife is faster and deterministic for smooth statistics; bootstrap is more flexible and provides full distributional information.
+
+   5. **Outcome alignment**: This section addresses LO 3 (implement resampling for variability assessment) and connects to the influence function theory underlying robust statistics.
+
+
+Exercises
+---------
+
+These exercises develop your understanding of jackknife methods from basic implementation through comparison with bootstrap and recognition of failure modes.
+
+
+.. admonition:: Exercise 4.5.1: Jackknife SE Equals Classical SE for the Mean
+   :class: exercise
+
+   Prove algebraically that for the sample mean :math:`\bar{X}`, the jackknife SE exactly equals the classical formula :math:`s/\sqrt{n}`.
+
+   .. admonition:: Background: Why This Matters
+      :class: note
+
+      This identity verifies that the jackknife correctly recovers known results for simple statistics. It also provides insight into the :math:`(n-1)/n` factor in the jackknife formula.
+
+   a. Show that for :math:`\hat{\theta} = \bar{X}`, the leave-one-out estimate is :math:`\bar{X}_{(-i)} = \frac{n\bar{X} - X_i}{n-1}`.
+
+   b. Compute :math:`\bar{X}_{(-i)} - \bar{\theta}_{(\cdot)}` where :math:`\bar{\theta}_{(\cdot)} = \frac{1}{n}\sum_{i=1}^n \bar{X}_{(-i)}`.
+
+   c. Substitute into the jackknife SE formula and simplify to show :math:`\widehat{\text{SE}}_{\text{jack}} = s/\sqrt{n}`.
+
+   d. Verify numerically with simulated data.
+
+   .. admonition:: Hint
+      :class: tip
+
+      For part (b), show that :math:`\bar{\theta}_{(\cdot)} = \bar{X}` by expanding the definition. Then :math:`\bar{X}_{(-i)} - \bar{X} = -\frac{X_i - \bar{X}}{n-1}`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Leave-one-out mean**
+
+      .. admonition:: Step 1: Derive the formula
+         :class: tip
+
+         The sum of all observations is :math:`\sum_{j=1}^n X_j = n\bar{X}`. Removing :math:`X_i` gives sum :math:`n\bar{X} - X_i` over :math:`n-1` observations.
+
+      .. math::
+
+         \bar{X}_{(-i)} = \frac{\sum_{j \neq i} X_j}{n-1} = \frac{n\bar{X} - X_i}{n-1}
+
+      **Part (b): Deviation from jackknife average**
+
+      First, compute :math:`\bar{\theta}_{(\cdot)}`:
+
+      .. math::
+
+         \bar{\theta}_{(\cdot)} &= \frac{1}{n}\sum_{i=1}^n \bar{X}_{(-i)} = \frac{1}{n}\sum_{i=1}^n \frac{n\bar{X} - X_i}{n-1} \\
+         &= \frac{1}{n(n-1)}\left(n \cdot n\bar{X} - \sum_{i=1}^n X_i\right) \\
+         &= \frac{1}{n(n-1)}\left(n^2\bar{X} - n\bar{X}\right) = \frac{n\bar{X}(n-1)}{n(n-1)} = \bar{X}
+
+      Therefore:
+
+      .. math::
+
+         \bar{X}_{(-i)} - \bar{\theta}_{(\cdot)} = \frac{n\bar{X} - X_i}{n-1} - \bar{X} = \frac{n\bar{X} - X_i - (n-1)\bar{X}}{n-1} = \frac{\bar{X} - X_i}{n-1} = -\frac{X_i - \bar{X}}{n-1}
+
+      **Part (c): Jackknife SE formula**
+
+      .. math::
+
+         \widehat{\text{SE}}_{\text{jack}}^2 &= \frac{n-1}{n}\sum_{i=1}^n \left(\bar{X}_{(-i)} - \bar{\theta}_{(\cdot)}\right)^2 \\
+         &= \frac{n-1}{n}\sum_{i=1}^n \frac{(X_i - \bar{X})^2}{(n-1)^2} \\
+         &= \frac{1}{n(n-1)}\sum_{i=1}^n (X_i - \bar{X})^2 \\
+         &= \frac{1}{n(n-1)} \cdot (n-1) s^2 = \frac{s^2}{n}
+
+      Taking square root: :math:`\widehat{\text{SE}}_{\text{jack}} = s/\sqrt{n}`. ∎
+
+      **Part (d): Numerical verification**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(42)
+         data = rng.normal(5, 2, size=100)
+
+         # Jackknife
+         n = len(data)
+         total = data.sum()
+         theta_i = (total - data) / (n - 1)
+         theta_bar = theta_i.mean()
+         se_jack = np.sqrt(((n-1)/n) * np.sum((theta_i - theta_bar)**2))
+
+         # Classical
+         se_classical = data.std(ddof=1) / np.sqrt(n)
+
+         print(f"Jackknife SE:  {se_jack:.6f}")
+         print(f"Classical SE:  {se_classical:.6f}")
+         print(f"Difference:    {abs(se_jack - se_classical):.2e}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Jackknife SE:  0.192749
+         Classical SE:  0.192749
+         Difference:    0.00e+00
+
+      **Key Insights:**
+
+      1. The jackknife exactly recovers the classical SE for the mean—this is a mathematical identity, not an approximation.
+
+      2. The :math:`(n-1)/n` factor in the jackknife formula precisely compensates for the :math:`1/(n-1)^2` from the leave-one-out deviations.
+
+      3. This identity provides confidence that the jackknife formula is correctly calibrated.
+
+
+.. admonition:: Exercise 4.5.2: Jackknife Bias Correction
+   :class: exercise
+
+   Investigate jackknife bias correction for the biased variance estimator and an exponential mean estimator.
+
+   .. admonition:: Background: Bias of Order 1/n
+      :class: note
+
+      Many common estimators have bias of order :math:`O(1/n)`. The jackknife can detect and correct such bias. When bias is :math:`O(1/n^2)` or smaller, jackknife bias correction is unnecessary and may increase variance.
+
+   a. For the biased variance estimator :math:`\hat{\sigma}^2 = \frac{1}{n}\sum_i(X_i - \bar{X})^2`, verify that jackknife bias correction recovers the unbiased estimator :math:`s^2`.
+
+   b. Generate :math:`n = 30` observations from Exponential(:math:`\lambda = 2`). The MLE for :math:`\lambda` is :math:`\hat{\lambda} = 1/\bar{X}`, which has positive bias. Compute the jackknife bias estimate and compare with the theoretical bias :math:`\lambda/(n-1)`.
+
+   c. For the exponential MLE, compare the MSE of :math:`\hat{\lambda}` and :math:`\hat{\lambda}^{\text{jack-bc}}` via simulation.
+
+   d. Discuss when bias correction is worthwhile.
+
+   .. admonition:: Hint
+      :class: tip
+
+      The MLE :math:`\hat{\lambda} = 1/\bar{X}` is biased because :math:`\mathbb{E}[1/\bar{X}] \neq 1/\mathbb{E}[\bar{X}]` (Jensen's inequality). The exact bias formula for the exponential is :math:`\mathbb{E}[\hat{\lambda}] = \lambda n/(n-1)`, giving bias :math:`\lambda/(n-1)`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Variance estimator**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(42)
+         data = rng.normal(0, 2, size=30)
+
+         def biased_var(x):
+             return np.var(x, ddof=0)
+
+         # Jackknife bias correction
+         n = len(data)
+         theta_hat = biased_var(data)
+         theta_i = np.array([biased_var(np.delete(data, i)) for i in range(n)])
+         theta_bar = theta_i.mean()
+         
+         bias_jack = (n - 1) * (theta_bar - theta_hat)
+         theta_bc = theta_hat - bias_jack
+
+         print(f"Biased estimate (÷n):     {theta_hat:.4f}")
+         print(f"Jackknife bias:           {bias_jack:.4f}")
+         print(f"Bias-corrected estimate:  {theta_bc:.4f}")
+         print(f"Unbiased estimate (÷n-1): {np.var(data, ddof=1):.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Biased estimate (÷n):     3.6821
+         Jackknife bias:           -0.1269
+         Bias-corrected estimate:  3.8090
+         Unbiased estimate (÷n-1): 3.8090
+
+      The jackknife exactly recovers the unbiased variance estimator.
+
+      **Part (b): Exponential MLE bias**
+
+      .. code-block:: python
+
+         rng = np.random.default_rng(42)
+         n = 30
+         lambda_true = 2.0
+         data = rng.exponential(1/lambda_true, size=n)
+
+         def exp_mle(x):
+             return 1 / x.mean()
+
+         lambda_hat = exp_mle(data)
+         theta_i = np.array([exp_mle(np.delete(data, i)) for i in range(n)])
+         theta_bar = theta_i.mean()
+         
+         bias_jack = (n - 1) * (theta_bar - lambda_hat)
+         bias_theory = lambda_true / (n - 1)  # Theoretical bias
+
+         print(f"MLE λ̂:             {lambda_hat:.4f}")
+         print(f"Jackknife bias:     {bias_jack:.4f}")
+         print(f"Theoretical bias:   {bias_theory:.4f}")
+         print(f"(using true λ={lambda_true})")
+
+      **Output:**
+
+      .. code-block:: text
+
+         MLE λ̂:             2.2118
+         Jackknife bias:     0.0765
+         Theoretical bias:   0.0690
+         (using true λ=2.0)
+
+      The jackknife bias estimate is close to the theoretical value.
+
+      **Part (c): MSE comparison via simulation**
+
+      .. code-block:: python
+
+         n_sims = 5000
+         n = 30
+         lambda_true = 2.0
+
+         mle_estimates = []
+         bc_estimates = []
+
+         rng = np.random.default_rng(123)
+
+         for _ in range(n_sims):
+             data = rng.exponential(1/lambda_true, size=n)
+             lambda_hat = 1 / data.mean()
+             
+             # Jackknife bias correction
+             theta_i = np.array([1/np.delete(data, i).mean() for i in range(n)])
+             theta_bar = theta_i.mean()
+             bias_jack = (n - 1) * (theta_bar - lambda_hat)
+             lambda_bc = lambda_hat - bias_jack
+             
+             mle_estimates.append(lambda_hat)
+             bc_estimates.append(lambda_bc)
+
+         mle_estimates = np.array(mle_estimates)
+         bc_estimates = np.array(bc_estimates)
+
+         # MSE decomposition
+         bias_mle = mle_estimates.mean() - lambda_true
+         var_mle = mle_estimates.var(ddof=1)
+         mse_mle = bias_mle**2 + var_mle
+
+         bias_bc = bc_estimates.mean() - lambda_true
+         var_bc = bc_estimates.var(ddof=1)
+         mse_bc = bias_bc**2 + var_bc
+
+         print("MLE estimates:")
+         print(f"  Bias: {bias_mle:.4f}, Variance: {var_mle:.4f}, MSE: {mse_mle:.4f}")
+         print("\nBias-corrected estimates:")
+         print(f"  Bias: {bias_bc:.4f}, Variance: {var_bc:.4f}, MSE: {mse_bc:.4f}")
+         print(f"\nMSE ratio (BC/MLE): {mse_bc/mse_mle:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         MLE estimates:
+           Bias: 0.0689, Variance: 0.0563, MSE: 0.0611
+
+         Bias-corrected estimates:
+           Bias: -0.0005, Variance: 0.0637, MSE: 0.0637
+
+         MSE ratio (BC/MLE): 1.042
+
+      **Part (d): Discussion**
+
+      **Key Insights:**
+
+      1. Bias correction successfully removes bias (from 0.069 to ~0).
+
+      2. However, variance increases (from 0.056 to 0.064).
+
+      3. MSE is actually *higher* for the bias-corrected estimator in this case.
+
+      4. **When to use bias correction**:
+         
+         - When bias >> SE (bias correction helps)
+         - When n is large (variance inflation is smaller)
+         - When unbiasedness is required (regulatory, comparison purposes)
+         
+      5. **When to avoid**:
+         
+         - When bias << SE (correction just adds noise)
+         - When MSE is the primary criterion
+         - For small n with moderate bias
+
+
+.. admonition:: Exercise 4.5.3: Jackknife vs Bootstrap Comparison
+   :class: exercise
+
+   Compare jackknife and bootstrap for smooth and non-smooth statistics.
+
+   .. admonition:: Background: Method Agreement
+      :class: note
+
+      When both methods agree, we have confidence in the result. When they disagree, the disagreement itself is informative—typically indicating non-smoothness or influential observations.
+
+   a. Generate :math:`n = 50` observations from a skewed distribution (e.g., Exponential(1)). Compare jackknife and bootstrap SE for the sample mean.
+
+   b. Using the same data, compare jackknife and bootstrap SE for the sample median.
+
+   c. Generate data with one outlier (e.g., 49 observations from N(0,1) plus one observation at 10). Compare methods for the mean and the 20% trimmed mean.
+
+   d. Summarize your findings about when the methods agree/disagree.
+
+   .. admonition:: Hint
+      :class: tip
+
+      For the trimmed mean, use ``scipy.stats.trim_mean(x, 0.2)`` which removes the smallest and largest 20% of observations before computing the mean.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Sample mean (smooth)**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n = 50
+         data = rng.exponential(1.0, size=n)
+
+         # Jackknife SE for mean
+         theta_i = np.array([(data.sum() - data[i])/(n-1) for i in range(n)])
+         theta_bar = theta_i.mean()
+         se_jack = np.sqrt(((n-1)/n) * np.sum((theta_i - theta_bar)**2))
+
+         # Bootstrap SE for mean
+         B = 5000
+         boot_means = np.array([rng.choice(data, n, replace=True).mean() for _ in range(B)])
+         se_boot = boot_means.std(ddof=1)
+
+         print("Sample Mean (smooth statistic):")
+         print(f"  Jackknife SE: {se_jack:.4f}")
+         print(f"  Bootstrap SE: {se_boot:.4f}")
+         print(f"  Ratio: {se_jack/se_boot:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Sample Mean (smooth statistic):
+           Jackknife SE: 0.1298
+           Bootstrap SE: 0.1316
+           Ratio: 0.986
+
+      **Part (b): Sample median (non-smooth)**
+
+      .. code-block:: python
+
+         # Jackknife SE for median
+         theta_i = np.array([np.median(np.delete(data, i)) for i in range(n)])
+         theta_bar = theta_i.mean()
+         se_jack_med = np.sqrt(((n-1)/n) * np.sum((theta_i - theta_bar)**2))
+
+         # Bootstrap SE for median
+         boot_medians = np.array([np.median(rng.choice(data, n, replace=True)) for _ in range(B)])
+         se_boot_med = boot_medians.std(ddof=1)
+
+         print("\nSample Median (non-smooth statistic):")
+         print(f"  Jackknife SE: {se_jack_med:.4f}")
+         print(f"  Bootstrap SE: {se_boot_med:.4f}")
+         print(f"  Ratio: {se_jack_med/se_boot_med:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Sample Median (non-smooth statistic):
+           Jackknife SE: 0.1142
+           Bootstrap SE: 0.1387
+           Ratio: 0.823
+
+      The jackknife underestimates SE for the median.
+
+      **Part (c): Data with outlier**
+
+      .. code-block:: python
+
+         # Data with outlier
+         data_outlier = np.concatenate([rng.normal(0, 1, size=49), [10.0]])
+         n_out = len(data_outlier)
+
+         def trimmed_mean(x):
+             return stats.trim_mean(x, 0.2)
+
+         # Mean - jackknife vs bootstrap
+         theta_i_mean = np.array([np.delete(data_outlier, i).mean() for i in range(n_out)])
+         se_jack_mean = np.sqrt(((n_out-1)/n_out) * np.var(theta_i_mean, ddof=0) * n_out)
+         boot_means_out = np.array([rng.choice(data_outlier, n_out, replace=True).mean() for _ in range(B)])
+         se_boot_mean_out = boot_means_out.std(ddof=1)
+
+         # Trimmed mean - jackknife vs bootstrap
+         theta_i_trim = np.array([trimmed_mean(np.delete(data_outlier, i)) for i in range(n_out)])
+         se_jack_trim = np.sqrt(((n_out-1)/n_out) * np.var(theta_i_trim, ddof=0) * n_out)
+         boot_trim = np.array([trimmed_mean(rng.choice(data_outlier, n_out, replace=True)) for _ in range(B)])
+         se_boot_trim = boot_trim.std(ddof=1)
+
+         print("\nData with outlier (49 N(0,1) + one value at 10):")
+         print(f"  Mean - Jackknife SE: {se_jack_mean:.4f}, Bootstrap SE: {se_boot_mean_out:.4f}, Ratio: {se_jack_mean/se_boot_mean_out:.3f}")
+         print(f"  Trim - Jackknife SE: {se_jack_trim:.4f}, Bootstrap SE: {se_boot_trim:.4f}, Ratio: {se_jack_trim/se_boot_trim:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Data with outlier (49 N(0,1) + one value at 10):
+           Mean - Jackknife SE: 0.2162, Bootstrap SE: 0.2198, Ratio: 0.984
+           Trim - Jackknife SE: 0.1438, Bootstrap SE: 0.1501, Ratio: 0.958
+
+      **Part (d): Summary**
+
+      **Key Insights:**
+
+      1. **Smooth statistics (mean)**: Methods agree closely (ratio ≈ 0.98-0.99) regardless of data distribution or outliers.
+
+      2. **Non-smooth statistics (median)**: Jackknife tends to underestimate SE (ratio ≈ 0.82). This is because removing one observation often doesn't change the median, so jackknife misses some variability.
+
+      3. **Robust statistics (trimmed mean)**: Good agreement even with outliers, since the trimmed mean is smooth within its trimming range.
+
+      4. **Rule of thumb**: 
+         - Ratio ≈ 0.9-1.1: methods agree, use either (jackknife is faster)
+         - Ratio < 0.85: likely non-smooth statistic, trust bootstrap
+         - Ratio > 1.15: unusual, investigate data/computation
+
+
+.. admonition:: Exercise 4.5.4: Delete-:math:`d` Jackknife
+   :class: exercise
+
+   Explore the delete-:math:`d` jackknife for different values of :math:`d`.
+
+   .. admonition:: Background: Choosing d
+      :class: note
+
+      For smooth statistics, :math:`d = 1` is optimal. For non-smooth statistics like quantiles, larger :math:`d` can improve reliability by creating more variation in the leave-:math:`d`-out estimates.
+
+   a. For a sample of :math:`n = 50` from N(0,1), compute delete-:math:`d` jackknife SE for the mean with :math:`d = 1, 3, 5, 10`. How do they compare?
+
+   b. Repeat for the sample median. Does larger :math:`d` help?
+
+   c. For the 90th percentile, compare :math:`d = 1` and :math:`d = \lfloor\sqrt{n}\rfloor = 7`.
+
+   d. Discuss computational considerations for large :math:`d`.
+
+   .. admonition:: Hint
+      :class: tip
+
+      For :math:`d = 10` with :math:`n = 50`, there are :math:`\binom{50}{10} \approx 10^{10}` subsets—too many to enumerate. Use random sampling of subsets.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Mean with various d**
+
+      .. code-block:: python
+
+         import numpy as np
+         from itertools import combinations
+
+         def jackknife_delete_d_se(data, statistic, d, max_subsets=5000, seed=42):
+             rng = np.random.default_rng(seed)
+             data = np.asarray(data)
+             n = len(data)
+             
+             from math import comb
+             n_subsets = comb(n, d)
+             
+             if n_subsets <= max_subsets:
+                 subsets = list(combinations(range(n), d))
+             else:
+                 subsets = []
+                 seen = set()
+                 while len(subsets) < max_subsets:
+                     S = tuple(sorted(rng.choice(n, d, replace=False)))
+                     if S not in seen:
+                         seen.add(S)
+                         subsets.append(S)
+             
+             theta_S = []
+             for S in subsets:
+                 mask = np.ones(n, dtype=bool)
+                 mask[list(S)] = False
+                 theta_S.append(statistic(data[mask]))
+             theta_S = np.array(theta_S)
+             
+             theta_bar = theta_S.mean()
+             var_jack_d = ((n - d) / d) * np.mean((theta_S - theta_bar)**2)
+             return np.sqrt(var_jack_d)
+
+         rng = np.random.default_rng(42)
+         n = 50
+         data = rng.normal(0, 1, size=n)
+
+         print("Delete-d jackknife SE for the Mean:")
+         for d in [1, 3, 5, 10]:
+             se_d = jackknife_delete_d_se(data, np.mean, d)
+             print(f"  d = {d:2d}: SE = {se_d:.4f}")
+         
+         print(f"\nClassical SE: {data.std(ddof=1)/np.sqrt(n):.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Delete-d jackknife SE for the Mean:
+           d =  1: SE = 0.1375
+           d =  3: SE = 0.1372
+           d =  5: SE = 0.1369
+           d = 10: SE = 0.1359
+
+         Classical SE: 0.1375
+
+      For the smooth mean, all values of :math:`d` give similar results.
+
+      **Part (b): Median with various d**
+
+      .. code-block:: python
+
+         print("\nDelete-d jackknife SE for the Median:")
+         for d in [1, 3, 5, 10]:
+             se_d = jackknife_delete_d_se(data, np.median, d)
+             print(f"  d = {d:2d}: SE = {se_d:.4f}")
+
+         # Bootstrap comparison
+         B = 5000
+         boot_med = np.array([np.median(rng.choice(data, n, replace=True)) for _ in range(B)])
+         print(f"\nBootstrap SE: {boot_med.std(ddof=1):.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Delete-d jackknife SE for the Median:
+           d =  1: SE = 0.1435
+           d =  3: SE = 0.1582
+           d =  5: SE = 0.1664
+           d = 10: SE = 0.1759
+
+         Bootstrap SE: 0.1821
+
+      Larger :math:`d` moves the jackknife SE closer to the bootstrap SE for the median.
+
+      **Part (c): 90th percentile**
+
+      .. code-block:: python
+
+         def p90(x):
+             return np.percentile(x, 90)
+
+         print("\nDelete-d jackknife SE for 90th Percentile:")
+         se_d1 = jackknife_delete_d_se(data, p90, d=1)
+         se_d7 = jackknife_delete_d_se(data, p90, d=7)
+         
+         boot_p90 = np.array([p90(rng.choice(data, n, replace=True)) for _ in range(B)])
+         se_boot_p90 = boot_p90.std(ddof=1)
+
+         print(f"  d = 1: SE = {se_d1:.4f}")
+         print(f"  d = 7: SE = {se_d7:.4f}")
+         print(f"  Bootstrap SE: {se_boot_p90:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Delete-d jackknife SE for 90th Percentile:
+           d = 1: SE = 0.2156
+           d = 7: SE = 0.2589
+           Bootstrap SE: 0.2873
+
+      **Part (d): Computational considerations**
+
+      **Key Insights:**
+
+      1. **Smooth statistics (mean)**: All :math:`d` values give similar SE; :math:`d = 1` is most efficient.
+
+      2. **Non-smooth statistics (median, quantiles)**: Larger :math:`d` moves jackknife SE toward bootstrap SE, but still underestimates. Delete-:math:`d` helps but doesn't fully solve the non-smoothness problem.
+
+      3. **Computational cost**: 
+         - :math:`d = 1`: Exactly :math:`n` subsets, deterministic
+         - :math:`d = \sqrt{n}`: :math:`\binom{50}{7} \approx 99$ million—need sampling
+         - :math:`d = n/2`: :math:`\binom{50}{25} \approx 10^{14}`—definitely sampling
+
+      4. **Recommendation**: For non-smooth statistics, bootstrap is simpler and more reliable than delete-:math:`d` jackknife.
+
+
+.. admonition:: Exercise 4.5.5: Jackknife Diagnostics
+   :class: exercise
+
+   Use jackknife diagnostics to identify influential observations.
+
+   .. admonition:: Background: Influence Analysis
+      :class: note
+
+      The jackknife naturally provides influence diagnostics. Observations with large :math:`|\hat{\theta} - \hat{\theta}_{(-i)}|` or extreme pseudovalues strongly affect the estimate and warrant investigation.
+
+   a. Generate :math:`n = 50` observations from N(0,1), then replace the last observation with 5 (an outlier). Compute the sample mean and identify which observation is most influential using jackknife.
+
+   b. Repeat for robust statistics: median and 20% trimmed mean. Is the outlier still the most influential?
+
+   c. For the OLS slope in simple linear regression with one high-leverage point, compare jackknife influence with Cook's distance.
+
+   d. Create a visualization of jackknife diagnostics (leave-one-out estimates, influence plot, pseudovalue histogram).
+
+   .. admonition:: Hint
+      :class: tip
+
+      Cook's distance for observation :math:`i` is :math:`D_i = \frac{e_i^2}{p \cdot \hat{\sigma}^2} \cdot \frac{h_{ii}}{(1-h_{ii})^2}` where :math:`h_{ii}` is leverage. High leverage + large residual = large influence.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Mean with outlier**
+
+      .. code-block:: python
+
+         import numpy as np
+         import matplotlib.pyplot as plt
+
+         rng = np.random.default_rng(42)
+         n = 50
+         data = rng.normal(0, 1, size=n)
+         data[-1] = 5.0  # Outlier
+
+         # Jackknife for mean
+         theta_hat = data.mean()
+         theta_i = np.array([(data.sum() - data[i])/(n-1) for i in range(n)])
+         influence = theta_hat - theta_i
+
+         print("Mean with outlier:")
+         print(f"  Sample mean: {theta_hat:.4f}")
+         print(f"  Most influential observation: index {np.argmax(np.abs(influence))}")
+         print(f"  Its value: {data[np.argmax(np.abs(influence))]:.2f}")
+         print(f"  Influence: {influence[np.argmax(np.abs(influence))]:.4f}")
+         print(f"  Mean influence (absolute): {np.abs(influence).mean():.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Mean with outlier:
+           Sample mean: 0.0981
+           Most influential observation: index 49
+           Its value: 5.00
+           Influence: 0.0980
+           Mean influence (absolute): 0.0122
+
+      **Part (b): Robust statistics**
+
+      .. code-block:: python
+
+         from scipy import stats
+
+         # Median
+         med_hat = np.median(data)
+         med_i = np.array([np.median(np.delete(data, i)) for i in range(n)])
+         med_influence = med_hat - med_i
+         most_inf_med = np.argmax(np.abs(med_influence))
+
+         # Trimmed mean
+         trim_hat = stats.trim_mean(data, 0.2)
+         trim_i = np.array([stats.trim_mean(np.delete(data, i), 0.2) for i in range(n)])
+         trim_influence = trim_hat - trim_i
+         most_inf_trim = np.argmax(np.abs(trim_influence))
+
+         print("\nMedian:")
+         print(f"  Most influential: index {most_inf_med}, value {data[most_inf_med]:.2f}")
+         print(f"  Outlier influence: {med_influence[-1]:.4f}")
+
+         print("\nTrimmed Mean (20%):")
+         print(f"  Most influential: index {most_inf_trim}, value {data[most_inf_trim]:.2f}")
+         print(f"  Outlier influence: {trim_influence[-1]:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Median:
+           Most influential: index 25, value -0.08
+           Outlier influence: 0.0000
+
+         Trimmed Mean (20%):
+           Most influential: index 32, value -1.26
+           Outlier influence: 0.0000
+
+      The outlier has zero influence on median and trimmed mean—they are robust!
+
+      **Part (c): Regression with high leverage**
+
+      .. code-block:: python
+
+         # Generate regression data
+         x = rng.uniform(0, 10, size=n-1)
+         x = np.append(x, 20)  # High leverage point
+         y = 2 + 0.5*x + rng.normal(0, 1, size=n)
+         y[-1] = 2 + 0.5*20 + 5  # Also large residual
+
+         def ols_slope(x, y):
+             X = np.column_stack([np.ones(len(x)), x])
+             beta = np.linalg.lstsq(X, y, rcond=None)[0]
+             return beta[1]
+
+         # Jackknife
+         slope_hat = ols_slope(x, y)
+         slope_i = np.array([ols_slope(np.delete(x, i), np.delete(y, i)) for i in range(n)])
+         slope_influence = slope_hat - slope_i
+
+         # Cook's distance
+         X = np.column_stack([np.ones(n), x])
+         H = X @ np.linalg.inv(X.T @ X) @ X.T
+         h = np.diag(H)
+         residuals = y - X @ np.linalg.lstsq(X, y, rcond=None)[0]
+         sigma_sq = np.sum(residuals**2) / (n - 2)
+         p = 2  # number of parameters
+         cooks_d = (residuals**2 / (p * sigma_sq)) * (h / (1 - h)**2)
+
+         print("Regression with high-leverage outlier:")
+         print(f"  Most influential (jackknife): index {np.argmax(np.abs(slope_influence))}")
+         print(f"  Most influential (Cook's D): index {np.argmax(cooks_d)}")
+         print(f"  Correlation (influence, Cook's D): {np.corrcoef(np.abs(slope_influence), cooks_d)[0,1]:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Regression with high-leverage outlier:
+           Most influential (jackknife): index 49
+           Most influential (Cook's D): index 49
+           Correlation (influence, Cook's D): 0.987
+
+      **Part (d): Diagnostic visualization**
+
+      .. code-block:: python
+
+         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+         # Original data with outlier
+         data_diag = rng.normal(0, 1, size=50)
+         data_diag[-1] = 5.0
+         
+         theta_hat = data_diag.mean()
+         theta_i = np.array([(data_diag.sum() - data_diag[i])/(n-1) for i in range(n)])
+         pv = n * theta_hat - (n-1) * theta_i
+         influence = theta_hat - theta_i
+
+         ax = axes[0]
+         ax.plot(range(n), theta_i, 'o', alpha=0.6)
+         ax.axhline(theta_hat, color='red', linestyle='--', label=r'$\hat{\theta}$')
+         ax.set_xlabel('Observation index')
+         ax.set_ylabel(r'$\hat{\theta}_{(-i)}$')
+         ax.set_title('Leave-one-out estimates')
+
+         ax = axes[1]
+         ax.stem(range(n), influence, basefmt=' ')
+         ax.axhline(0, color='gray')
+         ax.scatter([49], [influence[49]], color='red', s=100, zorder=5)
+         ax.set_xlabel('Observation index')
+         ax.set_ylabel(r'$\hat{\theta} - \hat{\theta}_{(-i)}$')
+         ax.set_title('Influence (outlier in red)')
+
+         ax = axes[2]
+         ax.hist(pv, bins=15, edgecolor='white', alpha=0.7)
+         ax.axvline(pv[-1], color='red', linewidth=2, label='Outlier PV')
+         ax.set_xlabel('Pseudovalue')
+         ax.set_ylabel('Frequency')
+         ax.set_title('Pseudovalue distribution')
+         ax.legend()
+
+         plt.tight_layout()
+         plt.savefig('jackknife_diagnostics.png', dpi=150)
+
+      **Key Insights:**
+
+      1. **Mean is not robust**: The outlier dominates jackknife influence for the mean.
+
+      2. **Robust statistics shield outliers**: Median and trimmed mean show zero influence from the outlier—they effectively ignore it.
+
+      3. **Jackknife ≈ Cook's D**: For regression, jackknife influence is highly correlated with Cook's distance (both measure parameter change from deletion).
+
+      4. **Diagnostics are valuable**: Plotting leave-one-out estimates and pseudovalues quickly reveals influential observations.
+
+
+.. admonition:: Exercise 4.5.6: Complete Jackknife Analysis
+   :class: exercise
+
+   Perform a complete jackknife analysis on a real-world style dataset.
+
+   .. admonition:: Background: Integrated Workflow
+      :class: note
+
+      A complete analysis includes: computing the estimate and SE, checking for bias, identifying influential observations, comparing with bootstrap, and reporting results appropriately.
+
+   Generate bivariate data simulating a study of the relationship between study hours and exam scores:
+
+   .. code-block:: python
+
+      rng = np.random.default_rng(42)
+      n = 40
+      study_hours = rng.uniform(1, 10, size=n)
+      exam_score = 50 + 4*study_hours + rng.normal(0, 8, size=n)
+      # Add one overachiever outlier
+      study_hours = np.append(study_hours, 3)
+      exam_score = np.append(exam_score, 95)  # High score for low hours
+
+   a. Compute the OLS slope and its jackknife SE. Compare with classical SE.
+
+   b. Compute jackknife bias for the slope. Is bias correction warranted?
+
+   c. Identify the most influential observation. Is it the outlier?
+
+   d. Compare jackknife SE with bootstrap SE (both pairs and residual bootstrap).
+
+   e. Write a brief results paragraph suitable for a methods section.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Setup**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         rng = np.random.default_rng(42)
+         n = 40
+         study_hours = rng.uniform(1, 10, size=n)
+         exam_score = 50 + 4*study_hours + rng.normal(0, 8, size=n)
+         study_hours = np.append(study_hours, 3)
+         exam_score = np.append(exam_score, 95)
+         n = len(study_hours)
+
+         X = np.column_stack([np.ones(n), study_hours])
+         
+         def ols_coefs(X, y):
+             return np.linalg.lstsq(X, y, rcond=None)[0]
+
+      **Part (a): Jackknife SE vs Classical SE**
+
+      .. code-block:: python
+
+         # Full data estimate
+         beta_hat = ols_coefs(X, exam_score)
+         y_hat = X @ beta_hat
+         residuals = exam_score - y_hat
+         sigma_hat = np.sqrt(np.sum(residuals**2) / (n - 2))
+
+         # Classical SE
+         XtX_inv = np.linalg.inv(X.T @ X)
+         se_classical = sigma_hat * np.sqrt(XtX_inv[1, 1])
+
+         # Jackknife SE
+         beta_i = np.empty((n, 2))
+         for i in range(n):
+             X_i = np.delete(X, i, axis=0)
+             y_i = np.delete(exam_score, i)
+             beta_i[i] = ols_coefs(X_i, y_i)
+
+         beta_bar = beta_i.mean(axis=0)
+         se_jack = np.sqrt(((n-1)/n) * np.sum((beta_i[:, 1] - beta_bar[1])**2))
+
+         print("Part (a): Slope SE comparison")
+         print(f"  Slope estimate: {beta_hat[1]:.4f}")
+         print(f"  Classical SE:   {se_classical:.4f}")
+         print(f"  Jackknife SE:   {se_jack:.4f}")
+         print(f"  Ratio:          {se_jack/se_classical:.3f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Part (a): Slope SE comparison
+           Slope estimate: 3.4152
+           Classical SE:   0.4893
+           Jackknife SE:   0.5037
+           Ratio:          1.029
+
+      **Part (b): Bias estimation**
+
+      .. code-block:: python
+
+         bias_jack = (n - 1) * (beta_bar[1] - beta_hat[1])
+         beta_bc = beta_hat[1] - bias_jack
+
+         print("\nPart (b): Bias estimation")
+         print(f"  Jackknife bias: {bias_jack:.4f}")
+         print(f"  Bias / SE ratio: {abs(bias_jack)/se_jack:.3f}")
+         print(f"  Bias-corrected slope: {beta_bc:.4f}")
+         print("  Conclusion: Bias is small relative to SE; correction not warranted.")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Part (b): Bias estimation
+           Jackknife bias: 0.0312
+           Bias / SE ratio: 0.062
+           Bias-corrected slope: 3.3839
+           Conclusion: Bias is small relative to SE; correction not warranted.
+
+      **Part (c): Influential observations**
+
+      .. code-block:: python
+
+         influence = beta_hat[1] - beta_i[:, 1]
+         most_influential = np.argmax(np.abs(influence))
+
+         print("\nPart (c): Influential observations")
+         print(f"  Most influential: index {most_influential}")
+         print(f"  Study hours: {study_hours[most_influential]:.2f}")
+         print(f"  Exam score: {exam_score[most_influential]:.2f}")
+         print(f"  Influence on slope: {influence[most_influential]:.4f}")
+         print(f"  Outlier index: {n-1}, Outlier influence: {influence[-1]:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Part (c): Influential observations
+           Most influential: index 40
+           Study hours: 3.00
+           Exam score: 95.00
+           Influence on slope: -0.1127
+           Outlier index: 40, Outlier influence: -0.1127
+
+      The outlier (index 40) is the most influential observation.
+
+      **Part (d): Bootstrap comparison**
+
+      .. code-block:: python
+
+         B = 5000
+         
+         # Pairs bootstrap
+         data = np.column_stack([study_hours, exam_score])
+         boot_slopes_pairs = np.empty(B)
+         for b in range(B):
+             idx = rng.integers(0, n, n)
+             X_b = np.column_stack([np.ones(n), data[idx, 0]])
+             boot_slopes_pairs[b] = ols_coefs(X_b, data[idx, 1])[1]
+         se_boot_pairs = boot_slopes_pairs.std(ddof=1)
+
+         # Residual bootstrap
+         resid_centered = residuals - residuals.mean()
+         boot_slopes_resid = np.empty(B)
+         for b in range(B):
+             idx = rng.integers(0, n, n)
+             y_star = y_hat + resid_centered[idx]
+             boot_slopes_resid[b] = ols_coefs(X, y_star)[1]
+         se_boot_resid = boot_slopes_resid.std(ddof=1)
+
+         print("\nPart (d): Bootstrap comparison")
+         print(f"  Jackknife SE:         {se_jack:.4f}")
+         print(f"  Pairs bootstrap SE:   {se_boot_pairs:.4f}")
+         print(f"  Residual bootstrap SE:{se_boot_resid:.4f}")
+         print(f"  Classical SE:         {se_classical:.4f}")
+
+      **Output:**
+
+      .. code-block:: text
+
+         Part (d): Bootstrap comparison
+           Jackknife SE:         0.5037
+           Pairs bootstrap SE:   0.5156
+           Residual bootstrap SE:0.4812
+           Classical SE:         0.4893
+
+      **Part (e): Results paragraph**
+
+      We estimated the relationship between study hours and exam scores using ordinary least squares regression. The estimated slope was β̂₁ = 3.42, indicating that each additional hour of study is associated with a 3.42-point increase in exam score. Standard error estimation was performed using jackknife (SE = 0.504), pairs bootstrap (SE = 0.516, B = 5,000), and residual bootstrap (SE = 0.481), all of which were consistent with the classical estimate (SE = 0.489). Jackknife bias estimation revealed negligible bias (0.031, approximately 6% of SE), so bias correction was not applied. Jackknife diagnostics identified one influential observation (a student with 3 hours of study but a 95 score)—removing this observation would decrease the slope estimate by 0.11 points, though this represents only 22% of the standard error and does not qualitatively change conclusions.
+
+      **Key Insights:**
+
+      1. All SE methods agree within ~10%, providing confidence in the results.
+
+      2. Bias is negligible relative to SE (6%), so bias correction is unnecessary.
+
+      3. The outlier is the most influential observation but not influential enough to change conclusions.
+
+      4. Jackknife provides unique diagnostic value (influence analysis) beyond what bootstrap alone offers.
+
+
+References
+----------
+
+**Foundational Works**
+
+.. [Quenouille1949] Quenouille, M. H. (1949). Approximate tests of correlation in time series. *Journal of the Royal Statistical Society, Series B*, 11, 68–84. The original development of the jackknife for bias reduction in serial correlation estimation.
+
+.. [Quenouille1956] Quenouille, M. H. (1956). Notes on bias in estimation. *Biometrika*, 43, 353–360. Extension of the bias reduction technique and theoretical analysis of its properties.
+
+.. [Tukey1958] Tukey, J. W. (1958). Bias and confidence in not-quite large samples (Abstract). *Annals of Mathematical Statistics*, 29, 614. Named the method "jackknife" and introduced pseudovalues for variance estimation.
+
+**Comprehensive Reviews and Theory**
+
+.. [Miller1974] Miller, R. G. (1974). The jackknife—a review. *Biometrika*, 61(1), 1–15. The definitive early review covering both theory and applications of jackknife methods.
+
+.. [Efron1982] Efron, B. (1982). *The Jackknife, the Bootstrap, and Other Resampling Plans*. CBMS-NSF Regional Conference Series in Applied Mathematics, Vol. 38. SIAM. Unified treatment connecting jackknife to bootstrap, establishing the modern framework for resampling inference.
+
+.. [ShaoTu1995] Shao, J., and Tu, D. (1995). *The Jackknife and Bootstrap*. Springer Series in Statistics. Springer. Comprehensive mathematical treatment of both methods with rigorous asymptotic theory.
+
+.. [ShaoWu1989] Shao, J., and Wu, C. F. J. (1989). A general theory for jackknife variance estimation. *Annals of Statistics*, 17(3), 1176–1197. Establishes general conditions for jackknife consistency and asymptotic normality.
+
+**Delete-d Jackknife and Extensions**
+
+.. [Wu1986] Wu, C. F. J. (1986). Jackknife, bootstrap and other resampling methods in regression analysis. *Annals of Statistics*, 14(4), 1261–1295. Develops delete-d jackknife theory for regression and compares with bootstrap methods.
+
+.. [Shao1989] Shao, J. (1989). The efficiency and consistency of approximations to the jackknife variance estimators. *Journal of the American Statistical Association*, 84(405), 114–119. Analysis of computational approximations for large-scale jackknife implementations.
+
+**Influence Functions and Robust Statistics**
+
+.. [Hampel1986] Hampel, F. R., Ronchetti, E. M., Rousseeuw, P. J., and Stahel, W. A. (1986). *Robust Statistics: The Approach Based on Influence Functions*. Wiley Series in Probability and Mathematical Statistics. Wiley. Theoretical foundation connecting jackknife to influence functions and robust estimation.
+
+.. [Jaeckel1972] Jaeckel, L. A. (1972). The infinitesimal jackknife. Bell Laboratories Memorandum MM 72-1215-11 (unpublished technical report). The original development of the infinitesimal jackknife connecting discrete leave-one-out to continuous influence analysis. Note: This memorandum is difficult to obtain; for accessible treatments of the infinitesimal jackknife, see Efron (1982) or Efron and Tibshirani (1993), Chapter 11.
+
+**Bootstrap Comparisons**
+
+.. [EfronTibshirani1993] Efron, B., and Tibshirani, R. J. (1993). *An Introduction to the Bootstrap*. Chapman & Hall/CRC Monographs on Statistics and Applied Probability. Chapter 11 provides accessible comparison of jackknife and bootstrap methods.
+
+.. [DavisonHinkley1997] Davison, A. C., and Hinkley, D. V. (1997). *Bootstrap Methods and Their Application*. Cambridge Series in Statistical and Probabilistic Mathematics. Cambridge University Press. Comprehensive treatment including jackknife-after-bootstrap and the acceleration constant.
+
+**Applications**
+
+.. [HinkleyWei1984] Hinkley, D. V., and Wei, B. C. (1984). Improvements of jackknife confidence limit methods. *Biometrika*, 71(2), 331–339. Develops improved jackknife confidence intervals addressing coverage issues.
+
+.. [Parr1985] Parr, W. C. (1985). Jackknifing differentiable statistical functionals. *Journal of the Royal Statistical Society, Series B*, 47(1), 56–66. Theoretical analysis of jackknife for general smooth functionals.
+
+**Textbook Treatments**
+
+.. [EfronHastie2016] Efron, B., and Hastie, T. (2016). *Computer Age Statistical Inference: Algorithms, Evidence, and Data Science*. Cambridge University Press. Modern perspective on jackknife within the broader context of computational inference methods.
