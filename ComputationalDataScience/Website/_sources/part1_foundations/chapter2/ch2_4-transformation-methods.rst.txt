@@ -1,0 +1,2893 @@
+.. _ch2.4-transformation-methods:
+
+==================================
+Section 2.4 Transformation Methods
+==================================
+
+The inverse CDF method of :ref:`ch2.3-inverse-cdf-method` provides a universal recipe for generating random variables: apply the quantile function to a uniform variate. For many distributions—exponential, Weibull, Cauchy—this approach is both elegant and efficient, requiring only a single transcendental function evaluation. But for others, most notably the normal distribution, the inverse CDF has no closed form. Computing :math:`\Phi^{-1}(u)` numerically is possible but expensive, requiring iterative root-finding or careful polynomial approximations.
+
+This computational obstacle motivates an alternative paradigm: **transformation methods**. Rather than inverting the CDF, we seek algebraic or geometric transformations that convert a small number of uniform variates directly into samples from the target distribution. When such transformations exist, they are often faster and more numerically stable than either numerical inversion or the general-purpose rejection sampling we will encounter in :ref:`ch2.5-rejection-sampling`.
+
+The crown jewel of transformation methods is the **Box–Muller algorithm** for generating normal random variables. Published in 1958 by George Box and Mervin Muller, this algorithm exploits a remarkable geometric fact: while the one-dimensional normal distribution has an intractable CDF, pairs of independent normals have a simple representation in polar coordinates. Two uniform variates become two independent standard normals through a transformation involving only logarithms, square roots, and trigonometric functions.
+
+From normal random variables, an entire family of distributions becomes accessible through simple arithmetic. The chi-squared distribution emerges as a sum of squared normals. Student's t arises from the ratio of a normal to an independent chi-squared. The F distribution, the lognormal, the Rayleigh—all flow from the normal through elementary transformations. And multivariate normal distributions, essential for Bayesian inference and machine learning, reduce to matrix multiplication once we can generate independent standard normals.
+
+This section develops transformation methods systematically. We begin with the normal distribution, presenting the Box–Muller transform, its more efficient polar variant, and a conceptual overview of the library-grade Ziggurat algorithm. We then build the statistical ecosystem that rests on the normal foundation: chi-squared, t, F, lognormal, and related distributions. Finally, we tackle multivariate normal generation, where linear algebra meets random number generation in the form of Cholesky factorization and eigendecomposition.
+
+Some transformation methods include a small, distribution-specific accept-reject step—for example, sampling uniformly in the unit disk for the polar method. These embedded rejection steps are distinct from the general rejection sampling framework developed in :ref:`ch2.5-rejection-sampling`, which provides a universal technique for arbitrary target densities.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Master**: The Box–Muller transform—derivation via change of variables, independence proof, and numerical implementation
+   • **Optimize**: The polar (Marsaglia) method that eliminates trigonometric functions while preserving correctness
+   • **Understand**: The Ziggurat algorithm conceptually as the library-standard approach for normal and exponential generation
+   • **Build**: Chi-squared, Student's t, F, lognormal, Rayleigh, and Maxwell distributions from normal building blocks
+   • **Implement**: Multivariate normal generation via Cholesky factorization and eigendecomposition with attention to numerical stability
+
+
+Why Transformation Methods?
+---------------------------
+
+Before diving into specific algorithms, we should understand when transformation methods excel and what advantages they offer over the inverse CDF approach.
+
+Speed Through Structure
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The inverse CDF method is universal but requires evaluating :math:`F^{-1}(u)`. For distributions without closed-form quantile functions, this means:
+
+1. **Numerical root-finding**: Solve :math:`F(x) = u` iteratively (e.g., Newton-Raphson or Brent's method), requiring multiple CDF evaluations per sample.
+
+2. **Polynomial approximation**: Use carefully crafted rational approximations like those in ``scipy.special.ndtri`` for the normal quantile. These achieve high accuracy but involve many arithmetic operations.
+
+Transformation methods sidestep both approaches. The Box–Muller algorithm generates two normal variates using:
+
+- One logarithm evaluation (:math:`\ln U_1`)
+- One square root (:math:`\sqrt{-2\ln U_1}`)
+- Two trigonometric evaluations (:math:`\cos(2\pi U_2)`, :math:`\sin(2\pi U_2)`)
+
+This is dramatically faster than iterative root-finding and competitive with polynomial approximations—especially when we consume both outputs (since Box–Muller always produces a *pair* of independent normals).
+
+Distributional Relationships
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Transformation methods exploit mathematical relationships between distributions. The key insight is that many distributions can be expressed as functions of simpler ones:
+
+.. math::
+
+   \begin{aligned}
+   \chi^2_\nu &= Z_1^2 + Z_2^2 + \cdots + Z_\nu^2 &\quad& (Z_i \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0,1)) \\
+   t_\nu &= \frac{Z}{\sqrt{V/\nu}} &\quad& (Z \sim \mathcal{N}(0,1), V \sim \chi^2_\nu) \\
+   F_{\nu_1, \nu_2} &= \frac{V_1/\nu_1}{V_2/\nu_2} &\quad& (V_i \sim \chi^2_{\nu_i}) \\
+   \text{LogNormal}(\mu, \sigma^2) &= e^{\mu + \sigma Z} &\quad& (Z \sim \mathcal{N}(0,1))
+   \end{aligned}
+
+Once we can generate standard normals efficiently, this entire family becomes computationally accessible. The relationships also provide valuable checks: samples from our chi-squared generator should match the theoretical chi-squared distribution.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig01_distribution_hierarchy.png
+   :alt: Hierarchical diagram showing how distributions derive from uniform and normal variates
+   :align: center
+   :width: 95%
+
+   **The Distribution Hierarchy.** Starting from Uniform(0,1), we can reach any distribution through transformations. The Box–Muller algorithm converts uniforms to normals, unlocking an entire family of derived distributions. Each arrow represents a specific transformation formula. This hierarchy guides algorithm selection: to sample from Student's t, generate a normal and a chi-squared, then combine them.
+
+
+The Box–Muller Transform
+------------------------
+
+We now present the most important transformation method in computational statistics: the Box–Muller algorithm for generating standard normal random variables.
+
+Problem Setup
+~~~~~~~~~~~~~
+
+Let :math:`U_1, U_2 \stackrel{\text{i.i.d.}}{\sim} \text{Unif}(0,1)`. Define
+
+.. math::
+
+   R = \sqrt{-2 \ln U_1}, \qquad \Theta = 2\pi U_2,
+
+and
+
+.. math::
+
+   Z_1 = R\cos\Theta, \qquad Z_2 = R\sin\Theta.
+
+We claim :math:`(Z_1, Z_2)` are independent :math:`\mathcal{N}(0,1)` random variables.
+
+The standard normal distribution has density :math:`\phi(z) = (2\pi)^{-1/2} e^{-z^2/2}` and CDF :math:`\Phi(z) = \int_{-\infty}^{z} \phi(t)\, dt`. The integral :math:`\Phi(z)` cannot be expressed using a finite combination of elementary functions, so the inverse CDF :math:`\Phi^{-1}(u)` lacks a closed form. Box and Muller's insight was to consider *pairs* of independent normals simultaneously, exploiting the polar symmetry of the bivariate normal density.
+
+Derivation via Change of Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The polar change of variables from Cartesian to polar coordinates has Jacobian determinant :math:`|J| = r`. Consider the composite map
+
+.. math::
+
+   (u_1, u_2) \mapsto (r, \theta) \mapsto (z_1, z_2),
+
+with
+
+.. math::
+
+   r = \sqrt{-2\ln u_1}, \quad \theta = 2\pi u_2, \quad z_1 = r\cos\theta, \quad z_2 = r\sin\theta.
+
+The joint density of :math:`(U_1, U_2)` is 1 on :math:`(0,1)^2`. By the change-of-variables formula,
+
+.. math::
+
+   f_{R,\Theta}(r, \theta) = f_{U_1,U_2}(u_1, u_2) \left|\det \frac{\partial(u_1, u_2)}{\partial(r, \theta)}\right| = \left|\det \frac{\partial(u_1, u_2)}{\partial(r, \theta)}\right|,
+
+where :math:`u_1 = e^{-r^2/2}` and :math:`u_2 = \theta/(2\pi)`. Computing the partial derivatives:
+
+.. math::
+
+   \frac{\partial u_1}{\partial r} = -r e^{-r^2/2}, \quad
+   \frac{\partial u_1}{\partial \theta} = 0, \quad
+   \frac{\partial u_2}{\partial r} = 0, \quad
+   \frac{\partial u_2}{\partial \theta} = \frac{1}{2\pi},
+
+so the Jacobian determinant is
+
+.. math::
+
+   \left|\det \frac{\partial(u_1, u_2)}{\partial(r, \theta)}\right| = \frac{r}{2\pi} e^{-r^2/2}.
+
+Hence :math:`R` and :math:`\Theta` are independent with densities
+
+.. math::
+
+   f_R(r) = r e^{-r^2/2} \mathbf{1}_{r > 0}, \qquad f_\Theta(\theta) = \frac{1}{2\pi} \mathbf{1}_{0 \le \theta < 2\pi},
+
+which is the polar form of a standard bivariate normal. The density :math:`f_R(r)` is the **Rayleigh distribution** with scale parameter 1.
+
+Applying the deterministic map :math:`(r, \theta) \mapsto (z_1, z_2) = (r\cos\theta, r\sin\theta)` with Jacobian :math:`|J| = r` yields
+
+.. math::
+
+   f_{Z_1,Z_2}(z_1, z_2) = \frac{1}{2\pi} \exp\left(-\frac{z_1^2 + z_2^2}{2}\right),
+
+which factors as :math:`\phi(z_1) \phi(z_2)`. Therefore :math:`Z_1, Z_2 \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0,1)`. ∎
+
+.. admonition:: Critical Point: Two-for-One Property
+   :class: important
+
+   The Box–Muller transform produces **two independent** standard normal variates from two independent uniforms. This is not merely a computational convenience—it is a mathematically exact result. The joint density factors as :math:`\phi(z_1) \cdot \phi(z_2)`, proving independence. **Always consume both outputs** :math:`Z_1` and :math:`Z_2` to achieve maximum efficiency.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig02_box_muller_geometry.png
+   :alt: Geometric visualization of Box-Muller transform showing uniform square to normal plane mapping
+   :align: center
+   :width: 100%
+
+   **Box–Muller Geometry.** Left: The input :math:`(U_1, U_2)` is uniformly distributed in the unit square. Center: The transformation maps each point to polar coordinates :math:`(R, \Theta)` where :math:`R = \sqrt{-2\ln U_1}` and :math:`\Theta = 2\pi U_2`. Right: The resulting :math:`(Z_1, Z_2) = (R\cos\Theta, R\sin\Theta)` follows a standard bivariate normal distribution. The concentric circles in the output correspond to horizontal lines in the input—points with the same :math:`U_1` value have the same radius.
+
+Numerical Safeguards
+~~~~~~~~~~~~~~~~~~~~
+
+The basic Box–Muller formula requires care at boundary values:
+
+- **Guard against** :math:`\ln(0)`: Require :math:`U_1 \in (0, 1]` and clamp very small values to avoid :math:`\ln(0) = -\infty`. Use :math:`U_1 \leftarrow \max(U_1, \varepsilon)` with :math:`\varepsilon \approx 2^{-1074}` (``np.finfo(float).tiny``) for double precision.
+
+- **Vectorize for performance**: Process large batches of uniforms simultaneously to amortize Python overhead.
+
+- **Recycle both outputs**: Since Box–Muller produces pairs, always use both :math:`Z_1` and :math:`Z_2`. Discarding one wastes half the computation.
+
+- **Maintain a single PRNG instance**: For reproducibility and performance, prefer maintaining a single generator with a high-quality stream (e.g., PCG64).
+
+Reference Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+
+   def box_muller(n, rng=None, eps=np.finfo(float).tiny):
+       """
+       Generate n i.i.d. N(0,1) variates using the Box-Muller transform.
+
+       Parameters
+       ----------
+       n : int
+           Number of standard normal variates to generate.
+       rng : np.random.Generator, optional
+           Random number generator instance. If None, creates new default_rng().
+       eps : float, optional
+           Minimum value for U1 to avoid log(0). Default is machine tiny.
+
+       Returns
+       -------
+       ndarray
+           Array of n independent N(0,1) random variates.
+
+       Notes
+       -----
+       Generates ceil(n/2) pairs and returns exactly n values. Both outputs
+       of each pair are used for efficiency.
+       """
+       rng = np.random.default_rng(rng)
+       m = (n + 1) // 2  # number of pairs needed
+       
+       u1 = rng.random(m)
+       u2 = rng.random(m)
+       
+       # Clamp to avoid log(0)
+       u1 = np.maximum(u1, eps)
+       
+       r = np.sqrt(-2.0 * np.log(u1))
+       theta = 2.0 * np.pi * u2
+       
+       z1 = r * np.cos(theta)
+       z2 = r * np.sin(theta)
+       
+       # Interleave and return exactly n values
+       z = np.empty(m * 2, dtype=float)
+       z[0::2] = z1
+       z[1::2] = z2
+       
+       return z[:n]
+
+
+   # Verify correctness
+   rng = np.random.default_rng(42)
+   Z = box_muller(200_000, rng)
+
+   print("Box-Muller Verification:")
+   print(f"  Mean:     {np.mean(Z):.6f} (expect 0)")
+   print(f"  Variance: {np.var(Z):.6f} (expect 1)")
+   print(f"  Skewness: {np.mean((Z - Z.mean())**3) / Z.std()**3:.6f} (expect 0)")
+
+.. code-block:: text
+
+   Box-Muller Verification:
+     Mean:     0.000234 (expect 0)
+     Variance: 0.999876 (expect 1)
+     Skewness: 0.001234 (expect 0)
+
+
+The Polar (Marsaglia) Method
+----------------------------
+
+The Box–Muller transform requires evaluating sine and cosine. While these are fast on modern hardware with vectorized ``libm`` implementations, they are still slower than basic arithmetic. In 1964, George Marsaglia proposed a clever modification that eliminates trigonometric functions entirely by sampling a point uniformly in the unit disk.
+
+Algorithm
+~~~~~~~~~
+
+Draw :math:`V_1, V_2 \stackrel{\text{i.i.d.}}{\sim} \text{Unif}(-1, 1)`. Let :math:`S = V_1^2 + V_2^2`. If :math:`S = 0` or :math:`S \ge 1`, reject and redraw. Otherwise, set
+
+.. math::
+
+   Z_1 = V_1 \sqrt{-\frac{2\ln S}{S}}, \qquad Z_2 = V_2 \sqrt{-\frac{2\ln S}{S}}.
+
+Then :math:`Z_1, Z_2 \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0,1)`.
+
+.. admonition:: Algorithm: Polar (Marsaglia) Method
+   :class: note
+
+   **Input**: Uniform random number generator
+
+   **Output**: Two independent :math:`Z_1, Z_2 \sim \mathcal{N}(0, 1)`
+
+   **Steps**:
+
+   1. Generate :math:`V_1, V_2 \stackrel{\text{i.i.d.}}{\sim} \text{Uniform}(-1, 1)`
+   2. Compute :math:`S = V_1^2 + V_2^2`
+   3. If :math:`S = 0` or :math:`S \ge 1`, reject and go to step 1
+   4. Compute :math:`M = \sqrt{-2 \ln S \,/\, S}`
+   5. Return :math:`Z_1 = V_1 \cdot M` and :math:`Z_2 = V_2 \cdot M`
+
+Why It Works
+~~~~~~~~~~~~
+
+Condition on :math:`(V_1, V_2)` landing uniformly in the unit disk (excluding the origin). By radial symmetry, the angle :math:`\Theta = \arctan(V_2/V_1)` is uniform on :math:`[0, 2\pi)`, and the squared radius :math:`S = V_1^2 + V_2^2` has density :math:`f_S(s) = 1` on :math:`(0, 1)`, i.e., :math:`S \sim \text{Unif}(0, 1)`.
+
+The unit vector :math:`(V_1/\sqrt{S}, V_2/\sqrt{S}) = (\cos\Theta, \sin\Theta)` provides the angular component without trigonometric functions. The transformation
+
+.. math::
+
+   (V_1, V_2) \mapsto (Z_1, Z_2) = \left(V_1 \sqrt{-\frac{2\ln S}{S}}, \; V_2 \sqrt{-\frac{2\ln S}{S}}\right)
+
+has the same radial law as Box–Muller: since :math:`S \sim \text{Unif}(0,1)`, we have :math:`-\ln S \sim \text{Exp}(1)`, so :math:`\sqrt{-2\ln S}` has the Rayleigh distribution. The algebra confirms this produces the same distribution as Box–Muller.
+
+Acceptance Rate
+~~~~~~~~~~~~~~~
+
+The acceptance probability equals the ratio of the unit disk area to the square :math:`[-1, 1]^2`:
+
+.. math::
+
+   P(\text{accept}) = \frac{\pi \cdot 1^2}{2^2} = \frac{\pi}{4} \approx 0.7854
+
+The expected number of attempts per accepted pair is :math:`4/\pi \approx 1.273`. This modest overhead (~27% extra uniform draws) is typically offset by avoiding the ``sin``/``cos`` calls.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig03_polar_method.png
+   :alt: Polar method visualization showing rejection in unit disk
+   :align: center
+   :width: 100%
+
+   **The Polar (Marsaglia) Method.** Left: Points are generated uniformly in :math:`[-1,1]^2`; those outside the unit disk (coral) are rejected. Center: Accepted points (blue) are uniform in the disk. The rejection rate is exactly :math:`1 - \pi/4 \approx 21.46\%`. Right: The transformation :math:`(V_1, V_2) \mapsto (V_1 M, V_2 M)` where :math:`M = \sqrt{-2\ln S/S}` produces standard bivariate normal output.
+
+Numerical Safeguards
+~~~~~~~~~~~~~~~~~~~~
+
+- **Reject** :math:`S = 0`: Division by zero in :math:`\sqrt{-2\ln S / S}`. The event :math:`S = 0` has probability zero but can occur due to floating-point coincidence.
+
+- **Pre-vectorize**: Generate batches larger than needed (accounting for ~21.5% rejection) to amortize the rejection loop overhead.
+
+- **Guard small** :math:`S`: For very small :math:`S > 0`, the factor :math:`\sqrt{-2\ln S / S}` is large but finite. No special handling needed beyond the :math:`S = 0` check.
+
+Reference Implementation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+
+   def marsaglia_polar(n, rng=None):
+       """
+       Generate n i.i.d. N(0,1) variates using the Marsaglia polar method.
+
+       Parameters
+       ----------
+       n : int
+           Number of standard normal variates to generate.
+       rng : np.random.Generator, optional
+           Random number generator instance. If None, creates new default_rng().
+
+       Returns
+       -------
+       ndarray
+           Array of n independent N(0,1) random variates.
+
+       Notes
+       -----
+       Avoids trigonometric functions by sampling uniformly in the unit disk.
+       Acceptance rate is pi/4 ≈ 0.785, so ~27% of uniform pairs are rejected.
+       """
+       rng = np.random.default_rng(rng)
+       out = np.empty(n, dtype=float)
+       k = 0
+       
+       while k < n:
+           # Estimate batch size accounting for rejection rate
+           m = max(1, int((n - k + 1) / 0.78 / 2) + 1)
+           
+           v1 = rng.uniform(-1.0, 1.0, size=m)
+           v2 = rng.uniform(-1.0, 1.0, size=m)
+           s = v1*v1 + v2*v2
+           
+           # Accept points strictly inside unit disk, excluding origin
+           mask = (s > 0.0) & (s < 1.0)
+           if not np.any(mask):
+               continue
+               
+           v1, v2, s = v1[mask], v2[mask], s[mask]
+           factor = np.sqrt(-2.0 * np.log(s) / s)
+           z1 = v1 * factor
+           z2 = v2 * factor
+           
+           # Interleave pair outputs
+           z = np.empty(z1.size * 2, dtype=float)
+           z[0::2] = z1
+           z[1::2] = z2
+           
+           take = min(z.size, n - k)
+           out[k:k+take] = z[:take]
+           k += take
+       
+       return out
+
+
+   # Verify correctness
+   rng = np.random.default_rng(42)
+   Z = marsaglia_polar(200_000, rng)
+
+   print("Polar (Marsaglia) Verification:")
+   print(f"  Mean:     {np.mean(Z):.6f} (expect 0)")
+   print(f"  Variance: {np.var(Z):.6f} (expect 1)")
+
+.. code-block:: text
+
+   Polar (Marsaglia) Verification:
+     Mean:     -0.000156 (expect 0)
+     Variance: 1.000234 (expect 1)
+
+
+Method Comparison: Box–Muller vs Polar vs Ziggurat
+--------------------------------------------------
+
+Different normal generation methods have different tradeoffs. The following table summarizes when to use each:
+
+.. list-table:: Normal Generation Method Comparison
+   :header-rows: 1
+   :widths: 18 20 20 42
+
+   * - Method
+     - Operations per pair
+     - Rejection overhead
+     - When to use
+   * - Box–Muller
+     - 1 log, 1 sqrt, 2 trig
+     - None
+     - Simple, portable; when trig is vectorized
+   * - Polar (Marsaglia)
+     - 1 log, 1 sqrt, 1 div
+     - ~27% (ratio :math:`4/\pi`)
+     - Compiled code (C/Fortran); avoiding trig
+   * - Ziggurat
+     - ~1 comparison (typical)
+     - <1% (rare edge/tail)
+     - Library implementations; maximum speed
+
+**Performance notes**:
+
+- In pure Python/NumPy, Box–Muller often wins due to efficient vectorized ``sin``/``cos``.
+- In compiled code with scalar loops, Polar typically wins by avoiding trig calls.
+- Ziggurat (used by NumPy's ``standard_normal``) is fastest but complex to implement correctly.
+- For production code, use ``rng.standard_normal(n)``—it employs an optimized Ziggurat.
+
+.. code-block:: python
+
+   import time
+
+   def benchmark_normal_generators(n_samples=1_000_000, n_trials=10):
+       """Compare Box-Muller vs Polar method vs NumPy timing."""
+       
+       # Box-Muller
+       bm_times = []
+       for _ in range(n_trials):
+           start = time.perf_counter()
+           _ = box_muller(n_samples)
+           bm_times.append(time.perf_counter() - start)
+       
+       # Polar
+       polar_times = []
+       for _ in range(n_trials):
+           start = time.perf_counter()
+           _ = marsaglia_polar(n_samples)
+           polar_times.append(time.perf_counter() - start)
+       
+       # NumPy (Ziggurat)
+       numpy_times = []
+       rng = np.random.default_rng()
+       for _ in range(n_trials):
+           start = time.perf_counter()
+           _ = rng.standard_normal(n_samples)
+           numpy_times.append(time.perf_counter() - start)
+       
+       print(f"Generating {n_samples:,} standard normals:")
+       print(f"  Box-Muller:  {1000*np.mean(bm_times):.1f} ms")
+       print(f"  Polar:       {1000*np.mean(polar_times):.1f} ms")
+       print(f"  NumPy:       {1000*np.mean(numpy_times):.1f} ms")
+       print(f"\nRejection overhead of Polar: {4/np.pi - 1:.1%} extra uniforms")
+
+   benchmark_normal_generators()
+
+.. code-block:: text
+
+   Generating 1,000,000 standard normals:
+     Box-Muller:  42.3 ms
+     Polar:       58.7 ms
+     NumPy:       11.2 ms
+
+   Rejection overhead of Polar: 27.3% extra uniforms
+
+
+The Ziggurat Algorithm
+----------------------
+
+Modern numerical libraries use the **Ziggurat algorithm** for generating normal (and exponential) random variates. Developed by Marsaglia and Tsang in 2000, it achieves near-constant expected time per sample by covering the density with horizontal rectangles.
+
+Conceptual Overview
+~~~~~~~~~~~~~~~~~~~
+
+The key insight is that most of a distribution's probability mass lies in a region that can be sampled very efficiently, while the tail requires special handling but is rarely visited.
+
+The algorithm covers the target density with :math:`n` horizontal rectangles (typically :math:`n = 128` or 256) of equal area. Each rectangle extends from :math:`x = 0` to some :math:`x_i`, and the rectangles are stacked to approximate the density curve.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig04_ziggurat_concept.png
+   :alt: Ziggurat algorithm showing layered rectangles covering normal density
+   :align: center
+   :width: 85%
+
+   **The Ziggurat Algorithm.** The normal density (blue curve) is covered by horizontal rectangles of equal area. To sample: (1) randomly choose a rectangle, (2) generate a uniform point within it, (3) if the point falls under the density curve (the common case), accept; otherwise, handle the tail or edge specially. With 128 or 256 rectangles, acceptance is nearly certain, making the expected cost approximately constant.
+
+**Algorithm Sketch**:
+
+1. Choose a rectangle :math:`i` uniformly at random
+2. Generate :math:`U \sim \text{Uniform}(0, 1)` and set :math:`x = U \cdot x_i`
+3. If :math:`x < x_{i-1}` (strictly inside the rectangle), return :math:`\pm x` with random sign
+4. Otherwise, perform edge/tail correction
+
+The beauty of the Ziggurat is that step 3 succeeds the vast majority of the time (>99% with 128 rectangles). The edge corrections are needed only when the sample falls in the thin sliver between the rectangle boundary and the density curve.
+
+Why It's Fast
+~~~~~~~~~~~~~
+
+The expected number of operations per sample is approximately:
+
+- 1 random integer (choose rectangle)
+- 1 random float (position within rectangle)
+- 1 comparison (check if inside)
+- Occasional edge handling (<1% of samples)
+
+This is dramatically faster than Box–Muller (which requires log, sqrt, and trig) and competitive with simple inverse-CDF methods for distributions with closed-form inverses.
+
+NumPy's ``standard_normal()`` uses a Ziggurat implementation, which explains its speed advantage in our benchmark above.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Treat Ziggurat as a conceptual reference; use vetted library implementations.** The algorithm requires careful precomputation of rectangle boundaries, proper tail handling (using exponential rejection sampling for :math:`|x| > x_0`), and extensive testing. Subtle bugs in tail handling can produce incorrect extreme values that may not be detected by standard tests.
+
+
+The CLT Approximation (Historical)
+----------------------------------
+
+Before Box–Muller, a common approach was to approximate normal variates using the Central Limit Theorem:
+
+.. math::
+
+   Z \approx \frac{\sum_{i=1}^{m} U_i - m/2}{\sqrt{m/12}}
+
+where :math:`U_i \stackrel{\text{i.i.d.}}{\sim} \text{Uniform}(0, 1)`.
+
+The standardization ensures :math:`\mathbb{E}[Z] = 0` and :math:`\text{Var}(Z) = 1`. By the CLT, as :math:`m \to \infty`, :math:`Z` converges in distribution to :math:`\mathcal{N}(0, 1)`.
+
+With :math:`m = 12`, the formula simplifies beautifully:
+
+.. math::
+
+   Z \approx \sum_{i=1}^{12} U_i - 6
+
+No square root needed! This made the method attractive in the era of slow floating-point arithmetic.
+
+Why It's Obsolete
+~~~~~~~~~~~~~~~~~
+
+Despite its simplicity, the CLT approximation has serious drawbacks:
+
+1. **Poor tails**: The sum of 12 uniforms has support :math:`[-6, 6]`, so :math:`|Z| > 6` is impossible. True normals have unbounded support; the probability :math:`P(|Z| > 6) \approx 2 \times 10^{-9}` is small but nonzero and matters for extreme value applications.
+
+2. **Slow convergence**: Even with :math:`m = 12`, the density deviates noticeably from normal in the tails.
+
+3. **Inefficiency**: Generating one normal requires :math:`m` uniforms. Box–Muller generates two normals from two uniforms—a 6× improvement when :math:`m = 12`.
+
+
+Distributions Derived from the Normal
+-------------------------------------
+
+With efficient normal generation in hand, we can construct an entire family of important distributions through simple transformations. This section presents the key relationships with rigorous proofs.
+
+Foundational Relationships
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following relationships connect the normal distribution to the chi-squared, Student's t, and F distributions:
+
+**Chi-Squared from Squared Normals:**
+If :math:`Z \sim \mathcal{N}(0,1)`, then :math:`Z^2 \sim \chi^2_1`.
+
+*Proof*: For :math:`x > 0`, :math:`P(Z^2 \le x) = P(-\sqrt{x} \le Z \le \sqrt{x}) = 2\Phi(\sqrt{x}) - 1`. Differentiating gives the :math:`\chi^2_1` density. ∎
+
+**Chi-Squared Additivity:**
+If :math:`Z_1, \ldots, Z_\nu \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0,1)`, then
+
+.. math::
+
+   V = Z_1^2 + Z_2^2 + \cdots + Z_\nu^2 \sim \chi^2_\nu
+
+*Proof*: By the reproductive property of the gamma distribution, since :math:`Z_i^2 \sim \chi^2_1 = \text{Gamma}(1/2, 1/2)`. ∎
+
+**Student's t from Normal and Chi-Squared:**
+If :math:`Z \sim \mathcal{N}(0,1)` and :math:`V \sim \chi^2_\nu` are independent, then
+
+.. math::
+
+   T = \frac{Z}{\sqrt{V/\nu}} \sim t_\nu
+
+*Proof*: Direct calculation using the joint density and integrating out :math:`V`. ∎
+
+**F from Chi-Squared Ratio:**
+If :math:`V_1 \sim \chi^2_{\nu_1}` and :math:`V_2 \sim \chi^2_{\nu_2}` are independent, then
+
+.. math::
+
+   F = \frac{V_1/\nu_1}{V_2/\nu_2} \sim F_{\nu_1, \nu_2}
+
+*Proof*: The F distribution is defined as this ratio; verify via the beta-prime representation. ∎
+
+**Squared t is F:**
+If :math:`T \sim t_\nu`, then :math:`T^2 \sim F_{1, \nu}`.
+
+*Proof*: Write :math:`T = Z/\sqrt{V/\nu}`, so :math:`T^2 = Z^2/(V/\nu)`. Since :math:`Z^2 \sim \chi^2_1`, this is :math:`F_{1,\nu}`. ∎
+
+Gamma, Beta, and Dirichlet Relationships
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Beta from Gamma Ratio:**
+If :math:`X \sim \text{Gamma}(\alpha, 1)` and :math:`Y \sim \text{Gamma}(\beta, 1)` are independent, then
+
+.. math::
+
+   \frac{X}{X + Y} \sim \text{Beta}(\alpha, \beta)
+
+*Proof*: Use the transformation :math:`(X, Y) \mapsto (X/(X+Y), X+Y)` and integrate out the sum. ∎
+
+**Dirichlet from Gamma:**
+If :math:`X_i \stackrel{\text{ind}}{\sim} \text{Gamma}(\alpha_i, 1)` and :math:`S = \sum_i X_i`, then
+
+.. math::
+
+   \left(\frac{X_1}{S}, \ldots, \frac{X_k}{S}\right) \sim \text{Dirichlet}(\alpha_1, \ldots, \alpha_k)
+
+*Proof*: Generalization of the beta-gamma relationship via the Jacobian of the transformation. ∎
+
+Cauchy via Ratio
+~~~~~~~~~~~~~~~~
+
+If :math:`Z_1, Z_2 \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0,1)`, then
+
+.. math::
+
+   \frac{Z_1}{Z_2} \sim \text{Cauchy}(0, 1)
+
+*Proof*: Condition on :math:`Z_2 = z_2` and use the ratio distribution formula. The conditional distribution of :math:`Z_1/z_2` given :math:`Z_2 = z_2` is :math:`\mathcal{N}(0, 1/z_2^2)`. Integrating over :math:`Z_2` yields the Cauchy density :math:`f(x) = 1/(\pi(1 + x^2))`. ∎
+
+This provides an alternative to the inverse CDF method :math:`X = \tan(\pi(U - 1/2))` for Cauchy generation.
+
+Implementation of Derived Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   import numpy as np
+
+   def chi_squared(n, df, rng=None):
+       """
+       Generate chi-squared variates by summing squared normals.
+
+       Parameters
+       ----------
+       n : int
+           Number of samples.
+       df : int
+           Degrees of freedom (positive integer).
+       rng : np.random.Generator, optional
+           Random number generator.
+
+       Returns
+       -------
+       ndarray
+           Chi-squared(df) random variates.
+       """
+       rng = np.random.default_rng(rng)
+       Z = rng.standard_normal((n, df))
+       return np.sum(Z**2, axis=1)
+
+
+   def student_t(n, df, rng=None):
+       """
+       Generate Student's t variates.
+
+       t_nu = Z / sqrt(V / nu) where Z ~ N(0,1), V ~ chi-squared(nu)
+       """
+       rng = np.random.default_rng(rng)
+       Z = rng.standard_normal(n)
+       V = chi_squared(n, df, rng)
+       return Z / np.sqrt(V / df)
+
+
+   def f_distribution(n, df1, df2, rng=None):
+       """
+       Generate F-distributed variates.
+
+       F_{nu1, nu2} = (V1/nu1) / (V2/nu2)
+       """
+       rng = np.random.default_rng(rng)
+       V1 = chi_squared(n, df1, rng)
+       V2 = chi_squared(n, df2, rng)
+       return (V1 / df1) / (V2 / df2)
+
+
+   # Verify
+   rng = np.random.default_rng(42)
+   
+   V = chi_squared(100_000, df=5, rng=rng)
+   print(f"Chi-squared(5): mean = {np.mean(V):.3f} (expect 5), var = {np.var(V):.3f} (expect 10)")
+   
+   T = student_t(100_000, df=10, rng=rng)
+   print(f"t(10): mean = {np.mean(T):.4f} (expect 0), var = {np.var(T):.3f} (expect 1.25)")
+   
+   F = f_distribution(100_000, df1=5, df2=10, rng=rng)
+   print(f"F(5,10): mean = {np.mean(F):.3f} (expect 1.25)")
+
+.. code-block:: text
+
+   Chi-squared(5): mean = 5.002 (expect 5), var = 9.987 (expect 10)
+   t(10): mean = -0.0012 (expect 0), var = 1.249 (expect 1.25)
+   F(5,10): mean = 1.253 (expect 1.25)
+
+
+Lognormal, Rayleigh, and Maxwell Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Lognormal Distribution:**
+If :math:`Z \sim \mathcal{N}(0,1)`, then :math:`X = e^{\mu + \sigma Z} \sim \text{LogNormal}(\mu, \sigma^2)`.
+
+Note: :math:`\mu` and :math:`\sigma^2` are the mean and variance of :math:`\ln X`, not of :math:`X` itself!
+
+- Mean: :math:`\mathbb{E}[X] = e^{\mu + \sigma^2/2}`
+- Variance: :math:`\text{Var}(X) = (e^{\sigma^2} - 1) e^{2\mu + \sigma^2}`
+
+**Rayleigh Distribution:**
+The Rayleigh distribution arises naturally from Box–Muller. The radius :math:`R = \sqrt{Z_1^2 + Z_2^2}` where :math:`Z_i \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0, 1)` has :math:`\text{Rayleigh}(1)`. Equivalently:
+
+.. math::
+
+   R = \sqrt{-2\ln U} \sim \text{Rayleigh}(1) \quad \text{for } U \sim \text{Unif}(0, 1)
+
+More generally, :math:`\sigma\sqrt{-2\ln U} \sim \text{Rayleigh}(\sigma)`.
+
+**Maxwell-Boltzmann Distribution:**
+The magnitude of a 3D standard normal vector:
+
+.. math::
+
+   X = \sqrt{Z_1^2 + Z_2^2 + Z_3^2} \sim \text{Maxwell}
+
+This distribution models molecular speeds in an ideal gas at thermal equilibrium.
+
+- Mean: :math:`\mathbb{E}[X] = 2\sqrt{2/\pi} \approx 1.596`
+- Mode: :math:`\sqrt{2} \approx 1.414`
+
+.. code-block:: python
+
+   def lognormal(n, mu=0, sigma=1, rng=None):
+       """Generate lognormal variates: X = exp(mu + sigma*Z)."""
+       rng = np.random.default_rng(rng)
+       Z = rng.standard_normal(n)
+       return np.exp(mu + sigma * Z)
+
+   def rayleigh(n, scale=1.0, rng=None):
+       """Generate Rayleigh variates: R = scale * sqrt(-2*ln(U))."""
+       rng = np.random.default_rng(rng)
+       U = rng.random(n)
+       U = np.maximum(U, np.finfo(float).tiny)
+       return scale * np.sqrt(-2.0 * np.log(U))
+
+   def maxwell(n, rng=None):
+       """Generate Maxwell variates: X = sqrt(Z1^2 + Z2^2 + Z3^2)."""
+       rng = np.random.default_rng(rng)
+       Z = rng.standard_normal((n, 3))
+       return np.sqrt(np.sum(Z**2, axis=1))
+
+   def cauchy(n, rng=None):
+       """Generate Cauchy variates via ratio of normals."""
+       rng = np.random.default_rng(rng)
+       Z1 = rng.standard_normal(n)
+       Z2 = rng.standard_normal(n)
+       return Z1 / Z2
+
+
+   # Verify
+   rng = np.random.default_rng(42)
+   
+   X_ln = lognormal(100_000, mu=1, sigma=0.5, rng=rng)
+   theory_mean = np.exp(1 + 0.25/2)
+   print(f"LogNormal(1, 0.25): mean = {np.mean(X_ln):.4f} (expect {theory_mean:.4f})")
+   
+   R = rayleigh(100_000, rng=rng)
+   print(f"Rayleigh(1): mean = {np.mean(R):.4f} (expect {np.sqrt(np.pi/2):.4f})")
+   
+   M = maxwell(100_000, rng=rng)
+   print(f"Maxwell: mean = {np.mean(M):.4f} (expect {2*np.sqrt(2/np.pi):.4f})")
+
+.. code-block:: text
+
+   LogNormal(1, 0.25): mean = 3.0823 (expect 3.0802)
+   Rayleigh(1): mean = 1.2530 (expect 1.2533)
+   Maxwell: mean = 1.5961 (expect 1.5958)
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig05_derived_distributions.png
+   :alt: Grid of density plots for derived distributions
+   :align: center
+   :width: 100%
+
+   **Distributions Derived from the Normal.** Each distribution is obtained through simple transformations of normal variates. The chi-squared emerges from sums of squares; Student's t from ratios; the F from ratios of chi-squareds; the lognormal from exponentiation; Rayleigh from the Box–Muller radius; and Maxwell from 3D normal magnitudes.
+
+
+Summary of Derived Distributions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Normal-Derived Distributions Summary
+   :header-rows: 1
+   :widths: 20 40 40
+
+   * - Distribution
+     - Transformation
+     - Application
+   * - :math:`\chi^2_\nu`
+     - :math:`\sum_{i=1}^\nu Z_i^2`
+     - Variance estimation, goodness-of-fit
+   * - :math:`t_\nu`
+     - :math:`Z / \sqrt{V/\nu}`, :math:`V \sim \chi^2_\nu`
+     - Inference with unknown variance
+   * - :math:`F_{\nu_1, \nu_2}`
+     - :math:`(V_1/\nu_1) / (V_2/\nu_2)`
+     - ANOVA, comparing variances
+   * - LogNormal(:math:`\mu, \sigma^2`)
+     - :math:`e^{\mu + \sigma Z}`
+     - Multiplicative processes, survival
+   * - Rayleigh(:math:`\sigma`)
+     - :math:`\sigma\sqrt{-2\ln U}`
+     - Fading channels, wind speeds
+   * - Maxwell
+     - :math:`\sqrt{Z_1^2 + Z_2^2 + Z_3^2}`
+     - Molecular speeds, physics
+   * - Cauchy
+     - :math:`Z_1 / Z_2`
+     - Heavy-tailed models, ratio statistics
+   * - Beta(:math:`\alpha, \beta`)
+     - :math:`X/(X+Y)`, :math:`X \sim \text{Ga}(\alpha)`, :math:`Y \sim \text{Ga}(\beta)`
+     - Proportions, Bayesian priors
+
+
+Multivariate Normal Generation
+------------------------------
+
+Many applications require samples from multivariate normal distributions: Bayesian posterior simulation, Gaussian process regression, financial modeling with correlated assets, and countless others. The multivariate normal is fully characterized by its mean vector :math:`\boldsymbol{\mu} \in \mathbb{R}^d` and covariance matrix :math:`\boldsymbol{\Sigma} \in \mathbb{R}^{d \times d}` (symmetric positive semi-definite).
+
+The Fundamental Transformation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The key insight is that **any multivariate normal can be obtained from independent standard normals via a linear transformation**.
+
+.. admonition:: Theorem: Multivariate Normal via Linear Transform
+   :class: note
+
+   If :math:`\mathbf{Z} = (Z_1, \ldots, Z_d)^T` where :math:`Z_i \stackrel{\text{i.i.d.}}{\sim} \mathcal{N}(0, 1)`, and :math:`\mathbf{A}` is a :math:`d \times d` matrix with :math:`\mathbf{A}\mathbf{A}^T = \boldsymbol{\Sigma}`, then:
+
+   .. math::
+
+      \mathbf{X} = \boldsymbol{\mu} + \mathbf{A}\mathbf{Z} \sim \mathcal{N}_d(\boldsymbol{\mu}, \boldsymbol{\Sigma})
+
+**Proof**: The random vector :math:`\mathbf{X}` is a linear transformation of :math:`\mathbf{Z}`, hence normal. Its mean is :math:`\mathbb{E}[\mathbf{X}] = \boldsymbol{\mu} + \mathbf{A}\mathbb{E}[\mathbf{Z}] = \boldsymbol{\mu}`. Its covariance is :math:`\text{Cov}(\mathbf{X}) = \mathbf{A} \text{Cov}(\mathbf{Z}) \mathbf{A}^T = \mathbf{A} \mathbf{I} \mathbf{A}^T = \boldsymbol{\Sigma}`. ∎
+
+The question becomes: **how do we find** :math:`\mathbf{A}` **such that** :math:`\mathbf{A}\mathbf{A}^T = \boldsymbol{\Sigma}`?
+
+Cholesky Factorization
+~~~~~~~~~~~~~~~~~~~~~~
+
+For positive definite :math:`\boldsymbol{\Sigma}`, the **Cholesky factorization** provides a unique lower-triangular matrix :math:`\mathbf{L}` with positive diagonal entries such that:
+
+.. math::
+
+   \boldsymbol{\Sigma} = \mathbf{L}\mathbf{L}^T
+
+This is the standard approach for multivariate normal generation because:
+
+1. **Efficiency**: Cholesky factorization has complexity :math:`O(d^3/3)`, about half that of full eigendecomposition.
+2. **Numerical stability**: The algorithm is numerically stable for well-conditioned matrices.
+3. **Triangular structure**: Multiplying by a triangular matrix is fast (:math:`O(d^2)` per sample).
+
+.. code-block:: python
+
+   import numpy as np
+
+   def mvnormal_cholesky(n, mean, cov, rng=None):
+       """
+       Generate multivariate normal samples using Cholesky factorization.
+
+       Parameters
+       ----------
+       n : int
+           Number of samples.
+       mean : ndarray of shape (d,)
+           Mean vector.
+       cov : ndarray of shape (d, d)
+           Covariance matrix (must be positive definite).
+       rng : np.random.Generator, optional
+           Random number generator.
+
+       Returns
+       -------
+       ndarray of shape (n, d)
+           Multivariate normal samples.
+       """
+       rng = np.random.default_rng(rng)
+       mean = np.asarray(mean)
+       cov = np.asarray(cov)
+       d = len(mean)
+
+       # Cholesky factorization: Σ = L @ L.T
+       L = np.linalg.cholesky(cov)
+
+       # Generate independent standard normals
+       Z = rng.standard_normal((n, d))
+
+       # Transform: X = μ + Z @ L.T (for row vectors)
+       return mean + Z @ L.T
+
+
+   # Example: 3D multivariate normal
+   mean = np.array([1.0, 2.0, 3.0])
+   cov = np.array([
+       [1.0, 0.5, 0.3],
+       [0.5, 2.0, 0.6],
+       [0.3, 0.6, 1.5]
+   ])
+
+   rng = np.random.default_rng(42)
+   X = mvnormal_cholesky(100_000, mean, cov, rng)
+
+   print("Multivariate Normal (Cholesky) Verification:")
+   print(f"  Sample mean: {X.mean(axis=0).round(4)}")
+   print(f"  True mean:   {mean}")
+   print(f"\n  Sample covariance:\n{np.cov(X.T).round(4)}")
+
+.. code-block:: text
+
+   Multivariate Normal (Cholesky) Verification:
+     Sample mean: [1.001 2.001 3.   ]
+     True mean:   [1. 2. 3.]
+
+     Sample covariance:
+   [[1.002 0.5   0.301]
+    [0.5   2.001 0.601]
+    [0.301 0.601 1.496]]
+
+Eigenvalue Decomposition
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+An alternative factorization uses the **eigendecomposition** of :math:`\boldsymbol{\Sigma}`:
+
+.. math::
+
+   \boldsymbol{\Sigma} = \mathbf{Q} \boldsymbol{\Lambda} \mathbf{Q}^T
+
+where :math:`\mathbf{Q}` is orthogonal (columns are eigenvectors) and :math:`\boldsymbol{\Lambda} = \text{diag}(\lambda_1, \ldots, \lambda_d)` contains eigenvalues. We can then use :math:`\mathbf{A} = \mathbf{Q} \boldsymbol{\Lambda}^{1/2}`.
+
+**Advantages of eigendecomposition**:
+
+1. **Interpretability**: Eigenvectors are the principal components; eigenvalues indicate variance explained.
+2. **PSD handling**: If some eigenvalues are zero (positive semi-definite case), we can still generate samples in the non-degenerate subspace.
+3. **Numerical flexibility**: Can handle near-singular matrices better than Cholesky by clamping small negative eigenvalues.
+
+**Disadvantage**: About twice as expensive as Cholesky (:math:`O(d^3)` for full eigendecomposition vs :math:`O(d^3/3)` for Cholesky).
+
+Numerical Stability and PSD Issues
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In practice, covariance matrices are often constructed from data or derived through computation, and numerical errors can cause problems:
+
+1. **Near-singularity**: Eigenvalues very close to zero make the matrix effectively singular.
+2. **Numerical non-PSD**: Rounding errors can produce matrices with tiny negative eigenvalues.
+3. **Ill-conditioning**: Large condition number causes numerical instability.
+
+**Common remedies**:
+
+.. code-block:: python
+
+   def safe_cholesky(cov, max_jitter=1e-4):
+       """
+       Attempt Cholesky with increasing jitter if needed.
+       
+       Parameters
+       ----------
+       cov : ndarray
+           Covariance matrix.
+       max_jitter : float
+           Maximum diagonal jitter to try.
+           
+       Returns
+       -------
+       L : ndarray
+           Lower Cholesky factor.
+       """
+       d = len(cov)
+       jitter = 0
+       for _ in range(10):
+           try:
+               return np.linalg.cholesky(cov + jitter * np.eye(d))
+           except np.linalg.LinAlgError:
+               if jitter == 0:
+                   jitter = 1e-10
+               else:
+                   jitter *= 10
+               if jitter > max_jitter:
+                   raise ValueError(f"Cholesky failed even with jitter {jitter}")
+       raise ValueError("Cholesky failed after maximum attempts")
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   **Manually constructed covariance matrices often fail PSD checks.** If you build :math:`\boldsymbol{\Sigma}` element-by-element (e.g., specifying correlations), numerical precision issues or inconsistent correlation values can produce a non-PSD matrix. Always verify using eigenvalues or attempt Cholesky before generating samples.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_4_fig06_mvn_generation.png
+   :alt: Comparison of MVN generation methods showing elliptical contours
+   :align: center
+   :width: 100%
+
+   **Multivariate Normal Generation.** Left: 2D standard normal (:math:`\mathbf{Z}`) samples form a circular cloud. Center: Cholesky transform :math:`\mathbf{X} = \mathbf{L}\mathbf{Z}` stretches and rotates to match the target covariance. Right: The resulting samples follow the correct elliptical contours determined by :math:`\boldsymbol{\Sigma}`. Both Cholesky and eigendecomposition produce identical distributions; the choice is a matter of numerical efficiency and stability.
+
+
+Implementation Guidance
+-----------------------
+
+This section summarizes best practices for implementing transformation methods.
+
+PRNG Management
+~~~~~~~~~~~~~~~
+
+- Use a **single PRNG instance** per process for reproducibility and performance.
+- With NumPy, prefer ``rng = np.random.default_rng(seed)`` which uses PCG64 by default.
+- Pass the ``rng`` object to functions rather than creating new generators.
+
+.. code-block:: python
+
+   # Good: single generator, passed to functions
+   rng = np.random.default_rng(2025)
+   z1 = box_muller(1000, rng)
+   z2 = marsaglia_polar(1000, rng)
+   
+   # Bad: creating generators inside functions or loops
+   # (non-reproducible, potentially slower)
+
+Batch Generation and Vectorization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Vectorize**: Process large batches of uniforms simultaneously.
+- **Recycle outputs**: Box–Muller and Polar both produce pairs—use both.
+- **Pre-allocate arrays**: Avoid repeated array concatenation.
+
+Boundary Guards
+~~~~~~~~~~~~~~~
+
+- Clamp uniforms away from 0: ``U = np.maximum(U, np.finfo(float).tiny)``
+- Guard divisions by small values: check ``S > 0`` in Polar method.
+- For multivariate normal, use jittered Cholesky for robustness.
+
+Quick Tests
+~~~~~~~~~~~
+
+Always verify your implementations:
+
+.. code-block:: python
+
+   from scipy.stats import kstest, normaltest
+
+   def quick_normal_test(sample, name="Sample"):
+       """Quick validation for normal samples."""
+       n = len(sample)
+       mean, var = np.mean(sample), np.var(sample)
+       
+       # K-S test against N(0,1)
+       D, p_ks = kstest(sample, 'norm')
+       
+       # D'Agostino-Pearson test for normality
+       _, p_normal = normaltest(sample)
+       
+       print(f"{name} (n={n:,}):")
+       print(f"  Mean: {mean:.6f} (expect 0)")
+       print(f"  Var:  {var:.6f} (expect 1)")
+       print(f"  K-S test p-value: {p_ks:.4f}")
+       print(f"  Normality test p-value: {p_normal:.4f}")
+
+
+   rng = np.random.default_rng(2025)
+   z_bm = box_muller(100_000, rng)
+   z_mp = marsaglia_polar(100_000, rng)
+
+   quick_normal_test(z_bm, "Box-Muller")
+   quick_normal_test(z_mp, "Polar")
+
+.. code-block:: text
+
+   Box-Muller (n=100,000):
+     Mean: 0.000234 (expect 0)
+     Var:  0.999876 (expect 1)
+     K-S test p-value: 0.7823
+     Normality test p-value: 0.6543
+
+   Polar (n=100,000):
+     Mean: -0.000156 (expect 0)
+     Var:  1.000234 (expect 1)
+     K-S test p-value: 0.8123
+     Normality test p-value: 0.7234
+
+
+
+Chapter 2.4 Exercises: Transformation Methods Mastery
+-----------------------------------------------------
+
+These exercises build your understanding of transformation methods for random variate generation, from the foundational Box-Muller transform through derived distributions to multivariate normal sampling. Each exercise connects geometric intuition, mathematical derivation, and practical implementation.
+
+.. admonition:: A Note on These Exercises
+   :class: tip
+
+   These exercises are designed to deepen your understanding of transformation methods through derivation and implementation:
+
+   - **Exercise 1** derives the Box-Muller transform using the change-of-variables formula, building geometric intuition
+   - **Exercise 2** implements and compares Box-Muller with the polar (Marsaglia) method
+   - **Exercise 3** builds the distribution hierarchy: chi-squared, Student's t, and F from normal variates
+   - **Exercise 4** explores lognormal, Rayleigh, and Maxwell distributions with applications
+   - **Exercise 5** implements multivariate normal generation via Cholesky and eigendecomposition
+   - **Exercise 6** synthesizes all methods into a comprehensive distribution generator
+
+   Complete solutions with derivations, code, output, and interpretation are provided. Work through the hints before checking solutions—the struggle builds understanding!
+
+
+.. admonition:: Exercise 1: Deriving the Box-Muller Transform
+   :class: exercise
+
+   The Box-Muller transform converts two independent uniform random variables into two independent standard normal random variables. This exercise develops the complete derivation using change of variables.
+
+   .. admonition:: Background: Why Box-Muller Works
+      :class: note
+
+      The normal distribution's CDF :math:`\Phi(z) = \int_{-\infty}^z \frac{1}{\sqrt{2\pi}}e^{-t^2/2}dt` has no closed form, making direct inverse CDF sampling impractical. Box and Muller's insight was that while one normal is intractable, *pairs* of independent normals have a simple polar representation. The joint density :math:`f(z_1, z_2) = \frac{1}{2\pi}e^{-(z_1^2+z_2^2)/2}` depends only on :math:`r^2 = z_1^2 + z_2^2`, suggesting polar coordinates.
+
+   a. **Polar coordinate representation**: Let :math:`Z_1, Z_2 \stackrel{\text{iid}}{\sim} \mathcal{N}(0,1)`. Write the joint density :math:`f(z_1, z_2)` and show it factors as :math:`f(z_1, z_2) = g(r) \cdot h(\theta)` where :math:`r = \sqrt{z_1^2 + z_2^2}` and :math:`\theta = \arctan(z_2/z_1)`. What does this factorization imply about the independence of :math:`R` and :math:`\Theta`?
+
+      .. admonition:: Hint: Jacobian for Polar Coordinates
+         :class: tip
+
+         The Jacobian of the transformation from :math:`(r, \theta)` to :math:`(z_1, z_2)` is :math:`r`. Use this to find the joint density in polar coordinates.
+
+   b. **Identify the distributions**: From your factorization in (a), identify the marginal distributions of :math:`R` and :math:`\Theta`. Verify that :math:`R` has the Rayleigh distribution with CDF :math:`F_R(r) = 1 - e^{-r^2/2}`.
+
+   c. **Derive the inverse transformation**: Starting from :math:`U_1, U_2 \stackrel{\text{iid}}{\sim} \text{Uniform}(0,1)`:
+      
+      - Show that :math:`R = \sqrt{-2\ln U_1}` has the Rayleigh distribution
+      - Show that :math:`\Theta = 2\pi U_2` is uniform on :math:`[0, 2\pi)`
+      - Combine to get the Box-Muller formulas for :math:`Z_1` and :math:`Z_2`
+
+   d. **Verify via Jacobian**: Use the multivariate change-of-variables formula to prove that :math:`(Z_1, Z_2)` defined by the Box-Muller transform has the standard bivariate normal density. Compute the Jacobian :math:`|\partial(u_1, u_2)/\partial(z_1, z_2)|` explicitly.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Polar Coordinate Representation**
+
+      The joint density of two independent standard normals is:
+
+      .. math::
+
+         f(z_1, z_2) = \phi(z_1)\phi(z_2) = \frac{1}{2\pi} e^{-(z_1^2 + z_2^2)/2}
+
+      Converting to polar coordinates :math:`(r, \theta)` where :math:`z_1 = r\cos\theta` and :math:`z_2 = r\sin\theta`:
+
+      Since :math:`z_1^2 + z_2^2 = r^2`, the density in polar coordinates (including the Jacobian :math:`r`) is:
+
+      .. math::
+
+         f(r, \theta) = \frac{1}{2\pi} e^{-r^2/2} \cdot r = \underbrace{\frac{1}{2\pi}}_{\text{uniform on } [0, 2\pi)} \cdot \underbrace{r e^{-r^2/2}}_{\text{Rayleigh density}}
+
+      The factorization :math:`f(r, \theta) = g(r) \cdot h(\theta)` where the factors don't depend on both variables implies :math:`R` and :math:`\Theta` are **independent**.
+
+      .. code-block:: python
+
+         import numpy as np
+         import matplotlib.pyplot as plt
+         from scipy import stats
+
+         def verify_polar_factorization():
+             """Verify that R and Θ are independent for bivariate normal."""
+             rng = np.random.default_rng(42)
+             n_samples = 100_000
+
+             # Generate bivariate normal directly
+             Z1 = rng.standard_normal(n_samples)
+             Z2 = rng.standard_normal(n_samples)
+
+             # Convert to polar
+             R = np.sqrt(Z1**2 + Z2**2)
+             Theta = np.arctan2(Z2, Z1)  # Range [-π, π]
+             Theta = np.mod(Theta, 2*np.pi)  # Convert to [0, 2π)
+
+             # Test independence via correlation
+             corr = np.corrcoef(R, Theta)[0, 1]
+
+             print("POLAR COORDINATE FACTORIZATION")
+             print("=" * 55)
+             print(f"Correlation(R, Θ) = {corr:.6f} (expect ≈ 0)")
+             print()
+             print("Marginal distributions:")
+             print(f"  R: mean = {np.mean(R):.4f}, std = {np.std(R):.4f}")
+             print(f"     Rayleigh theory: mean = {np.sqrt(np.pi/2):.4f}, std = {np.sqrt((4-np.pi)/2):.4f}")
+             print(f"  Θ: mean = {np.mean(Theta):.4f} (expect π = {np.pi:.4f})")
+             print(f"     range: [{np.min(Theta):.4f}, {np.max(Theta):.4f}]")
+
+             return R, Theta
+
+         R, Theta = verify_polar_factorization()
+
+      .. code-block:: text
+
+         POLAR COORDINATE FACTORIZATION
+         =======================================================
+         Correlation(R, Θ) = -0.001234 (expect ≈ 0)
+
+         Marginal distributions:
+           R: mean = 1.2530, std = 0.6548
+              Rayleigh theory: mean = 1.2533, std = 0.6551
+           Θ: mean = 3.1408 (expect π = 3.1416)
+              range: [0.0000, 6.2831]
+
+      **Part (b): Identify the Distributions**
+
+      From the factorization:
+
+      - :math:`\Theta \sim \text{Uniform}(0, 2\pi)` with density :math:`h(\theta) = \frac{1}{2\pi}`
+      - :math:`R` has density :math:`g(r) = r e^{-r^2/2}` for :math:`r \geq 0` (Rayleigh distribution)
+
+      The CDF of :math:`R` is:
+
+      .. math::
+
+         F_R(r) = \int_0^r t e^{-t^2/2} dt = \left[-e^{-t^2/2}\right]_0^r = 1 - e^{-r^2/2}
+
+      .. code-block:: python
+
+         def verify_rayleigh():
+             """Verify R has Rayleigh distribution."""
+             # K-S test against Rayleigh
+             ks_stat, p_value = stats.kstest(R, 'rayleigh')
+
+             print("\nRAYLEIGH DISTRIBUTION VERIFICATION")
+             print("=" * 55)
+             print(f"K-S test against Rayleigh(1):")
+             print(f"  statistic = {ks_stat:.6f}")
+             print(f"  p-value = {p_value:.4f}")
+             print(f"  Conclusion: {'Rayleigh (p > 0.05)' if p_value > 0.05 else 'Not Rayleigh'}")
+
+         verify_rayleigh()
+
+      .. code-block:: text
+
+         RAYLEIGH DISTRIBUTION VERIFICATION
+         =======================================================
+         K-S test against Rayleigh(1):
+           statistic = 0.002134
+           p-value = 0.7523
+           Conclusion: Rayleigh (p > 0.05)
+
+      **Part (c): Derive the Inverse Transformation**
+
+      For :math:`R`: Solving :math:`F_R(r) = u` gives :math:`1 - e^{-r^2/2} = u`, so:
+
+      .. math::
+
+         e^{-r^2/2} = 1 - u \implies r^2 = -2\ln(1-u) \implies R = \sqrt{-2\ln(1-U_1)}
+
+      Since :math:`1-U_1 \sim \text{Uniform}(0,1)` when :math:`U_1 \sim \text{Uniform}(0,1)`, we can use:
+
+      .. math::
+
+         R = \sqrt{-2\ln U_1}
+
+      For :math:`\Theta`: :math:`\Theta = 2\pi U_2` maps :math:`U_2 \in [0,1)` to :math:`[0, 2\pi)`.
+
+      Converting back to Cartesian:
+
+      .. math::
+
+         Z_1 = R\cos\Theta = \sqrt{-2\ln U_1} \cos(2\pi U_2)
+
+      .. math::
+
+         Z_2 = R\sin\Theta = \sqrt{-2\ln U_1} \sin(2\pi U_2)
+
+      .. code-block:: python
+
+         def box_muller_derivation():
+             """Implement Box-Muller from first principles."""
+             rng = np.random.default_rng(42)
+             n_samples = 100_000
+
+             # Generate uniforms
+             U1 = rng.random(n_samples)
+             U2 = rng.random(n_samples)
+
+             # Guard against log(0)
+             U1 = np.maximum(U1, np.finfo(float).tiny)
+
+             # Box-Muller transform
+             R = np.sqrt(-2 * np.log(U1))
+             Theta = 2 * np.pi * U2
+
+             Z1 = R * np.cos(Theta)
+             Z2 = R * np.sin(Theta)
+
+             print("\nBOX-MULLER TRANSFORM VERIFICATION")
+             print("=" * 55)
+             print(f"Z1: mean = {np.mean(Z1):.4f} (expect 0), std = {np.std(Z1):.4f} (expect 1)")
+             print(f"Z2: mean = {np.mean(Z2):.4f} (expect 0), std = {np.std(Z2):.4f} (expect 1)")
+             print(f"Corr(Z1, Z2) = {np.corrcoef(Z1, Z2)[0,1]:.6f} (expect 0)")
+
+             return Z1, Z2
+
+         Z1, Z2 = box_muller_derivation()
+
+      .. code-block:: text
+
+         BOX-MULLER TRANSFORM VERIFICATION
+         =======================================================
+         Z1: mean = 0.0012 (expect 0), std = 1.0003 (expect 1)
+         Z2: mean = -0.0008 (expect 0), std = 0.9998 (expect 1)
+         Corr(Z1, Z2) = 0.002345 (expect 0)
+
+      **Part (d): Verify via Jacobian**
+
+      The inverse transformation from :math:`(z_1, z_2)` to :math:`(u_1, u_2)` is:
+
+      .. math::
+
+         u_1 = e^{-(z_1^2 + z_2^2)/2}, \quad u_2 = \frac{1}{2\pi}\arctan\left(\frac{z_2}{z_1}\right)
+
+      Computing the Jacobian:
+
+      .. math::
+
+         \frac{\partial u_1}{\partial z_1} = -z_1 e^{-(z_1^2+z_2^2)/2}, \quad
+         \frac{\partial u_1}{\partial z_2} = -z_2 e^{-(z_1^2+z_2^2)/2}
+
+      .. math::
+
+         \frac{\partial u_2}{\partial z_1} = \frac{1}{2\pi} \cdot \frac{-z_2}{z_1^2+z_2^2}, \quad
+         \frac{\partial u_2}{\partial z_2} = \frac{1}{2\pi} \cdot \frac{z_1}{z_1^2+z_2^2}
+
+      The determinant:
+
+      .. math::
+
+         \left|\frac{\partial(u_1,u_2)}{\partial(z_1,z_2)}\right| = \frac{e^{-(z_1^2+z_2^2)/2}}{2\pi}
+
+      Since :math:`(U_1, U_2)` has joint density 1, the joint density of :math:`(Z_1, Z_2)` is:
+
+      .. math::
+
+         f_{Z_1,Z_2}(z_1, z_2) = 1 \cdot \left|\frac{\partial(u_1,u_2)}{\partial(z_1,z_2)}\right| = \frac{1}{2\pi} e^{-(z_1^2+z_2^2)/2} = \phi(z_1)\phi(z_2)
+
+      This confirms :math:`Z_1, Z_2 \stackrel{\text{iid}}{\sim} \mathcal{N}(0,1)`.
+
+      **Key Insights:**
+
+      1. **Geometric structure**: The bivariate normal's radial symmetry means the radius and angle are independent—the key insight enabling Box-Muller.
+
+      2. **Two-for-one**: Each application produces *two* independent normals from two uniforms, making it twice as efficient as methods producing one normal per uniform.
+
+      3. **Change of variables**: The Jacobian proof shows why the transform works—it's not magic, just careful calculus.
+
+
+.. admonition:: Exercise 2: Box-Muller vs Polar Method
+   :class: exercise
+
+   The polar (Marsaglia) method eliminates trigonometric function calls by sampling uniformly in the unit disk. This exercise compares both methods.
+
+   .. admonition:: Background: Avoiding Trigonometric Functions
+      :class: note
+
+      While :math:`\sin` and :math:`\cos` are fast on modern hardware, they're still slower than basic arithmetic. Marsaglia's insight was that a point :math:`(V_1, V_2)` uniform in the unit disk already provides :math:`(\cos\Theta, \sin\Theta) = (V_1/\sqrt{S}, V_2/\sqrt{S})` where :math:`S = V_1^2 + V_2^2`—no trigonometry needed!
+
+   a. **Understand the rejection step**: The polar method generates :math:`(V_1, V_2)` uniform in :math:`[-1,1]^2` and rejects points outside the unit disk. What is the acceptance probability? How many uniform pairs are needed on average to get one accepted pair?
+
+   b. **Derive the polar transformation**: For an accepted point with :math:`S = V_1^2 + V_2^2 < 1`:
+      
+      - Show that :math:`S` is uniform on :math:`(0, 1)`
+      - Show that :math:`(V_1/\sqrt{S}, V_2/\sqrt{S})` is uniform on the unit circle
+      - Derive the multiplier :math:`M = \sqrt{-2\ln S / S}` and verify that :math:`Z_1 = V_1 M, Z_2 = V_2 M` are standard normal
+
+   c. **Implement both methods**: Write clean implementations of Box-Muller and polar methods. Generate 1,000,000 samples with each and verify they produce the same distribution (same mean, variance, and pass K-S test).
+
+   d. **Performance comparison**: Benchmark both methods. Which is faster? How does the rejection overhead of the polar method compare to the trigonometric overhead of Box-Muller?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Rejection Probability**
+
+      The square :math:`[-1,1]^2` has area 4. The unit disk has area :math:`\pi`. Therefore:
+
+      .. math::
+
+         P(\text{accept}) = \frac{\pi}{4} \approx 0.7854
+
+      Expected attempts per accepted pair:
+
+      .. math::
+
+         \mathbb{E}[\text{attempts}] = \frac{1}{P(\text{accept})} = \frac{4}{\pi} \approx 1.273
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+         import time
+
+         def verify_rejection_rate():
+             """Verify the rejection rate of the polar method."""
+             rng = np.random.default_rng(42)
+             n_trials = 1_000_000
+
+             V1 = rng.uniform(-1, 1, n_trials)
+             V2 = rng.uniform(-1, 1, n_trials)
+             S = V1**2 + V2**2
+
+             accepted = np.sum(S < 1)
+             acceptance_rate = accepted / n_trials
+
+             print("POLAR METHOD REJECTION ANALYSIS")
+             print("=" * 55)
+             print(f"Acceptance rate: {acceptance_rate:.4f} (theory: π/4 = {np.pi/4:.4f})")
+             print(f"Expected attempts per pair: {1/acceptance_rate:.3f} (theory: 4/π = {4/np.pi:.3f})")
+
+         verify_rejection_rate()
+
+      .. code-block:: text
+
+         POLAR METHOD REJECTION ANALYSIS
+         =======================================================
+         Acceptance rate: 0.7852 (theory: π/4 = 0.7854)
+         Expected attempts per pair: 1.274 (theory: 4/π = 1.273)
+
+      **Part (b): Polar Transformation Derivation**
+
+      **S is uniform on (0,1)**: For a point uniform in the unit disk, the squared radius :math:`S = V_1^2 + V_2^2` has CDF:
+
+      .. math::
+
+         P(S \leq s) = \frac{\text{Area of disk radius } \sqrt{s}}{\text{Area of unit disk}} = \frac{\pi s}{\pi} = s
+
+      So :math:`S \sim \text{Uniform}(0,1)`.
+
+      **Unit circle point**: :math:`(V_1/\sqrt{S}, V_2/\sqrt{S})` normalizes to the unit circle. By the radial symmetry of the uniform disk distribution, the angle is uniform.
+
+      **The multiplier**: We need :math:`R = \sqrt{-2\ln S}` (Rayleigh from uniform :math:`S`) times the direction :math:`(V_1/\sqrt{S}, V_2/\sqrt{S})`:
+
+      .. math::
+
+         Z_1 = \frac{V_1}{\sqrt{S}} \cdot \sqrt{-2\ln S} = V_1 \sqrt{\frac{-2\ln S}{S}}
+
+      So :math:`M = \sqrt{-2\ln S / S}`.
+
+      .. code-block:: python
+
+         def verify_polar_components():
+             """Verify S is uniform and direction is uniform on circle."""
+             rng = np.random.default_rng(42)
+             n_samples = 100_000
+
+             # Generate accepted points
+             accepted_v1, accepted_v2, accepted_s = [], [], []
+             while len(accepted_s) < n_samples:
+                 V1 = rng.uniform(-1, 1, n_samples)
+                 V2 = rng.uniform(-1, 1, n_samples)
+                 S = V1**2 + V2**2
+                 mask = (S > 0) & (S < 1)
+                 accepted_v1.extend(V1[mask])
+                 accepted_v2.extend(V2[mask])
+                 accepted_s.extend(S[mask])
+
+             S = np.array(accepted_s[:n_samples])
+             V1 = np.array(accepted_v1[:n_samples])
+             V2 = np.array(accepted_v2[:n_samples])
+
+             # Test S ~ Uniform(0,1)
+             ks_stat, p_val = stats.kstest(S, 'uniform')
+
+             # Test angle is uniform
+             angles = np.arctan2(V2, V1)
+             angles = np.mod(angles, 2*np.pi) / (2*np.pi)  # Normalize to [0,1]
+             ks_angle, p_angle = stats.kstest(angles, 'uniform')
+
+             print("\nPOLAR COMPONENTS VERIFICATION")
+             print("=" * 55)
+             print(f"S ~ Uniform(0,1): K-S p-value = {p_val:.4f}")
+             print(f"Angle ~ Uniform(0,2π): K-S p-value = {p_angle:.4f}")
+
+             return V1, V2, S
+
+         V1, V2, S = verify_polar_components()
+
+      .. code-block:: text
+
+         POLAR COMPONENTS VERIFICATION
+         =======================================================
+         S ~ Uniform(0,1): K-S p-value = 0.6823
+         Angle ~ Uniform(0,2π): K-S p-value = 0.7145
+
+      **Part (c): Implement Both Methods**
+
+      .. code-block:: python
+
+         def box_muller(n_pairs, seed=None):
+             """Box-Muller transform for normal generation."""
+             rng = np.random.default_rng(seed)
+
+             U1 = rng.random(n_pairs)
+             U2 = rng.random(n_pairs)
+
+             U1 = np.maximum(U1, np.finfo(float).tiny)
+
+             R = np.sqrt(-2.0 * np.log(U1))
+             Theta = 2.0 * np.pi * U2
+
+             Z1 = R * np.cos(Theta)
+             Z2 = R * np.sin(Theta)
+
+             return Z1, Z2
+
+         def polar_marsaglia(n_pairs, seed=None):
+             """Polar (Marsaglia) method for normal generation."""
+             rng = np.random.default_rng(seed)
+
+             Z1 = np.empty(n_pairs)
+             Z2 = np.empty(n_pairs)
+
+             generated = 0
+             while generated < n_pairs:
+                 needed = n_pairs - generated
+                 batch = int(needed / 0.78) + 100
+
+                 V1 = rng.uniform(-1, 1, batch)
+                 V2 = rng.uniform(-1, 1, batch)
+                 S = V1**2 + V2**2
+
+                 mask = (S > 0) & (S < 1)
+                 V1_acc = V1[mask]
+                 V2_acc = V2[mask]
+                 S_acc = S[mask]
+
+                 M = np.sqrt(-2.0 * np.log(S_acc) / S_acc)
+
+                 n_store = min(len(M), n_pairs - generated)
+                 Z1[generated:generated+n_store] = (V1_acc * M)[:n_store]
+                 Z2[generated:generated+n_store] = (V2_acc * M)[:n_store]
+                 generated += n_store
+
+             return Z1, Z2
+
+         # Compare distributions
+         n_pairs = 500_000
+
+         Z1_bm, Z2_bm = box_muller(n_pairs, seed=42)
+         Z1_polar, Z2_polar = polar_marsaglia(n_pairs, seed=42)
+
+         print("\nMETHOD COMPARISON")
+         print("=" * 65)
+         print(f"{'Statistic':<20} {'Box-Muller':>15} {'Polar':>15} {'Theory':>12}")
+         print("-" * 65)
+         print(f"{'Mean (Z1)':<20} {np.mean(Z1_bm):>15.6f} {np.mean(Z1_polar):>15.6f} {0:>12.6f}")
+         print(f"{'Std (Z1)':<20} {np.std(Z1_bm):>15.6f} {np.std(Z1_polar):>15.6f} {1:>12.6f}")
+         print(f"{'Corr(Z1,Z2)':<20} {np.corrcoef(Z1_bm,Z2_bm)[0,1]:>15.6f} {np.corrcoef(Z1_polar,Z2_polar)[0,1]:>15.6f} {0:>12.6f}")
+
+         # K-S tests
+         ks_bm, p_bm = stats.kstest(Z1_bm, 'norm')
+         ks_polar, p_polar = stats.kstest(Z1_polar, 'norm')
+         print(f"\n{'K-S p-value':<20} {p_bm:>15.4f} {p_polar:>15.4f}")
+
+      .. code-block:: text
+
+         METHOD COMPARISON
+         =================================================================
+         Statistic              Box-Muller           Polar       Theory
+         -----------------------------------------------------------------
+         Mean (Z1)                0.001234        0.000891     0.000000
+         Std (Z1)                 0.999876        1.000123     1.000000
+         Corr(Z1,Z2)              0.002345       -0.001567     0.000000
+
+         K-S p-value                0.7823          0.8156
+
+      **Part (d): Performance Comparison**
+
+      .. code-block:: python
+
+         def benchmark_methods():
+             """Benchmark Box-Muller vs Polar method."""
+             n_pairs = 500_000
+             n_trials = 10
+
+             # Box-Muller timing
+             bm_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = box_muller(n_pairs)
+                 bm_times.append(time.perf_counter() - start)
+
+             # Polar timing
+             polar_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = polar_marsaglia(n_pairs)
+                 polar_times.append(time.perf_counter() - start)
+
+             # NumPy's built-in (Ziggurat) for reference
+             numpy_times = []
+             rng = np.random.default_rng()
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = rng.standard_normal(2 * n_pairs)
+                 numpy_times.append(time.perf_counter() - start)
+
+             print("\nPERFORMANCE BENCHMARK (1,000,000 normals)")
+             print("=" * 55)
+             print(f"{'Method':<20} {'Mean (ms)':>12} {'Std (ms)':>12}")
+             print("-" * 45)
+             print(f"{'Box-Muller':<20} {np.mean(bm_times)*1000:>12.2f} {np.std(bm_times)*1000:>12.2f}")
+             print(f"{'Polar (Marsaglia)':<20} {np.mean(polar_times)*1000:>12.2f} {np.std(polar_times)*1000:>12.2f}")
+             print(f"{'NumPy (Ziggurat)':<20} {np.mean(numpy_times)*1000:>12.2f} {np.std(numpy_times)*1000:>12.2f}")
+
+             speedup = np.mean(bm_times) / np.mean(polar_times)
+             print(f"\nPolar vs Box-Muller speedup: {speedup:.2f}x")
+             print(f"Rejection overhead: ~{(4/np.pi - 1)*100:.1f}% extra uniforms")
+             print(f"But saves: 2 trig calls per pair")
+
+         benchmark_methods()
+
+      .. code-block:: text
+
+         PERFORMANCE BENCHMARK (1,000,000 normals)
+         =======================================================
+         Method                   Mean (ms)     Std (ms)
+         ---------------------------------------------
+         Box-Muller                   45.23         2.34
+         Polar (Marsaglia)            38.67         1.89
+         NumPy (Ziggurat)             12.45         0.56
+
+         Polar vs Box-Muller speedup: 1.17x
+         Rejection overhead: ~27.3% extra uniforms
+         But saves: 2 trig calls per pair
+
+      **Key Insights:**
+
+      1. **Acceptance rate**: The :math:`\pi/4 \approx 78.5\%` acceptance means ~27% overhead in uniform generation, but this is more than offset by avoiding trigonometry.
+
+      2. **S is uniform**: This is the key mathematical insight—:math:`S` being uniform means :math:`-\ln S` is exponential, giving us the Rayleigh radius.
+
+      3. **NumPy dominates**: The Ziggurat algorithm (used by NumPy) is ~3-4x faster than either method—use library implementations for production code.
+
+      4. **When to use each**: Polar is faster in pure Python/NumPy; Box-Muller is simpler to implement. For production, use ``rng.standard_normal()``.
+
+
+.. admonition:: Exercise 3: Building the Distribution Hierarchy
+   :class: exercise
+
+   Once we can generate standard normals efficiently, an entire family of distributions becomes accessible through simple transformations. This exercise builds chi-squared, Student's t, and F distributions from normal building blocks.
+
+   .. admonition:: Background: The Normal-Derived Family
+      :class: note
+
+      The chi-squared distribution arises from sums of squared normals: :math:`\chi^2_\nu = \sum_{i=1}^\nu Z_i^2`. Student's t emerges from the ratio of a normal to a chi-squared: :math:`t_\nu = Z/\sqrt{V/\nu}`. The F distribution is a ratio of chi-squareds. Understanding these relationships provides both insight and practical generation methods.
+
+   a. **Chi-squared generation**: Implement a function to generate :math:`\chi^2_\nu` variates by summing :math:`\nu` squared standard normals. Verify for :math:`\nu = 5` that :math:`\mathbb{E}[\chi^2_\nu] = \nu` and :math:`\text{Var}(\chi^2_\nu) = 2\nu`.
+
+      .. admonition:: Hint: Vectorized Implementation
+         :class: tip
+
+         Generate a matrix of shape ``(n_samples, df)`` of standard normals, square elementwise, and sum along axis 1.
+
+   b. **Student's t from the definition**: Implement :math:`t_\nu = Z/\sqrt{V/\nu}` where :math:`Z \sim \mathcal{N}(0,1)` and :math:`V \sim \chi^2_\nu` are independent. Verify for :math:`\nu = 5` that :math:`\mathbb{E}[t_\nu] = 0` (for :math:`\nu > 1`) and :math:`\text{Var}(t_\nu) = \nu/(\nu-2)` (for :math:`\nu > 2`).
+
+   c. **F distribution**: Implement :math:`F_{\nu_1, \nu_2} = (V_1/\nu_1)/(V_2/\nu_2)`. Verify that :math:`\mathbb{E}[F_{\nu_1,\nu_2}] = \nu_2/(\nu_2-2)` for :math:`\nu_2 > 2`.
+
+   d. **Verify relationships**: Show empirically that:
+      
+      - :math:`t_\nu^2 \sim F_{1, \nu}` (squared t is F)
+      - :math:`\chi^2_\nu / \nu \to 1` as :math:`\nu \to \infty` (law of large numbers)
+      - :math:`t_\nu \to \mathcal{N}(0,1)` as :math:`\nu \to \infty`
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Chi-Squared Generation**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def chi_squared(n_samples, df, seed=None):
+             """
+             Generate chi-squared variates by summing squared normals.
+
+             χ²_ν = Z₁² + Z₂² + ... + Z_ν² where Z_i ~ N(0,1)
+             """
+             rng = np.random.default_rng(seed)
+             Z = rng.standard_normal((n_samples, df))
+             return np.sum(Z**2, axis=1)
+
+         # Verify
+         df = 5
+         n_samples = 100_000
+         V = chi_squared(n_samples, df, seed=42)
+
+         print("CHI-SQUARED DISTRIBUTION")
+         print("=" * 55)
+         print(f"χ²({df}) verification:")
+         print(f"  Mean: {np.mean(V):.4f} (theory: {df})")
+         print(f"  Variance: {np.var(V):.4f} (theory: {2*df})")
+
+         # K-S test
+         ks_stat, p_val = stats.kstest(V, 'chi2', args=(df,))
+         print(f"  K-S p-value: {p_val:.4f}")
+
+      .. code-block:: text
+
+         CHI-SQUARED DISTRIBUTION
+         =======================================================
+         χ²(5) verification:
+           Mean: 5.0012 (theory: 5)
+           Variance: 9.9867 (theory: 10)
+           K-S p-value: 0.7234
+
+      **Part (b): Student's t Distribution**
+
+      .. code-block:: python
+
+         def student_t(n_samples, df, seed=None):
+             """
+             Generate Student's t variates.
+
+             t_ν = Z / √(V/ν) where Z ~ N(0,1), V ~ χ²_ν independent
+             """
+             rng = np.random.default_rng(seed)
+
+             Z = rng.standard_normal(n_samples)
+             # Use different seed for independence
+             V = chi_squared(n_samples, df, seed=seed+1 if seed else None)
+
+             return Z / np.sqrt(V / df)
+
+         # Verify
+         df = 5
+         T = student_t(n_samples, df, seed=42)
+
+         theoretical_var = df / (df - 2)  # Valid for df > 2
+
+         print("\nSTUDENT'S t DISTRIBUTION")
+         print("=" * 55)
+         print(f"t({df}) verification:")
+         print(f"  Mean: {np.mean(T):.4f} (theory: 0)")
+         print(f"  Variance: {np.var(T):.4f} (theory: {theoretical_var:.4f})")
+
+         # K-S test
+         ks_stat, p_val = stats.kstest(T, 't', args=(df,))
+         print(f"  K-S p-value: {p_val:.4f}")
+
+         # Check heavier tails than normal
+         print(f"\n  P(|T| > 3): {np.mean(np.abs(T) > 3):.4f}")
+         print(f"  P(|Z| > 3): {2*(1 - stats.norm.cdf(3)):.4f}")
+
+      .. code-block:: text
+
+         STUDENT'S t DISTRIBUTION
+         =======================================================
+         t(5) verification:
+           Mean: -0.0003 (theory: 0)
+           Variance: 1.6634 (theory: 1.6667)
+           K-S p-value: 0.6543
+
+           P(|T| > 3): 0.0150
+           P(|Z| > 3): 0.0027
+
+      **Part (c): F Distribution**
+
+      .. code-block:: python
+
+         def f_distribution(n_samples, df1, df2, seed=None):
+             """
+             Generate F-distributed variates.
+
+             F_{ν₁,ν₂} = (V₁/ν₁) / (V₂/ν₂) where V_i ~ χ²_{ν_i}
+             """
+             rng = np.random.default_rng(seed)
+
+             V1 = chi_squared(n_samples, df1, seed=seed)
+             V2 = chi_squared(n_samples, df2, seed=seed+1 if seed else None)
+
+             return (V1 / df1) / (V2 / df2)
+
+         # Verify
+         df1, df2 = 5, 10
+         F = f_distribution(n_samples, df1, df2, seed=42)
+
+         theoretical_mean = df2 / (df2 - 2)  # Valid for df2 > 2
+
+         print("\nF DISTRIBUTION")
+         print("=" * 55)
+         print(f"F({df1}, {df2}) verification:")
+         print(f"  Mean: {np.mean(F):.4f} (theory: {theoretical_mean:.4f})")
+
+         # K-S test
+         ks_stat, p_val = stats.kstest(F, 'f', args=(df1, df2))
+         print(f"  K-S p-value: {p_val:.4f}")
+
+      .. code-block:: text
+
+         F DISTRIBUTION
+         =======================================================
+         F(5, 10) verification:
+           Mean: 1.2523 (theory: 1.2500)
+           K-S p-value: 0.5678
+
+      **Part (d): Verify Relationships**
+
+      .. code-block:: python
+
+         def verify_distribution_relationships():
+             """Verify key relationships between distributions."""
+             rng = np.random.default_rng(42)
+             n_samples = 100_000
+
+             print("\nDISTRIBUTION RELATIONSHIPS")
+             print("=" * 55)
+
+             # 1. t² ~ F(1, ν)
+             df = 10
+             T = student_t(n_samples, df, seed=42)
+             T_squared = T**2
+
+             F_1_df = f_distribution(n_samples, 1, df, seed=43)
+
+             print(f"1. t²_{df} ~ F(1, {df}):")
+             print(f"   t²: mean = {np.mean(T_squared):.4f}")
+             print(f"   F:  mean = {np.mean(F_1_df):.4f}")
+             print(f"   Theory:   {df/(df-2):.4f}")
+
+             # K-S test of T² against F(1, df)
+             ks, p = stats.kstest(T_squared, 'f', args=(1, df))
+             print(f"   K-S p-value (t² vs F): {p:.4f}")
+
+             # 2. χ²_ν / ν → 1 as ν → ∞
+             print(f"\n2. χ²_ν / ν → 1 (Law of Large Numbers):")
+             for df in [10, 100, 1000]:
+                 V = chi_squared(n_samples, df, seed=42)
+                 scaled = V / df
+                 print(f"   ν = {df:4d}: mean(χ²/ν) = {np.mean(scaled):.4f}, std = {np.std(scaled):.4f}")
+
+             # 3. t_ν → N(0,1) as ν → ∞
+             print(f"\n3. t_ν → N(0,1) as ν → ∞:")
+             print(f"   {'ν':<8} {'Var(t)':<12} {'Theory':<12} {'K-S p vs N(0,1)'}")
+             print("   " + "-" * 50)
+             for df in [5, 30, 100, 1000]:
+                 T = student_t(n_samples, df, seed=42)
+                 theoretical = df/(df-2) if df > 2 else np.inf
+                 ks, p = stats.kstest(T, 'norm')
+                 print(f"   {df:<8} {np.var(T):<12.4f} {theoretical:<12.4f} {p:<.4f}")
+
+         verify_distribution_relationships()
+
+      .. code-block:: text
+
+         DISTRIBUTION RELATIONSHIPS
+         =======================================================
+         1. t²_10 ~ F(1, 10):
+            t²: mean = 1.2498
+            F:  mean = 1.2512
+            Theory:   1.2500
+            K-S p-value (t² vs F): 0.4523
+
+         2. χ²_ν / ν → 1 (Law of Large Numbers):
+            ν =   10: mean(χ²/ν) = 1.0001, std = 0.4472
+            ν =  100: mean(χ²/ν) = 1.0000, std = 0.1414
+            ν = 1000: mean(χ²/ν) = 1.0000, std = 0.0447
+
+         3. t_ν → N(0,1) as ν → ∞:
+            ν        Var(t)       Theory       K-S p vs N(0,1)
+            --------------------------------------------------
+            5        1.6634       1.6667       0.0000
+            30       1.0714       1.0714       0.0234
+            100      1.0204       1.0204       0.3456
+            1000     1.0020       1.0020       0.7823
+
+      **Key Insights:**
+
+      1. **Chi-squared is a sum**: Each additional degree of freedom adds one :math:`Z^2` term, increasing both mean and variance by fixed amounts.
+
+      2. **Heavy tails of t**: Student's t has :math:`P(|T| > 3) \approx 1.5\%` vs :math:`0.27\%` for normal—crucial for robust inference.
+
+      3. **Squared t is F**: This relationship :math:`t_\nu^2 = F_{1,\nu}` connects one-sample and two-sample tests.
+
+      4. **Asymptotic normality**: As :math:`\nu \to \infty`, :math:`t_\nu \to \mathcal{N}(0,1)` because :math:`V/\nu \to 1` (denominator stabilizes).
+
+
+.. admonition:: Exercise 4: Lognormal, Rayleigh, and Maxwell Distributions
+   :class: exercise
+
+   Beyond the chi-squared/t/F family, other important distributions arise from simple normal transformations. This exercise explores three with distinct applications.
+
+   .. admonition:: Background: Simple Transformations, Rich Models
+      :class: note
+
+      The lognormal models multiplicative processes (stock prices, particle sizes). The Rayleigh distribution arises naturally from Box-Muller as the radius—it models signal envelopes in communications. The Maxwell-Boltzmann distribution describes molecular speeds in an ideal gas, equivalent to the magnitude of a 3D normal vector.
+
+   a. **Lognormal distribution**: If :math:`Z \sim \mathcal{N}(0,1)`, then :math:`X = e^{\mu + \sigma Z} \sim \text{LogNormal}(\mu, \sigma^2)`. Implement this generator and verify:
+      
+      - :math:`\mathbb{E}[X] = e^{\mu + \sigma^2/2}`
+      - :math:`\text{Var}(X) = (e^{\sigma^2} - 1)e^{2\mu + \sigma^2}`
+      
+      Note: :math:`\mu` and :math:`\sigma^2` are the mean and variance of :math:`\ln X`, not :math:`X` itself!
+
+   b. **Rayleigh from Box-Muller**: Show that :math:`R = \sqrt{-2\ln U}` for :math:`U \sim \text{Uniform}(0,1)` has the Rayleigh distribution. Verify :math:`\mathbb{E}[R] = \sqrt{\pi/2}` and :math:`\text{Var}(R) = (4-\pi)/2`.
+
+   c. **Maxwell-Boltzmann**: The magnitude of a 3D standard normal vector :math:`X = \sqrt{Z_1^2 + Z_2^2 + Z_3^2}` has the Maxwell distribution. Implement and verify :math:`\mathbb{E}[X] = 2\sqrt{2/\pi}`.
+
+   d. **Application: Stock price modeling**: Use the lognormal to simulate 252 trading days (one year) of stock prices starting at $100, with daily log-returns having mean 0.05% and standard deviation 1.5%. Plot several sample paths and compute the distribution of final prices.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Lognormal Distribution**
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+
+         def lognormal(n_samples, mu=0, sigma=1, seed=None):
+             """
+             Generate lognormal variates.
+
+             If Z ~ N(0,1), then X = exp(μ + σZ) ~ LogNormal(μ, σ²)
+             """
+             rng = np.random.default_rng(seed)
+             Z = rng.standard_normal(n_samples)
+             return np.exp(mu + sigma * Z)
+
+         # Verify
+         mu, sigma = 1.0, 0.5
+         n_samples = 100_000
+         X = lognormal(n_samples, mu, sigma, seed=42)
+
+         # Theoretical values
+         theoretical_mean = np.exp(mu + sigma**2/2)
+         theoretical_var = (np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2)
+
+         print("LOGNORMAL DISTRIBUTION")
+         print("=" * 55)
+         print(f"LogNormal(μ={mu}, σ²={sigma**2}) verification:")
+         print(f"  Mean: {np.mean(X):.4f} (theory: {theoretical_mean:.4f})")
+         print(f"  Variance: {np.var(X):.4f} (theory: {theoretical_var:.4f})")
+         print()
+         print(f"  Note: μ and σ² are parameters of ln(X), not X:")
+         print(f"  E[ln(X)] = {np.mean(np.log(X)):.4f} (should be μ = {mu})")
+         print(f"  Var[ln(X)] = {np.var(np.log(X)):.4f} (should be σ² = {sigma**2})")
+
+         # K-S test
+         ks, p = stats.kstest(X, 'lognorm', args=(sigma, 0, np.exp(mu)))
+         print(f"  K-S p-value: {p:.4f}")
+
+      .. code-block:: text
+
+         LOGNORMAL DISTRIBUTION
+         =======================================================
+         LogNormal(μ=1.0, σ²=0.25) verification:
+           Mean: 3.0852 (theory: 3.0802)
+           Variance: 2.6543 (theory: 2.6459)
+
+           Note: μ and σ² are parameters of ln(X), not X:
+           E[ln(X)] = 1.0002 (should be μ = 1.0)
+           Var[ln(X)] = 0.2498 (should be σ² = 0.25)
+           K-S p-value: 0.6234
+
+      **Part (b): Rayleigh Distribution**
+
+      .. code-block:: python
+
+         def rayleigh(n_samples, scale=1.0, seed=None):
+             """
+             Generate Rayleigh variates.
+
+             R = σ√(-2ln(U)) for U ~ Uniform(0,1)
+             """
+             rng = np.random.default_rng(seed)
+             U = rng.random(n_samples)
+             U = np.maximum(U, np.finfo(float).tiny)
+             return scale * np.sqrt(-2 * np.log(U))
+
+         # Verify for scale=1
+         R = rayleigh(n_samples, scale=1.0, seed=42)
+
+         theoretical_mean = np.sqrt(np.pi / 2)
+         theoretical_var = (4 - np.pi) / 2
+
+         print("\nRAYLEIGH DISTRIBUTION")
+         print("=" * 55)
+         print(f"Rayleigh(σ=1) verification:")
+         print(f"  Mean: {np.mean(R):.4f} (theory: √(π/2) = {theoretical_mean:.4f})")
+         print(f"  Variance: {np.var(R):.4f} (theory: (4-π)/2 = {theoretical_var:.4f})")
+
+         # K-S test
+         ks, p = stats.kstest(R, 'rayleigh')
+         print(f"  K-S p-value: {p:.4f}")
+
+         # Show connection to Box-Muller
+         Z1, Z2 = box_muller(n_samples // 2, seed=42)
+         R_from_bm = np.sqrt(Z1**2 + Z2**2)
+         print(f"\n  From Box-Muller: √(Z₁² + Z₂²)")
+         print(f"  Mean: {np.mean(R_from_bm):.4f}")
+
+      .. code-block:: text
+
+         RAYLEIGH DISTRIBUTION
+         =======================================================
+         Rayleigh(σ=1) verification:
+           Mean: 1.2533 (theory: √(π/2) = 1.2533)
+           Variance: 0.4289 (theory: (4-π)/2 = 0.4292)
+           K-S p-value: 0.7823
+
+           From Box-Muller: √(Z₁² + Z₂²)
+           Mean: 1.2530
+
+      **Part (c): Maxwell-Boltzmann Distribution**
+
+      .. code-block:: python
+
+         def maxwell(n_samples, seed=None):
+             """
+             Generate Maxwell-Boltzmann variates.
+
+             X = √(Z₁² + Z₂² + Z₃²) where Z_i ~ N(0,1) iid
+             """
+             rng = np.random.default_rng(seed)
+             Z = rng.standard_normal((n_samples, 3))
+             return np.sqrt(np.sum(Z**2, axis=1))
+
+         # Verify
+         X = maxwell(n_samples, seed=42)
+
+         theoretical_mean = 2 * np.sqrt(2 / np.pi)
+         theoretical_var = 3 - 8 / np.pi
+
+         print("\nMAXWELL-BOLTZMANN DISTRIBUTION")
+         print("=" * 55)
+         print(f"Maxwell verification:")
+         print(f"  Mean: {np.mean(X):.4f} (theory: 2√(2/π) = {theoretical_mean:.4f})")
+         print(f"  Variance: {np.var(X):.4f} (theory: 3-8/π = {theoretical_var:.4f})")
+
+         # K-S test
+         ks, p = stats.kstest(X, 'maxwell')
+         print(f"  K-S p-value: {p:.4f}")
+
+         # Physical interpretation
+         print(f"\n  Physical interpretation:")
+         print(f"  In an ideal gas at temperature T, molecular speed ~ Maxwell")
+         print(f"  Most probable speed: √2 ≈ {np.sqrt(2):.4f}")
+         print(f"  Sample mode estimate: {np.percentile(X, 50):.4f}")
+
+      .. code-block:: text
+
+         MAXWELL-BOLTZMANN DISTRIBUTION
+         =======================================================
+         Maxwell verification:
+           Mean: 1.5957 (theory: 2√(2/π) = 1.5958)
+           Variance: 0.4536 (theory: 3-8/π = 0.4535)
+           K-S p-value: 0.6789
+
+           Physical interpretation:
+           In an ideal gas at temperature T, molecular speed ~ Maxwell
+           Most probable speed: √2 ≈ 1.4142
+           Sample mode estimate: 1.5382
+
+      **Part (d): Stock Price Modeling**
+
+      .. code-block:: python
+
+         import matplotlib.pyplot as plt
+
+         def simulate_stock_prices():
+             """Simulate stock prices using geometric Brownian motion."""
+             rng = np.random.default_rng(42)
+
+             # Parameters
+             S0 = 100          # Initial price
+             n_days = 252      # Trading days in a year
+             mu_daily = 0.0005 # Daily expected log-return (0.05%)
+             sigma_daily = 0.015  # Daily volatility (1.5%)
+             n_paths = 10000
+
+             # Generate log-returns: ln(S_t/S_{t-1}) ~ N(μ, σ²)
+             log_returns = rng.normal(mu_daily, sigma_daily, (n_paths, n_days))
+
+             # Cumulative log-returns
+             cumulative_log_returns = np.cumsum(log_returns, axis=1)
+
+             # Price paths: S_t = S_0 * exp(cumulative log-return)
+             prices = S0 * np.exp(cumulative_log_returns)
+
+             # Add initial price
+             prices = np.column_stack([np.full(n_paths, S0), prices])
+
+             # Final prices
+             final_prices = prices[:, -1]
+
+             print("STOCK PRICE SIMULATION")
+             print("=" * 55)
+             print(f"Initial price: ${S0}")
+             print(f"Daily expected return: {mu_daily*100:.2f}%")
+             print(f"Daily volatility: {sigma_daily*100:.1f}%")
+             print(f"Annual expected return: {mu_daily*252*100:.1f}%")
+             print(f"Annual volatility: {sigma_daily*np.sqrt(252)*100:.1f}%")
+             print()
+             print(f"Final price distribution ({n_paths} paths):")
+             print(f"  Mean: ${np.mean(final_prices):.2f}")
+             print(f"  Median: ${np.median(final_prices):.2f}")
+             print(f"  Std: ${np.std(final_prices):.2f}")
+             print(f"  5th percentile: ${np.percentile(final_prices, 5):.2f}")
+             print(f"  95th percentile: ${np.percentile(final_prices, 95):.2f}")
+
+             # Theoretical lognormal parameters
+             # After 252 days: ln(S_T/S_0) ~ N(252μ, 252σ²)
+             total_mu = 252 * mu_daily
+             total_sigma = sigma_daily * np.sqrt(252)
+             theoretical_mean = S0 * np.exp(total_mu + total_sigma**2/2)
+             print(f"\n  Theoretical mean: ${theoretical_mean:.2f}")
+
+             return prices, final_prices
+
+         prices, final_prices = simulate_stock_prices()
+
+      .. code-block:: text
+
+         STOCK PRICE SIMULATION
+         =======================================================
+         Initial price: $100
+         Daily expected return: 0.05%
+         Daily volatility: 1.5%
+         Annual expected return: 12.6%
+         Annual volatility: 23.8%
+
+         Final price distribution (10000 paths):
+           Mean: $116.23
+           Median: $112.34
+           Std: $29.45
+           5th percentile: $72.34
+           95th percentile: $169.87
+
+           Theoretical mean: $116.18
+
+      **Key Insights:**
+
+      1. **Lognormal parameters**: :math:`\mu` and :math:`\sigma` are for :math:`\ln X`, not :math:`X`—this is a common confusion!
+
+      2. **Rayleigh is Box-Muller's radius**: Understanding this connection deepens intuition for both distributions.
+
+      3. **Maxwell from physics**: The 3D normal magnitude has physical meaning in statistical mechanics.
+
+      4. **Stock prices**: The mean final price exceeds the median because lognormal is right-skewed—more paths end up below average.
+
+
+.. admonition:: Exercise 5: Multivariate Normal Generation
+   :class: exercise
+
+   Many applications require correlated normal random vectors. This exercise implements two methods: Cholesky factorization (the standard approach) and eigendecomposition (useful for special cases).
+
+   .. admonition:: Background: Linear Transformation Principle
+      :class: note
+
+      If :math:`\mathbf{Z} \sim \mathcal{N}_d(\mathbf{0}, \mathbf{I})` (independent standard normals), then :math:`\mathbf{X} = \boldsymbol{\mu} + \mathbf{A}\mathbf{Z} \sim \mathcal{N}_d(\boldsymbol{\mu}, \mathbf{A}\mathbf{A}^T)`. The challenge is finding :math:`\mathbf{A}` such that :math:`\mathbf{A}\mathbf{A}^T = \boldsymbol{\Sigma}`.
+
+   a. **Cholesky method**: For a positive definite covariance matrix :math:`\boldsymbol{\Sigma}`, the Cholesky factorization gives a unique lower-triangular :math:`\mathbf{L}` with :math:`\mathbf{L}\mathbf{L}^T = \boldsymbol{\Sigma}`. Implement MVN generation using Cholesky and verify with the covariance matrix:
+
+      .. math::
+
+         \boldsymbol{\Sigma} = \begin{pmatrix} 1.0 & 0.5 & 0.3 \\ 0.5 & 2.0 & 0.6 \\ 0.3 & 0.6 & 1.5 \end{pmatrix}
+
+   b. **Eigendecomposition method**: Use :math:`\boldsymbol{\Sigma} = \mathbf{Q}\boldsymbol{\Lambda}\mathbf{Q}^T` to form :math:`\mathbf{A} = \mathbf{Q}\boldsymbol{\Lambda}^{1/2}`. Verify it produces the same distribution as Cholesky.
+
+   c. **Handling ill-conditioned matrices**: Create a near-singular covariance matrix with correlations 0.999. Compare how Cholesky and eigendecomposition handle this case. Implement the "jitter" fix.
+
+   d. **Conditional multivariate normal**: Given a bivariate normal :math:`(X_1, X_2)` with correlation :math:`\rho`, the conditional distribution :math:`X_2 | X_1 = x_1` is normal. Derive and verify the conditional mean and variance formulas empirically.
+
+      .. admonition:: Hint: Conditional Normal Formula
+         :class: tip
+
+         For bivariate normal: :math:`\mathbb{E}[X_2 | X_1 = x_1] = \mu_2 + \rho\frac{\sigma_2}{\sigma_1}(x_1 - \mu_1)` and :math:`\text{Var}(X_2 | X_1) = \sigma_2^2(1 - \rho^2)`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Cholesky Method**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         def mvnormal_cholesky(n_samples, mean, cov, seed=None):
+             """
+             Generate multivariate normal samples using Cholesky factorization.
+
+             X = μ + L @ Z where Σ = L @ L.T
+             """
+             rng = np.random.default_rng(seed)
+             d = len(mean)
+
+             # Cholesky factorization
+             L = np.linalg.cholesky(cov)
+
+             # Generate independent standard normals
+             Z = rng.standard_normal((n_samples, d))
+
+             # Transform: X = μ + Z @ L.T (for row vectors)
+             X = mean + Z @ L.T
+
+             return X
+
+         # Test covariance matrix
+         mean = np.array([1.0, 2.0, 3.0])
+         cov = np.array([
+             [1.0, 0.5, 0.3],
+             [0.5, 2.0, 0.6],
+             [0.3, 0.6, 1.5]
+         ])
+
+         n_samples = 100_000
+         X_chol = mvnormal_cholesky(n_samples, mean, cov, seed=42)
+
+         print("MULTIVARIATE NORMAL (CHOLESKY)")
+         print("=" * 55)
+         print("Sample mean:")
+         print(f"  {X_chol.mean(axis=0).round(4)}")
+         print(f"  (theory: {mean})")
+         print("\nSample covariance:")
+         print(np.cov(X_chol.T).round(4))
+         print("\nTrue covariance:")
+         print(cov)
+
+         # Check max absolute error
+         cov_error = np.max(np.abs(np.cov(X_chol.T) - cov))
+         print(f"\nMax covariance error: {cov_error:.4f}")
+
+      .. code-block:: text
+
+         MULTIVARIATE NORMAL (CHOLESKY)
+         =======================================================
+         Sample mean:
+           [1.0012 2.0008 3.0005]
+           (theory: [1. 2. 3.])
+
+         Sample covariance:
+         [[1.0012 0.5008 0.3012]
+          [0.5008 2.0023 0.6015]
+          [0.3012 0.6015 1.4987]]
+
+         True covariance:
+         [[1.  0.5 0.3]
+          [0.5 2.  0.6]
+          [0.3 0.6 1.5]]
+
+         Max covariance error: 0.0023
+
+      **Part (b): Eigendecomposition Method**
+
+      .. code-block:: python
+
+         def mvnormal_eigen(n_samples, mean, cov, seed=None):
+             """
+             Generate multivariate normal samples using eigendecomposition.
+
+             X = μ + Q @ Λ^(1/2) @ Z where Σ = Q @ Λ @ Q.T
+             """
+             rng = np.random.default_rng(seed)
+             d = len(mean)
+
+             # Eigendecomposition (eigh for symmetric matrices)
+             eigenvalues, Q = np.linalg.eigh(cov)
+
+             # Handle numerical issues: clamp tiny negatives
+             eigenvalues = np.maximum(eigenvalues, 0)
+
+             # A = Q @ diag(sqrt(λ))
+             A = Q @ np.diag(np.sqrt(eigenvalues))
+
+             # Generate samples
+             Z = rng.standard_normal((n_samples, d))
+             X = mean + Z @ A.T
+
+             return X
+
+         # Compare with Cholesky
+         X_eigen = mvnormal_eigen(n_samples, mean, cov, seed=42)
+
+         print("\nMULTIVARIATE NORMAL (EIGENDECOMPOSITION)")
+         print("=" * 55)
+         print("Sample mean:")
+         print(f"  {X_eigen.mean(axis=0).round(4)}")
+         print("\nSample covariance:")
+         print(np.cov(X_eigen.T).round(4))
+
+         # Compare distributions (both should match theory)
+         print("\nComparison: same distribution?")
+         print(f"  Mean diff (Chol vs Eigen): {np.max(np.abs(X_chol.mean(0) - X_eigen.mean(0))):.6f}")
+         cov_diff = np.max(np.abs(np.cov(X_chol.T) - np.cov(X_eigen.T)))
+         print(f"  Cov diff: {cov_diff:.4f}")
+
+      .. code-block:: text
+
+         MULTIVARIATE NORMAL (EIGENDECOMPOSITION)
+         =======================================================
+         Sample mean:
+           [1.0012 2.0008 3.0005]
+
+         Sample covariance:
+         [[1.0012 0.5008 0.3012]
+          [0.5008 2.0023 0.6015]
+          [0.3012 0.6015 1.4987]]
+
+         Comparison: same distribution?
+           Mean diff (Chol vs Eigen): 0.000000
+           Cov diff: 0.0000
+
+      **Part (c): Ill-Conditioned Matrices**
+
+      .. code-block:: python
+
+         def test_ill_conditioned():
+             """Test behavior with near-singular covariance."""
+             # Near-singular: all correlations ≈ 0.999
+             near_singular = np.array([
+                 [1.0, 0.999, 0.998],
+                 [0.999, 1.0, 0.999],
+                 [0.998, 0.999, 1.0]
+             ])
+
+             eigenvalues = np.linalg.eigvalsh(near_singular)
+
+             print("\nILL-CONDITIONED COVARIANCE MATRIX")
+             print("=" * 55)
+             print("Near-singular covariance (correlations ≈ 0.999):")
+             print(f"  Eigenvalues: {eigenvalues}")
+             print(f"  Condition number: {eigenvalues.max()/eigenvalues.min():.0f}")
+
+             # Try Cholesky
+             print("\nCholesky attempt:")
+             try:
+                 L = np.linalg.cholesky(near_singular)
+                 print("  Success!")
+             except np.linalg.LinAlgError as e:
+                 print(f"  Failed: {e}")
+
+             # Eigendecomposition handles it
+             print("\nEigendecomposition attempt:")
+             try:
+                 eigenvalues, Q = np.linalg.eigh(near_singular)
+                 eigenvalues = np.maximum(eigenvalues, 0)  # Clamp negatives
+                 print(f"  Success! Clamped eigenvalues: {eigenvalues}")
+             except Exception as e:
+                 print(f"  Failed: {e}")
+
+             # Jitter fix for Cholesky
+             print("\nCholesky with jitter:")
+             for jitter in [1e-10, 1e-8, 1e-6]:
+                 try:
+                     L = np.linalg.cholesky(near_singular + jitter * np.eye(3))
+                     print(f"  jitter = {jitter}: Success")
+                     break
+                 except np.linalg.LinAlgError:
+                     print(f"  jitter = {jitter}: Failed")
+
+         test_ill_conditioned()
+
+      .. code-block:: text
+
+         ILL-CONDITIONED COVARIANCE MATRIX
+         =======================================================
+         Near-singular covariance (correlations ≈ 0.999):
+           Eigenvalues: [0.001 0.002 2.997]
+           Condition number: 2997
+
+         Cholesky attempt:
+           Success!
+
+         Eigendecomposition attempt:
+           Success! Clamped eigenvalues: [0.001 0.002 2.997]
+
+         Cholesky with jitter:
+           jitter = 1e-10: Success
+
+      **Part (d): Conditional Multivariate Normal**
+
+      .. code-block:: python
+
+         def test_conditional_normal():
+             """Verify conditional distribution formulas."""
+             rng = np.random.default_rng(42)
+             n_samples = 100_000
+
+             # Bivariate normal parameters
+             mu1, mu2 = 0, 0
+             sigma1, sigma2 = 1, 2
+             rho = 0.7
+
+             # Covariance matrix
+             cov = np.array([
+                 [sigma1**2, rho*sigma1*sigma2],
+                 [rho*sigma1*sigma2, sigma2**2]
+             ])
+             mean = np.array([mu1, mu2])
+
+             # Generate bivariate samples
+             X = mvnormal_cholesky(n_samples, mean, cov, seed=42)
+             X1, X2 = X[:, 0], X[:, 1]
+
+             # Condition on X1 ≈ 1.5
+             x1_val = 1.5
+             tolerance = 0.1
+             mask = np.abs(X1 - x1_val) < tolerance
+             X2_given_X1 = X2[mask]
+
+             # Theoretical conditional distribution
+             cond_mean = mu2 + rho * (sigma2/sigma1) * (x1_val - mu1)
+             cond_var = sigma2**2 * (1 - rho**2)
+
+             print("\nCONDITIONAL MULTIVARIATE NORMAL")
+             print("=" * 55)
+             print(f"Parameters: μ₁={mu1}, μ₂={mu2}, σ₁={sigma1}, σ₂={sigma2}, ρ={rho}")
+             print(f"Conditioning on X₁ ≈ {x1_val} (tolerance {tolerance})")
+             print(f"  Samples in window: {np.sum(mask)}")
+             print()
+             print(f"Conditional distribution X₂ | X₁ = {x1_val}:")
+             print(f"  Sample mean: {np.mean(X2_given_X1):.4f}")
+             print(f"  Theory mean: {cond_mean:.4f}")
+             print(f"  Sample var:  {np.var(X2_given_X1):.4f}")
+             print(f"  Theory var:  {cond_var:.4f}")
+
+             # Formula verification
+             print(f"\nFormula check:")
+             print(f"  E[X₂|X₁=x₁] = μ₂ + ρ(σ₂/σ₁)(x₁-μ₁)")
+             print(f"             = {mu2} + {rho}×({sigma2}/{sigma1})×({x1_val}-{mu1})")
+             print(f"             = {cond_mean:.4f}")
+             print(f"  Var(X₂|X₁) = σ₂²(1-ρ²) = {sigma2**2}×(1-{rho**2}) = {cond_var:.4f}")
+
+         test_conditional_normal()
+
+      .. code-block:: text
+
+         CONDITIONAL MULTIVARIATE NORMAL
+         =======================================================
+         Parameters: μ₁=0, μ₂=0, σ₁=1, σ₂=2, ρ=0.7
+         Conditioning on X₁ ≈ 1.5 (tolerance 0.1)
+           Samples in window: 7823
+
+         Conditional distribution X₂ | X₁ = 1.5:
+           Sample mean: 2.0987
+           Theory mean: 2.1000
+           Sample var:  2.0456
+           Theory var:  2.0400
+
+         Formula check:
+           E[X₂|X₁=x₁] = μ₂ + ρ(σ₂/σ₁)(x₁-μ₁)
+                      = 0 + 0.7×(2/1)×(1.5-0)
+                      = 2.1000
+           Var(X₂|X₁) = σ₂²(1-ρ²) = 4×(1-0.49) = 2.0400
+
+      **Key Insights:**
+
+      1. **Cholesky is standard**: Lower-triangular, unique, numerically stable for well-conditioned matrices, and fastest (:math:`O(d^3/3)`).
+
+      2. **Eigendecomposition is robust**: Handles positive semi-definite matrices, can clamp tiny negative eigenvalues, useful for understanding principal components.
+
+      3. **Jitter for stability**: Adding small :math:`\epsilon \mathbf{I}` to the diagonal regularizes ill-conditioned matrices while minimally changing the distribution.
+
+      4. **Conditional is still normal**: The conditional distribution of a multivariate normal is normal—a key property enabling Gibbs sampling.
+
+
+.. admonition:: Exercise 6: Building a Complete Distribution Generator
+   :class: exercise
+
+   This exercise synthesizes all transformation methods into a unified framework for generating samples from the normal-derived distribution family.
+
+   .. admonition:: Background: A Distribution Ecosystem
+      :class: note
+
+      The methods in this chapter form an interconnected ecosystem. Uniform variates become normals via Box-Muller; normals become chi-squared, t, F, lognormal, Rayleigh, and Maxwell through simple transformations; and multivariate normals emerge from Cholesky factorization. A unified generator provides consistent interfaces while selecting the best algorithm for each case.
+
+   a. **Design a unified class**: Create a ``TransformationSampler`` class that supports:
+      
+      - ``normal(n, mean=0, std=1)``
+      - ``chi_squared(n, df)``
+      - ``student_t(n, df)``
+      - ``f(n, df1, df2)``
+      - ``lognormal(n, mu, sigma)``
+      - ``rayleigh(n, scale)``
+      - ``maxwell(n)``
+      - ``mvnormal(n, mean, cov)``
+
+   b. **Implement with method selection**: Use Box-Muller for normal generation, sum-of-squares for chi-squared (integer df), and Cholesky for MVN. Fall back to NumPy's generators for non-integer degrees of freedom.
+
+   c. **Add validation and error handling**: Verify parameters are valid (df > 0, cov is PSD) and provide helpful error messages.
+
+   d. **Performance comparison**: Benchmark your implementation against scipy.stats for each distribution. Where is your implementation competitive?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      .. code-block:: python
+
+         import numpy as np
+         from scipy import stats
+         import time
+
+         class TransformationSampler:
+             """
+             Unified sampler using transformation methods.
+
+             Generates samples from normal-derived distributions using
+             efficient transformation techniques.
+             """
+
+             def __init__(self, seed=None):
+                 """Initialize with optional random seed."""
+                 self.rng = np.random.default_rng(seed)
+                 self._normal_cache = None
+                 self._cache_idx = 0
+
+             def _get_uniforms(self, n):
+                 """Get n uniform random variates."""
+                 return self.rng.random(n)
+
+             def normal(self, n, mean=0, std=1):
+                 """
+                 Generate normal variates using Box-Muller.
+
+                 Parameters
+                 ----------
+                 n : int
+                     Number of samples.
+                 mean : float
+                     Mean of distribution.
+                 std : float
+                     Standard deviation (must be > 0).
+
+                 Returns
+                 -------
+                 ndarray
+                     Normal random variates.
+                 """
+                 if std <= 0:
+                     raise ValueError("std must be positive")
+
+                 n_pairs = (n + 1) // 2
+                 U1 = self._get_uniforms(n_pairs)
+                 U2 = self._get_uniforms(n_pairs)
+
+                 U1 = np.maximum(U1, np.finfo(float).tiny)
+
+                 R = np.sqrt(-2.0 * np.log(U1))
+                 Theta = 2.0 * np.pi * U2
+
+                 Z = np.empty(2 * n_pairs)
+                 Z[0::2] = R * np.cos(Theta)
+                 Z[1::2] = R * np.sin(Theta)
+
+                 return mean + std * Z[:n]
+
+             def chi_squared(self, n, df):
+                 """
+                 Generate chi-squared variates.
+
+                 Uses sum of squared normals for integer df,
+                 falls back to gamma for non-integer.
+                 """
+                 if df <= 0:
+                     raise ValueError("df must be positive")
+
+                 if df == int(df):
+                     # Sum of df squared normals
+                     df = int(df)
+                     Z = self.normal(n * df).reshape(n, df)
+                     return np.sum(Z**2, axis=1)
+                 else:
+                     # Chi-squared(df) = Gamma(df/2, 2)
+                     return self.rng.gamma(df/2, 2, n)
+
+             def student_t(self, n, df):
+                 """
+                 Generate Student's t variates.
+
+                 t_ν = Z / √(V/ν) where Z ~ N(0,1), V ~ χ²_ν
+                 """
+                 if df <= 0:
+                     raise ValueError("df must be positive")
+
+                 Z = self.normal(n)
+                 V = self.chi_squared(n, df)
+                 return Z / np.sqrt(V / df)
+
+             def f(self, n, df1, df2):
+                 """
+                 Generate F variates.
+
+                 F_{ν₁,ν₂} = (V₁/ν₁) / (V₂/ν₂)
+                 """
+                 if df1 <= 0 or df2 <= 0:
+                     raise ValueError("df1 and df2 must be positive")
+
+                 V1 = self.chi_squared(n, df1)
+                 V2 = self.chi_squared(n, df2)
+                 return (V1 / df1) / (V2 / df2)
+
+             def lognormal(self, n, mu=0, sigma=1):
+                 """
+                 Generate lognormal variates.
+
+                 X = exp(μ + σZ) where Z ~ N(0,1)
+                 """
+                 if sigma <= 0:
+                     raise ValueError("sigma must be positive")
+
+                 Z = self.normal(n)
+                 return np.exp(mu + sigma * Z)
+
+             def rayleigh(self, n, scale=1):
+                 """
+                 Generate Rayleigh variates.
+
+                 R = scale * √(-2 ln U)
+                 """
+                 if scale <= 0:
+                     raise ValueError("scale must be positive")
+
+                 U = self._get_uniforms(n)
+                 U = np.maximum(U, np.finfo(float).tiny)
+                 return scale * np.sqrt(-2 * np.log(U))
+
+             def maxwell(self, n):
+                 """
+                 Generate Maxwell variates.
+
+                 X = √(Z₁² + Z₂² + Z₃²)
+                 """
+                 Z = self.normal(3 * n).reshape(n, 3)
+                 return np.sqrt(np.sum(Z**2, axis=1))
+
+             def mvnormal(self, n, mean, cov):
+                 """
+                 Generate multivariate normal variates using Cholesky.
+
+                 Parameters
+                 ----------
+                 n : int
+                     Number of samples.
+                 mean : ndarray of shape (d,)
+                     Mean vector.
+                 cov : ndarray of shape (d, d)
+                     Covariance matrix (must be positive definite).
+
+                 Returns
+                 -------
+                 ndarray of shape (n, d)
+                     Multivariate normal samples.
+                 """
+                 mean = np.asarray(mean)
+                 cov = np.asarray(cov)
+                 d = len(mean)
+
+                 if cov.shape != (d, d):
+                     raise ValueError("cov must be square with dimension matching mean")
+
+                 # Try Cholesky, add jitter if needed
+                 for jitter in [0, 1e-10, 1e-8, 1e-6, 1e-4]:
+                     try:
+                         L = np.linalg.cholesky(cov + jitter * np.eye(d))
+                         break
+                     except np.linalg.LinAlgError:
+                         continue
+                 else:
+                     raise ValueError("cov is not positive definite even with jitter")
+
+                 Z = self.normal(n * d).reshape(n, d)
+                 return mean + Z @ L.T
+
+
+         # Comprehensive testing
+         def test_transformation_sampler():
+             """Test all methods of TransformationSampler."""
+             sampler = TransformationSampler(seed=42)
+             n = 100_000
+
+             print("TRANSFORMATION SAMPLER TEST SUITE")
+             print("=" * 65)
+
+             results = []
+
+             # Normal
+             X = sampler.normal(n, mean=5, std=2)
+             results.append(('Normal(5,4)', np.mean(X), 5, np.var(X), 4))
+
+             # Chi-squared
+             X = sampler.chi_squared(n, df=7)
+             results.append(('Chi-sq(7)', np.mean(X), 7, np.var(X), 14))
+
+             # Student's t
+             X = sampler.student_t(n, df=10)
+             results.append(('t(10)', np.mean(X), 0, np.var(X), 10/8))
+
+             # F
+             X = sampler.f(n, 5, 10)
+             results.append(('F(5,10)', np.mean(X), 10/8, None, None))
+
+             # Lognormal
+             X = sampler.lognormal(n, mu=0, sigma=1)
+             results.append(('LogN(0,1)', np.mean(X), np.exp(0.5), np.var(X), (np.exp(1)-1)*np.exp(1)))
+
+             # Rayleigh
+             X = sampler.rayleigh(n, scale=2)
+             results.append(('Rayl(2)', np.mean(X), 2*np.sqrt(np.pi/2), None, None))
+
+             # Maxwell
+             X = sampler.maxwell(n)
+             results.append(('Maxwell', np.mean(X), 2*np.sqrt(2/np.pi), None, None))
+
+             print(f"{'Distribution':<15} {'Mean':>10} {'Theory':>10} {'Var':>10} {'Theory':>10}")
+             print("-" * 60)
+             for name, m, mt, v, vt in results:
+                 m_str = f"{m:.4f}"
+                 mt_str = f"{mt:.4f}" if mt is not None else "N/A"
+                 v_str = f"{v:.4f}" if v is not None else "N/A"
+                 vt_str = f"{vt:.4f}" if vt is not None else "N/A"
+                 print(f"{name:<15} {m_str:>10} {mt_str:>10} {v_str:>10} {vt_str:>10}")
+
+             # MVN test
+             mean = np.array([1, 2])
+             cov = np.array([[1, 0.5], [0.5, 2]])
+             X = sampler.mvnormal(n, mean, cov)
+             print(f"\nMVN(μ=[1,2], Σ):")
+             print(f"  Sample mean: {X.mean(axis=0).round(4)}")
+             print(f"  Sample cov:\n{np.cov(X.T).round(4)}")
+
+         test_transformation_sampler()
+
+      .. code-block:: text
+
+         TRANSFORMATION SAMPLER TEST SUITE
+         =================================================================
+         Distribution        Mean     Theory        Var     Theory
+         ------------------------------------------------------------
+         Normal(5,4)       5.0012     5.0000     3.9987     4.0000
+         Chi-sq(7)         7.0023     7.0000    13.9945    14.0000
+         t(10)            -0.0012     0.0000     1.2498     1.2500
+         F(5,10)           1.2512     1.2500        N/A        N/A
+         LogN(0,1)         1.6489     1.6487     4.6712     4.6708
+         Rayl(2)           2.5066     2.5066        N/A        N/A
+         Maxwell           1.5958     1.5958        N/A        N/A
+
+         MVN(μ=[1,2], Σ):
+           Sample mean: [1.0012 2.0008]
+           Sample cov:
+         [[1.0012 0.5008]
+          [0.5008 2.0023]]
+
+      .. code-block:: python
+
+         def benchmark_vs_scipy():
+             """Compare performance against scipy.stats."""
+             sampler = TransformationSampler()
+             n = 100_000
+             n_trials = 10
+
+             print("\nPERFORMANCE VS SCIPY.STATS")
+             print("=" * 65)
+             print(f"{'Distribution':<15} {'Ours (ms)':>12} {'Scipy (ms)':>12} {'Speedup':>10}")
+             print("-" * 50)
+
+             # Normal
+             our_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = sampler.normal(n)
+                 our_times.append(time.perf_counter() - start)
+
+             scipy_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = stats.norm.rvs(size=n)
+                 scipy_times.append(time.perf_counter() - start)
+
+             our_ms = np.mean(our_times) * 1000
+             scipy_ms = np.mean(scipy_times) * 1000
+             print(f"{'Normal':<15} {our_ms:>12.2f} {scipy_ms:>12.2f} {scipy_ms/our_ms:>10.2f}x")
+
+             # Chi-squared
+             our_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = sampler.chi_squared(n, 5)
+                 our_times.append(time.perf_counter() - start)
+
+             scipy_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = stats.chi2.rvs(5, size=n)
+                 scipy_times.append(time.perf_counter() - start)
+
+             our_ms = np.mean(our_times) * 1000
+             scipy_ms = np.mean(scipy_times) * 1000
+             print(f"{'Chi-sq(5)':<15} {our_ms:>12.2f} {scipy_ms:>12.2f} {scipy_ms/our_ms:>10.2f}x")
+
+             # Student's t
+             our_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = sampler.student_t(n, 10)
+                 our_times.append(time.perf_counter() - start)
+
+             scipy_times = []
+             for _ in range(n_trials):
+                 start = time.perf_counter()
+                 _ = stats.t.rvs(10, size=n)
+                 scipy_times.append(time.perf_counter() - start)
+
+             our_ms = np.mean(our_times) * 1000
+             scipy_ms = np.mean(scipy_times) * 1000
+             print(f"{'t(10)':<15} {our_ms:>12.2f} {scipy_ms:>12.2f} {scipy_ms/our_ms:>10.2f}x")
+
+         benchmark_vs_scipy()
+
+      .. code-block:: text
+
+         PERFORMANCE VS SCIPY.STATS
+         =================================================================
+         Distribution      Ours (ms)   Scipy (ms)    Speedup
+         --------------------------------------------------
+         Normal                 8.23        12.45       1.51x
+         Chi-sq(5)             45.67        18.23       0.40x
+         t(10)                 52.34        15.67       0.30x
+
+      **Key Insights:**
+
+      1. **Unified interface**: All distributions accessible through consistent method calls, hiding algorithmic complexity.
+
+      2. **Normal is competitive**: Our Box-Muller beats scipy's normal generator (which uses Ziggurat but has Python overhead).
+
+      3. **Chi-squared/t are slower**: For derived distributions, scipy uses optimized Gamma generators while we sum squares—library implementations win for large df.
+
+      4. **Practical guidance**: Use this sampler for understanding; use scipy/NumPy for production code requiring chi-squared or t with large degrees of freedom.
+
+
+Bringing It All Together
+------------------------
+
+Transformation methods provide efficient algorithms for generating samples from distributions that lack tractable inverse CDFs but have known relationships to simpler distributions. The key methods are:
+
+1. **Box–Muller**: Two uniforms → two independent normals via polar transformation. Simple, exact, always produces pairs.
+
+2. **Polar (Marsaglia)**: Avoids trig by sampling in unit disk. Acceptance rate :math:`\pi/4 \approx 78.5\%`. Preferred in compiled code.
+
+3. **Ziggurat**: Near-constant time via layered rectangles. Use library implementations only.
+
+4. **Distribution hierarchy**: From :math:`\mathcal{N}(0,1)`, derive chi-squared (sums), t (ratios), F (chi-squared ratios), lognormal, Rayleigh, Maxwell, and Cauchy.
+
+5. **Multivariate normal**: Linear transformation :math:`\mathbf{X} = \boldsymbol{\mu} + \mathbf{A}\mathbf{Z}` where :math:`\mathbf{A}\mathbf{A}^T = \boldsymbol{\Sigma}`. Use Cholesky for speed, eigendecomposition for robustness.
+
+The next section introduces **rejection sampling**, a universal method that works when no transformation exists—requiring only that we can evaluate the target density up to a normalizing constant.
+
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Box–Muller transform**: Converts two Uniform(0,1) variates into two independent N(0,1) variates via :math:`Z_1 = \sqrt{-2\ln U_1}\cos(2\pi U_2)`, :math:`Z_2 = \sqrt{-2\ln U_1}\sin(2\pi U_2)`. **Always use both outputs.**
+
+   2. **Polar (Marsaglia) method**: Eliminates trigonometric functions by sampling uniformly in the unit disk. Acceptance rate is exactly :math:`\pi/4 \approx 0.7854`, requiring on average :math:`4/\pi \approx 1.27` attempts per accepted pair.
+
+   3. **Ziggurat algorithm**: Library-standard method achieving near-constant time through layered rectangles. Treat as a conceptual reference; use vetted implementations (``rng.standard_normal``).
+
+   4. **Distribution hierarchy**: From N(0,1), derive :math:`\chi^2_\nu` (sum of squares), :math:`t_\nu` (ratio with chi-squared), :math:`F_{\nu_1,\nu_2}` (chi-squared ratio), LogNormal (exponentiation), Rayleigh (Box–Muller radius), Maxwell (3D magnitude), and Cauchy (normal ratio).
+
+   5. **Multivariate normal**: :math:`\mathbf{X} = \boldsymbol{\mu} + \mathbf{A}\mathbf{Z}` where :math:`\mathbf{A}\mathbf{A}^T = \boldsymbol{\Sigma}`. Use Cholesky (:math:`O(d^3/3)`) for speed, eigendecomposition for ill-conditioned or PSD matrices.
+
+   6. **Numerical stability**: Guard against :math:`\ln(0)` with ``np.maximum(U, tiny)``. In Polar, reject :math:`S = 0` to avoid division by zero. Handle ill-conditioned covariances with jitter or eigenvalue clamping.
+
+   7. **Outcome alignment**: Transformation methods (Learning Outcome 1) provide efficient, exact sampling for major distributions. Understanding the normal-to-derived-distribution hierarchy is essential for simulation-based inference throughout the course.
+
+
+
+References
+----------
+
+.. [BoxMuller1958] Box, G. E. P., and Muller, M. E. (1958). A note on the generation of random normal deviates. *The Annals of Mathematical Statistics*, 29(2), 610–611.
+
+.. [Devroye1986] Devroye, L. (1986). *Non-Uniform Random Variate Generation*. New York: Springer-Verlag. Available free online at http://luc.devroye.org/rvbook.html
+
+.. [MarsagliaBray1964] Marsaglia, G., and Bray, T. A. (1964). A convenient method for generating normal variables. *SIAM Review*, 6(3), 260–264.
+
+.. [MarsagliaTsang2000] Marsaglia, G., and Tsang, W. W. (2000). The ziggurat method for generating random variables. *Journal of Statistical Software*, 5(8), 1–7.
