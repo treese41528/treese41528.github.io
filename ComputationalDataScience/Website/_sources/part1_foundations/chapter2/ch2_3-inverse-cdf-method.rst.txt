@@ -873,6 +873,40 @@ The formula asks: "What fraction of the probability range does :math:`U` represe
 
 For near-uniform distributions, interpolation search achieves :math:`O(\log \log K)` expected comparisons—a dramatic improvement over binary search's :math:`O(\log K)`. For :math:`K = 10^6`, this means roughly 4 comparisons instead of 20. The improvement compounds because each guess narrows the interval *multiplicatively* rather than just halving it.
 
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_3_fig05_interpolation_search_uniform.png
+   :alt: Interpolation search for uniform distribution
+   :align: center
+   :width: 100%
+
+   **Interpolation Search: Near-Uniform Distribution.** For distributions where probability mass is spread relatively evenly, interpolation search uses linear interpolation to guess the target index. Here with :math:`K = 16` categories and :math:`u = 0.420`, the algorithm finds the answer in just 2 steps by exploiting the near-linear CDF structure.
+
+**The Key Insight**
+
+Rather than always probing the middle of the search interval, interpolation search estimates *where* the target should be based on the CDF values at the interval endpoints:
+
+.. math::
+
+   \text{guess} = \text{low} + \left\lfloor \frac{u - F[\text{low}-1]}{F[\text{high}] - F[\text{low}-1]} \cdot (\text{high} - \text{low}) \right\rfloor
+
+This formula computes what fraction of the way through the probability range our target :math:`u` lies, then maps that fraction to the index range.
+
+**Algorithm: Interpolation Search**
+
+.. code-block:: text
+
+   Input: Cumulative probabilities (F₁, ..., Fₖ), uniform value U
+   Output: Sample index k
+
+   1. Set lo = 1, hi = K, F[0] = 0
+   2. While lo < hi:
+      a. ratio = (U - F[lo-1]) / (F[hi] - F[lo-1])
+      b. guess = lo + floor(ratio * (hi - lo))
+      c. If U ≤ F[guess], set hi = guess
+      d. Else set lo = guess + 1
+   3. Return lo
+
+
+
 **The Danger of Skewed Distributions**
 
 But here lies a trap. Interpolation search assumes the CDF is approximately linear, which is equivalent to assuming the distribution is approximately uniform. When this assumption fails—as it does spectacularly for Zipf, geometric, or any highly skewed distribution—the algorithm's guesses become wildly wrong.
@@ -891,37 +925,13 @@ The decision is straightforward:
 
 The lesson is broader: algorithms that exploit structure are powerful when the structure is present and dangerous when it is not. Binary search's "ignorance" of the CDF shape is actually a form of robustness.
 
-.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide016_img002_4e0de5c4.png
-   :alt: Interpolation search for uniform distribution
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/ch2_3_fig06_interpolation_search_skewed.png
+   :alt: Interpolation search for monotonic distribution
    :align: center
    :width: 100%
 
-   **Interpolation Search: Near-Uniform Distribution.** For distributions where probability mass is spread relatively evenly, interpolation search uses linear interpolation to guess the target index. Here with :math:`K = 16` categories and :math:`u = 0.420`, the algorithm finds the answer in just 2 steps by exploiting the near-linear CDF structure.
+   **Interpolation Search: Skewed Distribution.** For a monotonically increasing PMF (more mass on higher categories), interpolation search requires 3 steps to find :math:`k = 15` for :math:`u = 0.780`. The linear interpolation estimates are less accurate when the CDF curves away from a straight line, but the algorithm still converges correctly.
 
-**The Key Insight**
-
-Rather than always probing the middle of the search interval, interpolation search estimates *where* the target should be based on the CDF values at the interval endpoints:
-
-.. math::
-
-   \text{guess} = \text{low} + \left\lfloor \frac{u - F[\text{low}]}{F[\text{high}] - F[\text{low}]} \cdot (\text{high} - \text{low}) \right\rfloor
-
-This formula computes what fraction of the way through the probability range our target :math:`u` lies, then maps that fraction to the index range.
-
-**Algorithm: Interpolation Search**
-
-.. code-block:: text
-
-   Input: Cumulative probabilities (F₁, ..., Fₖ), uniform value U
-   Output: Sample index k
-
-   1. Set lo = 1, hi = K, F[0] = 0
-   2. While lo < hi:
-      a. ratio = (U - F[lo-1]) / (F[hi] - F[lo-1])
-      b. guess = lo + floor(ratio * (hi - lo))
-      c. If U ≤ F[guess], set hi = guess
-      d. Else set lo = guess + 1
-   3. Return lo
 
 **Complexity**: 
 
@@ -991,13 +1001,6 @@ This formula computes what fraction of the way through the probability range our
    
    print(f"Sample mean: {np.mean(samples):.1f} (theory: {(K-1)/2:.1f})")
 
-.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartII/Chapter2/Monte%20Carlo%20Methods_slide017_img002_d5767450.png
-   :alt: Interpolation search for monotonic distribution
-   :align: center
-   :width: 100%
-
-   **Interpolation Search: Skewed Distribution.** For a monotonically increasing PMF (more mass on higher categories), interpolation search requires 3 steps to find :math:`k = 15` for :math:`u = 0.780`. The linear interpolation estimates are less accurate when the CDF curves away from a straight line, but the algorithm still converges correctly.
-
 
 .. admonition:: Try It Yourself 🖥️ Interpolation Search for Discrete Sampling
    :class: tip
@@ -1023,7 +1026,7 @@ This formula computes what fraction of the way through the probability range our
 
    1. **Near-uniform distributions**: Try the *Uniform* or *Near-uniform* distribution. Interpolation search often finds the answer in just 1-2 iterations because the CDF is nearly linear—the interpolation guess is nearly exact.
    2. **Skewed distributions**: Try *Monotonic increasing* or *Skewed*. Watch how the interpolation guess overshoots or undershoots when the CDF curves away from linear. The algorithm still converges but may take more iterations than binary search.
-   3. **The interpolation formula**: Observe how :math:`\text{guess} = \text{low} + \lfloor \frac{u - F[\text{low}]}{F[\text{high}] - F[\text{low}]} \cdot (\text{high} - \text{low}) \rfloor` maps the probability ratio to an index estimate.
+   3. **The interpolation formula**: Observe how :math:`\text{guess} = \text{low} + \lfloor \frac{u - F[\text{low}-1]}{F[\text{high}] - F[\text{low}-1]} \cdot (\text{high} - \text{low}) \rfloor` maps the probability ratio to an index estimate.
    4. **Best vs. worst case**: Uniform distributions achieve :math:`O(\log \log K)` iterations; highly skewed distributions may require as many iterations as binary search or more.
    5. **When interpolation wins**: Compare iteration counts across distributions. Interpolation search excels when the CDF is approximately linear; it struggles when probability mass is concentrated (steep CDF regions).
 

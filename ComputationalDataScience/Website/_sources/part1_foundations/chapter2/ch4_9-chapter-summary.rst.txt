@@ -1,0 +1,778 @@
+.. _ch4_9-chapter-summary:
+
+=============================
+Section 4.9 Chapter 4 Summary
+=============================
+
+This chapter developed the complete framework for resampling-based inference—a revolution in statistical methodology that liberated practitioners from the constraints of analytical derivations and distributional assumptions. Starting from the fundamental insight that the empirical distribution :math:`\hat{F}_n` approximates the population distribution :math:`F`, we built a coherent toolkit where simulation replaces derivation: the bootstrap, jackknife, permutation tests, and cross-validation all share this computational philosophy. The result is a collection of methods that are remarkably general, intuitively appealing, and increasingly essential in an era where data structures and estimators outpace closed-form theory.
+
+The Resampling Philosophy
+-------------------------
+
+All resampling methods rest on a single profound insight: **when analytical derivations fail, the sample itself can serve as a surrogate for the population**. This philosophy manifests in two complementary forms:
+
+1. **The Plug-In Principle** (Sections 4.1–4.2): Replace the unknown population :math:`F` with the empirical distribution :math:`\hat{F}_n` to estimate functionals :math:`\theta = T(F)`.
+
+2. **The Resampling Principle** (Sections 4.3–4.8): Simulate the sampling process by drawing repeatedly from :math:`\hat{F}_n` (or a model estimated from the data) to approximate the sampling distribution of any statistic.
+
+The Glivenko-Cantelli theorem guarantees that :math:`\hat{F}_n \to F` uniformly almost surely, providing the theoretical foundation. The DKW inequality gives finite-sample bounds: :math:`P(\sup_x |\hat{F}_n(x) - F(x)| > \epsilon) \leq 2e^{-2n\epsilon^2}`. Together, these results justify treating resampling distributions as proxies for sampling distributions.
+
+
+The Complete Resampling Workflow
+--------------------------------
+
+Every resampling inference problem follows a unified framework:
+
+.. code-block:: text
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │                    THE RESAMPLING INFERENCE PIPELINE                    │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   Stage 1: IDENTIFY          Stage 2: RESAMPLE         Stage 3: AGGREGATE
+   (Section 4.1)              (Sections 4.3-4.5)        (Sections 4.6-4.7)
+   ┌──────────────┐           ┌──────────────┐          ┌──────────────┐
+   │ Define       │           │ Generate     │          │ Summarize    │
+   │ Statistic    │           │ Replicates   │          │ Distribution │
+   │              │ ──θ̂=T(X)──│              │ ──{θ̂*}──│              │
+   │ • Parameter  │→          │ • Bootstrap  │→         │ • SE         │
+   │ • Functional │           │ • Jackknife  │          │ • CI         │
+   │ • Prediction │           │ • Permutation│          │ • P-value    │
+   └──────────────┘           └──────────────┘          └──────────────┘
+          │                                                    │
+          └──────────────────────────┬─────────────────────────┘
+                                     ↓
+                        Stage 4: VALIDATE & DIAGNOSE
+                        (Section 4.8)
+                        ┌─────────────────────────────────────────────┐
+                        │ • Check bootstrap distribution shape        │
+                        │ • Assess Monte Carlo error                  │
+                        │ • Cross-validate prediction accuracy        │
+                        │ • Compare parametric vs nonparametric       │
+                        └─────────────────────────────────────────────┘
+
+
+**Stage 1 — Identify the Target** (Section 4.1): Define the statistic :math:`\hat{\theta} = T(X_1, \ldots, X_n)` whose sampling distribution you seek. The sampling distribution :math:`G_F` is the fundamental target—it determines bias, variance, MSE, confidence intervals, and p-values. Recognize that :math:`\hat{\theta}` is a random variable whose variability across hypothetical repeated samples is what we must characterize.
+
+**Stage 2 — Generate Replicates** (Sections 4.3–4.5): Choose the appropriate resampling scheme:
+
+- **Nonparametric bootstrap**: Sample with replacement from :math:`\{X_1, \ldots, X_n\}`; compute :math:`\hat{\theta}^*_b` for :math:`b = 1, \ldots, B`
+- **Parametric bootstrap**: Fit model :math:`\hat{F}_{\hat{\theta}}`; generate fresh samples :math:`X^* \sim F_{\hat{\theta}}`
+- **Jackknife**: Systematically omit each observation; compute :math:`\hat{\theta}_{(-i)}` for :math:`i = 1, \ldots, n`
+
+**Stage 3 — Aggregate Results** (Sections 4.6–4.7): Extract inferential summaries from the resampling distribution:
+
+- **Standard error**: :math:`\text{SE}_{\text{boot}} = \sqrt{\frac{1}{B-1}\sum_{b=1}^B (\hat{\theta}^*_b - \bar{\theta}^*)^2}`
+- **Bias estimate**: :math:`\widehat{\text{Bias}} = \bar{\theta}^* - \hat{\theta}`
+- **Confidence intervals**: Percentile, BCa, or studentized methods
+- **P-values**: Count extreme values in null distribution
+
+**Stage 4 — Validate and Diagnose** (Section 4.8): Assess the quality of your inference:
+
+- Check Monte Carlo error: :math:`\text{SE}(\text{SE}_{\text{boot}}) \approx \text{SE}_{\text{boot}} / \sqrt{2B}`
+- Inspect bootstrap distribution for irregularities (bimodality, heavy tails)
+- Use cross-validation for prediction error estimation
+- Compare parametric and nonparametric approaches when model is uncertain
+
+
+The Eight Pillars of Chapter 4
+------------------------------
+
+**Pillar 1: The Sampling Distribution Problem (Section 4.1)**
+
+The sampling distribution :math:`G_F` of a statistic :math:`\hat{\theta}` is the probability distribution induced by repeatedly sampling from :math:`F`:
+
+.. math::
+
+   G_F(t) = P_F\{T(X_1, \ldots, X_n) \leq t\}
+
+Everything we want to know about uncertainty—bias, variance, MSE, confidence intervals, p-values—is a functional of :math:`G`:
+
+.. math::
+
+   \text{Bias} &= \int t \, dG(t) - \theta \\[4pt]
+   \text{Var} &= \int (t - \mathbb{E}[\hat{\theta}])^2 \, dG(t) \\[4pt]
+   \text{CI}_{1-\alpha} &= [G^{-1}(\alpha/2), \, G^{-1}(1-\alpha/2)]
+
+Three routes to :math:`G` exist: analytical derivation (exact but limited), parametric Monte Carlo (requires correct model), and bootstrap (minimal assumptions). The bootstrap is the most general.
+
+**Pillar 2: The Empirical Distribution and Plug-In Principle (Section 4.2)**
+
+The empirical CDF :math:`\hat{F}_n(x) = n^{-1}\sum_{i=1}^n \mathbf{1}\{X_i \leq x\}` is a discrete distribution placing mass :math:`1/n` on each observation. Fundamental convergence results justify its use as a proxy for :math:`F`:
+
+- **Glivenko-Cantelli**: :math:`\sup_x |\hat{F}_n(x) - F(x)| \xrightarrow{a.s.} 0`
+- **DKW Inequality**: :math:`P(\sup_x |\hat{F}_n(x) - F(x)| > \epsilon) \leq 2e^{-2n\epsilon^2}`
+
+The **plug-in principle** estimates :math:`\theta = T(F)` by :math:`\hat{\theta} = T(\hat{F}_n)`. For linear functionals, plug-in estimators are unbiased; for nonlinear functionals, bias of order :math:`O(1/n)` typically results.
+
+**Pillar 3: The Nonparametric Bootstrap (Section 4.3)**
+
+The bootstrap approximates :math:`G_F` by :math:`G_{\hat{F}_n}`—the sampling distribution when sampling from :math:`\hat{F}_n`:
+
+.. code-block:: text
+
+   Algorithm: Nonparametric Bootstrap
+   Input: Data X₁,...,Xₙ; statistic T; replicates B
+   Output: Bootstrap distribution {θ̂*₁,...,θ̂*_B}
+
+   1. Compute θ̂ = T(X₁,...,Xₙ)
+   2. For b = 1,...,B:
+      a. Draw X*₁,...,X*ₙ with replacement from {X₁,...,Xₙ}
+      b. Compute θ̂*_b = T(X*₁,...,X*ₙ)
+   3. Return {θ̂*₁,...,θ̂*_B}
+
+Key properties of bootstrap samples:
+
+- Inclusion counts :math:`(N_1, \ldots, N_n) \sim \text{Multinomial}(n; 1/n, \ldots, 1/n)`
+- Expected unique observations: :math:`n(1 - (1-1/n)^n) \approx 0.632n`
+- Each observation has probability :math:`(1-1/n)^n \approx e^{-1} \approx 0.368` of exclusion
+
+The bootstrap is consistent under mild regularity conditions: for smooth functionals, :math:`G_{\hat{F}_n} \to G_F` in distribution.
+
+**Pillar 4: The Parametric Bootstrap (Section 4.4)**
+
+When a credible parametric model :math:`\{F_\theta\}` is available, the parametric bootstrap generates fresh samples from the fitted distribution:
+
+.. code-block:: text
+
+   Algorithm: Parametric Bootstrap
+   Input: Data X₁,...,Xₙ; parametric family {F_θ}; replicates B
+   Output: Bootstrap distribution {θ̂*₁,...,θ̂*_B}
+
+   1. Fit model: θ̂ₙ = argmax L(θ; X₁,...,Xₙ)
+   2. For b = 1,...,B:
+      a. Generate X*₁,...,X*ₙ iid ~ F_{θ̂ₙ}
+      b. Compute θ̂*_b from bootstrap sample
+   3. Return {θ̂*₁,...,θ̂*_B}
+
+**Advantages over nonparametric bootstrap:**
+
+- Greater efficiency when model is correct (narrower CIs)
+- Better finite-sample performance for small :math:`n`
+- Handles boundary constraints naturally
+- Generates truly new observations (not rearrangements)
+
+**Disadvantage:** Catastrophic failure if model is misspecified—always validate the parametric assumption.
+
+**Pillar 5: Jackknife Methods (Section 4.5)**
+
+The jackknife—the bootstrap's historical predecessor—systematically removes one observation at a time:
+
+.. math::
+
+   \hat{\theta}_{(-i)} = T(X_1, \ldots, X_{i-1}, X_{i+1}, \ldots, X_n)
+
+**Jackknife standard error:**
+
+.. math::
+
+   \widehat{\text{SE}}_{\text{jack}} = \sqrt{\frac{n-1}{n} \sum_{i=1}^n (\hat{\theta}_{(-i)} - \bar{\theta}_{(\cdot)})^2}
+
+**Pseudovalues** :math:`\widetilde{\theta}_i = n\hat{\theta} - (n-1)\hat{\theta}_{(-i)}` enable bias correction and provide a connection to influence functions:
+
+.. math::
+
+   (n-1)(\hat{\theta} - \hat{\theta}_{(-i)}) \approx \text{IF}(X_i; T, \hat{F}_n)
+
+The jackknife works well for smooth statistics but fails for non-smooth ones (medians, quantiles). Its key advantages: deterministic (no Monte Carlo error), computationally efficient (:math:`n` evaluations vs :math:`B \gg n`), and provides influence diagnostics.
+
+**Pillar 6: Bootstrap Hypothesis Testing and Permutation Tests (Section 4.6)**
+
+A critical insight: **bootstrap for testing requires sampling under the null hypothesis**, not simply resampling from observed data.
+
+**Permutation tests** provide exact p-values when :math:`H_0` implies exchangeability:
+
+.. code-block:: text
+
+   Algorithm: Permutation Test (Two-Sample)
+   Input: X₁,...,Xₘ and Y₁,...,Yₙ; test statistic T; permutations B
+   Output: P-value
+
+   1. Compute T_obs from original data
+   2. Pool data: Z = (X₁,...,Xₘ,Y₁,...,Yₙ)
+   3. For b = 1,...,B:
+      a. Randomly permute Z to get Z*
+      b. Assign first m to X*, rest to Y*
+      c. Compute T*_b
+   4. Return p̂ = (#{b: |T*_b| ≥ |T_obs|} + 1) / (B + 1)
+
+**Bootstrap tests** extend to settings without exchangeability by enforcing the null through data transformation (e.g., centering at :math:`\mu_0` for testing :math:`H_0: \mu = \mu_0`).
+
+The **Phipson-Smyth "+1" correction** in the p-value formula prevents p-values of exactly zero and ensures valid inference even with limited permutations.
+
+**Pillar 7: Bootstrap Confidence Intervals (Section 4.7)**
+
+Five progressively sophisticated interval constructions:
+
+.. list-table:: Bootstrap Confidence Interval Methods
+   :header-rows: 1
+   :widths: 18 35 22 25
+
+   * - Method
+     - Formula
+     - Coverage Order
+     - Best For
+   * - Normal
+     - :math:`\hat{\theta} \pm z_{\alpha/2} \cdot \text{SE}_{\text{boot}}`
+     - First-order
+     - Symmetric, unbiased
+   * - Percentile
+     - :math:`[Q_{\alpha/2}, Q_{1-\alpha/2}]`
+     - First-order
+     - Simple, transformation-respecting
+   * - Basic (Pivotal)
+     - :math:`[2\hat{\theta} - Q_{1-\alpha/2}, 2\hat{\theta} - Q_{\alpha/2}]`
+     - First-order
+     - Bias correction
+   * - BCa
+     - Adjusted percentiles via :math:`\hat{z}_0, \hat{a}`
+     - Second-order
+     - General recommendation
+   * - Studentized
+     - Percentiles of :math:`(\hat{\theta}^* - \hat{\theta})/\text{SE}^*`
+     - Second-order
+     - Best coverage
+
+**Coverage error rates:**
+
+- First-order: :math:`O(n^{-1/2})` for one-sided, :math:`O(n^{-1})` for two-sided (by cancellation)
+- Second-order (BCa, studentized): :math:`O(n^{-1})` for both one-sided and two-sided
+
+**BCa parameters:**
+
+- Bias correction :math:`\hat{z}_0 = \Phi^{-1}\left(\frac{\#\{\hat{\theta}^*_b < \hat{\theta}\}}{B}\right)`
+- Acceleration :math:`\hat{a} = \frac{\sum_i (\bar{\theta}_{(\cdot)} - \hat{\theta}_{(-i)})^3}{6[\sum_i (\bar{\theta}_{(\cdot)} - \hat{\theta}_{(-i)})^2]^{3/2}}`
+
+**Pillar 8: Cross-Validation (Section 4.8)**
+
+Cross-validation addresses prediction error estimation rather than parameter uncertainty:
+
+.. math::
+
+   \text{CV}_{(K)} = \frac{1}{K} \sum_{k=1}^K \frac{1}{|S_k|} \sum_{i \in S_k} L(y_i, \hat{f}_{-k}(x_i))
+
+**Method comparison:**
+
+.. list-table:: Cross-Validation Methods
+   :header-rows: 1
+   :widths: 20 20 20 40
+
+   * - Method
+     - Training Size
+     - Bias
+     - Variance
+   * - LOOCV
+     - :math:`n-1`
+     - Low
+     - High (correlated folds)
+   * - K-fold (K=5-10)
+     - :math:`(K-1)n/K`
+     - Moderate
+     - Lower
+   * - Hold-out
+     - :math:`n_{\text{train}}`
+     - Higher
+     - High (single split)
+
+**LOOCV shortcut for linear regression:**
+
+.. math::
+
+   \text{CV}_{(n)} = \frac{1}{n} \sum_{i=1}^n \left(\frac{e_i}{1 - h_{ii}}\right)^2
+
+where :math:`h_{ii}` is the leverage (diagonal of hat matrix :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`).
+
+**Bootstrap prediction error** via the .632 and .632+ estimators corrects for optimistic bias in training error while addressing overfitting bias in LOOCV.
+
+
+Method Selection Guide
+----------------------
+
+Use this decision framework to choose appropriate methods:
+
+**Choosing a Resampling Method**
+
+.. code-block:: text
+
+   What is your inferential goal?
+   │
+   ├─► Standard error or bias estimation?
+   │   │
+   │   ├─► Smooth statistic (mean, regression)?
+   │   │   → JACKKNIFE: Fast, deterministic, diagnostic-rich
+   │   │
+   │   └─► Any statistic?
+   │       → BOOTSTRAP: Universal, minimal assumptions
+   │           Consider parametric if model is credible
+   │
+   ├─► Confidence interval construction?
+   │   │
+   │   ├─► Quick exploratory analysis?
+   │   │   → PERCENTILE: Simple, transformation-respecting
+   │   │
+   │   ├─► Publication-quality inference?
+   │   │   → BCa: Second-order accurate, automatic corrections
+   │   │
+   │   └─► Maximum accuracy needed?
+   │       → STUDENTIZED: Best coverage, requires SE estimates
+   │
+   ├─► Hypothesis testing?
+   │   │
+   │   ├─► Exchangeability under H₀ (e.g., two-sample location)?
+   │   │   → PERMUTATION TEST: Exact p-values, no asymptotics
+   │   │
+   │   └─► General testing (regression, complex H₀)?
+   │       → BOOTSTRAP TEST: Transform data to enforce H₀
+   │
+   └─► Prediction error estimation?
+       │
+       ├─► Model selection with limited data?
+       │   → K-FOLD CV (K=5-10): Good bias-variance tradeoff
+       │
+       ├─► Linear model diagnostics?
+       │   → LOOCV with hat matrix shortcut: O(np²) cost
+       │
+       └─► Comparing nested models?
+           → Use same CV folds for both; paired comparison
+
+**Parametric vs. Nonparametric Bootstrap**
+
+.. code-block:: text
+
+   Is a parametric model available?
+   │
+   ├─► NO → NONPARAMETRIC BOOTSTRAP
+   │        No model assumptions required
+   │
+   └─► YES
+       │
+       ├─► Model validated (residual diagnostics pass)?
+       │   │
+       │   ├─► YES and n < 50?
+       │   │   → PARAMETRIC BOOTSTRAP
+       │   │     Better finite-sample behavior
+       │   │
+       │   └─► YES and n ≥ 50?
+       │       → Either method works
+       │         Parametric slightly more efficient
+       │
+       └─► Model suspect or not validated?
+           → NONPARAMETRIC BOOTSTRAP
+             Robust to misspecification
+
+
+Quick Reference Tables
+----------------------
+
+**Core Formulas**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Concept
+     - Formula
+   * - Empirical CDF
+     - :math:`\hat{F}_n(x) = \frac{1}{n}\sum_{i=1}^n \mathbf{1}\{X_i \leq x\}`
+   * - Bootstrap SE
+     - :math:`\widehat{\text{SE}}_{\text{boot}} = \sqrt{\frac{1}{B-1}\sum_{b=1}^B (\hat{\theta}^*_b - \bar{\theta}^*)^2}`
+   * - Bootstrap bias
+     - :math:`\widehat{\text{Bias}} = \bar{\theta}^* - \hat{\theta}`
+   * - Jackknife SE
+     - :math:`\widehat{\text{SE}}_{\text{jack}} = \sqrt{\frac{n-1}{n}\sum_{i=1}^n (\hat{\theta}_{(-i)} - \bar{\theta}_{(\cdot)})^2}`
+   * - Pseudovalues
+     - :math:`\widetilde{\theta}_i = n\hat{\theta} - (n-1)\hat{\theta}_{(-i)}`
+   * - Percentile CI
+     - :math:`[Q_{\alpha/2}(\hat{\theta}^*), Q_{1-\alpha/2}(\hat{\theta}^*)]`
+   * - Basic CI
+     - :math:`[2\hat{\theta} - Q_{1-\alpha/2}, 2\hat{\theta} - Q_{\alpha/2}]`
+   * - BCa bias correction
+     - :math:`\hat{z}_0 = \Phi^{-1}(\#\{\hat{\theta}^*_b < \hat{\theta}\}/B)`
+   * - BCa acceleration
+     - :math:`\hat{a} = \frac{\sum(\bar{\theta}_{(\cdot)} - \hat{\theta}_{(-i)})^3}{6[\sum(\bar{\theta}_{(\cdot)} - \hat{\theta}_{(-i)})^2]^{3/2}}`
+   * - Permutation p-value
+     - :math:`\hat{p} = \frac{\#\{|T^*_b| \geq |T_{\text{obs}}|\} + 1}{B + 1}`
+   * - LOOCV (linear)
+     - :math:`\text{CV}_{(n)} = \frac{1}{n}\sum_{i=1}^n (e_i/(1-h_{ii}))^2`
+   * - Monte Carlo SE of SE
+     - :math:`\text{SE}(\widehat{\text{SE}}_{\text{boot}}) \approx \widehat{\text{SE}}_{\text{boot}}/\sqrt{2B}`
+
+**Sample Size Guidelines**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 50
+
+   * - Parameter
+     - Recommended
+     - Rationale
+   * - :math:`B` for SE
+     - 200–1000
+     - Monte Carlo CV :math:`\approx 1/\sqrt{2B} \approx 2-5\%`
+   * - :math:`B` for percentile CI
+     - 1000–2000
+     - Stable quantile estimation
+   * - :math:`B` for BCa CI
+     - 2000–5000
+     - Accurate tail behavior
+   * - :math:`B` for studentized CI
+     - 1000+ outer, 50-100 inner
+     - Nested bootstrap costly
+   * - :math:`B` for permutation test
+     - 1000 minimum
+     - p-value resolution :math:`\approx 1/B`
+   * - :math:`K` for K-fold CV
+     - 5–10
+     - Bias-variance tradeoff
+   * - :math:`n` for bootstrap validity
+     - :math:`\geq 20` typical
+     - :math:`\hat{F}_n` approximation quality
+
+
+Common Pitfalls Checklist
+-------------------------
+
+Before running a resampling analysis, verify:
+
+**Bootstrap Implementation**
+
+- ☐ Resampling **with replacement** (not permutation)
+- ☐ Bootstrap sample size equals original sample size :math:`n`
+- ☐ Using ``rng.choice(data, size=n, replace=True)`` correctly
+- ☐ Computing statistic on **each** bootstrap sample, not pooled
+
+**Confidence Intervals**
+
+- ☐ BCa requires jackknife values for acceleration :math:`\hat{a}`
+- ☐ Studentized bootstrap needs SE estimate **per bootstrap sample**
+- ☐ Percentile CI uses :math:`Q_{\alpha/2}` and :math:`Q_{1-\alpha/2}`, not :math:`Q_\alpha`
+- ☐ Basic CI **reflects** quantiles: :math:`2\hat{\theta} - Q_{1-\alpha/2}` for lower bound
+
+**Hypothesis Testing**
+
+- ☐ Bootstrap under :math:`H_0`: data transformed to satisfy null hypothesis
+- ☐ Permutation test: only valid under exchangeability
+- ☐ Using "+1" in numerator and denominator for p-value
+- ☐ Test statistic computed consistently across all replicates
+
+**Monte Carlo Error**
+
+- ☐ :math:`B` large enough for desired precision
+- ☐ Fixed seed for reproducibility
+- ☐ Independent RNG streams for parallel computation
+- ☐ Reported uncertainty includes both statistical and Monte Carlo components
+
+**Cross-Validation**
+
+- ☐ Model fit **inside** each fold, not on full data
+- ☐ All preprocessing (scaling, feature selection) inside CV loop
+- ☐ Nested CV for hyperparameter tuning + error estimation
+- ☐ Same folds used when comparing models
+
+
+.. admonition:: Common Pitfall ⚠️ Bootstrap Under the Null
+   :class: warning
+
+   **Mistake**: Computing p-values by checking where :math:`\hat{\theta}` falls in the distribution of :math:`\hat{\theta}^*` resampled from raw data.
+
+   **Problem**: This tests whether :math:`\hat{\theta}` is unusual *given itself*—a meaningless question.
+
+   **Solution**: Transform data to enforce :math:`H_0` before resampling. For :math:`H_0: \mu = \mu_0`, center data at :math:`\mu_0`: :math:`\tilde{X}_i = X_i - \bar{X} + \mu_0`.
+
+
+.. admonition:: Common Pitfall ⚠️ Jackknife for Non-Smooth Statistics
+   :class: warning
+
+   **Mistake**: Using jackknife SE for the median or other quantiles.
+
+   **Problem**: Jackknife assumes smooth influence functions. The median has a discontinuous influence function—jackknife severely underestimates its variance.
+
+   **Solution**: Use bootstrap for non-smooth statistics. The delete-:math:`d` jackknife with :math:`d = O(\sqrt{n})` can help but is rarely used in practice.
+
+
+Connections to Other Chapters
+-----------------------------
+
+The resampling methods developed here integrate with the entire course:
+
+**From Chapter 2: Monte Carlo Foundations**
+
+- Bootstrap is **Monte Carlo applied to the empirical distribution**—:math:`B` replicates estimate :math:`\mathbb{E}_{\hat{F}_n}[h(\hat{\theta}^*)]`
+- Variance reduction techniques from Section 2.6 apply: antithetic bootstrap pairs can halve Monte Carlo variance
+- The :math:`O(n^{-1/2})` convergence rate from CLT governs both MC estimation and sampling distribution approximation
+
+**From Chapter 3: Parametric Inference**
+
+- Parametric bootstrap extends MLE theory—simulate from :math:`F_{\hat{\theta}}` to approximate sampling distributions
+- Fisher information provides asymptotic standard errors; bootstrap provides finite-sample alternatives
+- GLM regression bootstrap uses residual or case resampling schemes
+
+**To Part III: Bayesian Computation**
+
+- Bootstrap posterior :math:`\approx` Bayesian posterior with flat prior (asymptotically)
+- Cross-validation connects to predictive model comparison (WAIC, LOO-CV)
+- MCMC diagnostics (effective sample size, autocorrelation) parallel bootstrap diagnostics
+- Importance sampling reweights MCMC draws; parallels importance-weighted bootstrap
+
+**To Machine Learning Practice**
+
+- Cross-validation is **the** standard for model selection and hyperparameter tuning
+- Bootstrap aggregating (bagging) reduces variance in unstable estimators
+- Out-of-bag error in random forests uses the 36.8% excluded observations
+- Conformal prediction uses resampling for distribution-free prediction intervals
+
+
+Learning Outcomes Checklist
+---------------------------
+
+Upon completing this chapter, you should be able to:
+
+**Foundational Understanding**
+
+- ☑ Define the sampling distribution as the fundamental target of uncertainty quantification
+- ☑ Explain the plug-in principle and justify bootstrap consistency via Glivenko-Cantelli
+- ☑ Distinguish statistical uncertainty (finite :math:`n`) from Monte Carlo error (finite :math:`B`)
+- ☑ Compare parametric and nonparametric bootstrap: efficiency vs. robustness tradeoff
+
+**Bootstrap Methods**
+
+- ☑ Implement nonparametric bootstrap for arbitrary statistics
+- ☑ Compute bootstrap standard errors and bias estimates
+- ☑ Construct percentile, basic, BCa, and studentized confidence intervals
+- ☑ Recognize when each interval method is appropriate
+
+**Jackknife Methods**
+
+- ☑ Compute jackknife standard errors and pseudovalues
+- ☑ Explain connection between jackknife and influence functions
+- ☑ Identify statistics for which jackknife fails (non-smooth functionals)
+- ☑ Use jackknife for bias correction and diagnostics
+
+**Hypothesis Testing**
+
+- ☑ Implement permutation tests and explain exactness under exchangeability
+- ☑ Construct bootstrap hypothesis tests by transforming data under :math:`H_0`
+- ☑ Apply the Phipson-Smyth correction for valid p-values
+- ☑ Choose between permutation and bootstrap tests based on problem structure
+
+**Cross-Validation**
+
+- ☑ Implement K-fold and leave-one-out cross-validation
+- ☑ Use the hat matrix shortcut for LOOCV in linear regression
+- ☑ Explain the bias-variance tradeoff in CV design
+- ☑ Apply nested CV for simultaneous model selection and error estimation
+
+
+Practical Guidance
+------------------
+
+**Best Practices for Resampling Inference**
+
+1. **Start with the right question**: Distinguish estimation (what is :math:`\theta`?) from testing (is :math:`\theta = \theta_0`?) from prediction (how well will my model generalize?). Each question calls for different resampling strategies.
+
+2. **Choose B appropriately**: For standard errors, :math:`B = 500-1000` typically suffices. For confidence intervals, use :math:`B = 2000-5000`. For hypothesis tests, :math:`B \geq 1000` ensures p-value resolution of at least 0.001. When in doubt, increase :math:`B` until the quantity of interest stabilizes.
+
+3. **Report Monte Carlo uncertainty**: The bootstrap SE has its own Monte Carlo error of approximately :math:`\text{SE}_{\text{boot}}/\sqrt{2B}`. For publication-quality results, this should be negligible compared to statistical uncertainty.
+
+4. **Use BCa as your default CI method**: The bias-corrected and accelerated interval achieves second-order accuracy with minimal additional computation (just :math:`n` jackknife values). Reserve studentized intervals for situations requiring maximum accuracy.
+
+5. **Validate parametric assumptions before parametric bootstrap**: If using parametric bootstrap, verify the distributional assumption through residual diagnostics. Model misspecification invalidates the entire procedure.
+
+6. **Resample the right structure**: For regression, choose case resampling (robust, minimal assumptions) or residual resampling (more efficient if model is correct). For time series, use block bootstrap to preserve temporal dependence.
+
+7. **Use nested CV for honest model selection**: When cross-validation is used for both hyperparameter tuning and error estimation, the reported error is optimistically biased. Nested CV separates these tasks.
+
+8. **Prefer permutation tests when applicable**: If exchangeability holds under :math:`H_0`, permutation tests provide exact p-values without asymptotic approximation. They are particularly valuable for small samples.
+
+**Common Pitfalls to Avoid**
+
+.. admonition:: Common Pitfall ⚠️ Data Leakage in Cross-Validation
+   :class: warning
+
+   **Mistake**: Performing feature selection, scaling, or other preprocessing on the full dataset before splitting into folds.
+
+   **Problem**: Information from the test fold leaks into the training process, leading to optimistically biased error estimates. A model may appear to generalize well when it actually overfits.
+
+   **Solution**: All preprocessing steps must occur **inside** each CV fold using only training data. Use scikit-learn's ``Pipeline`` to ensure proper encapsulation:
+
+   .. code-block:: python
+
+      from sklearn.pipeline import Pipeline
+      from sklearn.preprocessing import StandardScaler
+      from sklearn.linear_model import LogisticRegression
+      from sklearn.model_selection import cross_val_score
+
+      # CORRECT: preprocessing inside pipeline
+      pipe = Pipeline([
+          ('scaler', StandardScaler()),
+          ('model', LogisticRegression())
+      ])
+      scores = cross_val_score(pipe, X, y, cv=5)
+
+.. admonition:: Common Pitfall ⚠️ Ignoring Bootstrap Failure Modes
+   :class: warning
+
+   **Mistake**: Blindly applying bootstrap to any statistic without checking validity conditions.
+
+   **Problem**: The bootstrap can fail for:
+   
+   - Statistics at the boundary of parameter space (e.g., variance estimate when true variance is zero)
+   - Non-smooth functionals with small samples (e.g., median with :math:`n < 20`)
+   - Extreme quantiles (bootstrap cannot generate values beyond observed range)
+   - Heavy-tailed distributions where CLT is slow to apply
+
+   **Solution**: Examine the bootstrap distribution for irregularities (bimodality, gaps, extreme skewness). For boundary problems, consider transformations or alternative methods. For extreme quantiles, use parametric bootstrap with appropriate tail modeling.
+
+.. admonition:: Common Pitfall ⚠️ Conflating Statistical and Monte Carlo Uncertainty
+   :class: warning
+
+   **Mistake**: Assuming that increasing :math:`B` to very large values (e.g., :math:`B = 100,000`) meaningfully improves inference.
+
+   **Problem**: Large :math:`B` only reduces Monte Carlo error. The statistical uncertainty from finite sample size :math:`n` remains unchanged. If :math:`n = 30` and :math:`\text{SE}_{\text{boot}} = 0.5`, increasing :math:`B` from 1,000 to 100,000 reduces Monte Carlo CV from ~2% to ~0.2%, but the SE remains 0.5.
+
+   **Solution**: To improve inference precision, collect more data (increase :math:`n`). Use large :math:`B` only to ensure Monte Carlo error is negligible, not to chase false precision.
+
+
+Further Reading: Advanced Resampling Topics
+-------------------------------------------
+
+The resampling foundations developed in this chapter extend to several advanced areas that merit further study.
+
+Dependent Data
+~~~~~~~~~~~~~~
+
+The iid assumption underlying standard bootstrap fails for time series, spatial data, and clustered observations. Several modifications address this:
+
+- **Block bootstrap**: Resample contiguous blocks of observations to preserve local dependence structure. The block length :math:`\ell` trades off bias (short blocks miss long-range dependence) against variance (long blocks yield few independent blocks). The moving block bootstrap, circular block bootstrap, and stationary bootstrap offer different block selection strategies.
+
+- **Sieve bootstrap**: Fit an autoregressive model :math:`X_t = \sum_{j=1}^p \phi_j X_{t-j} + \varepsilon_t`, then resample the residuals :math:`\hat{\varepsilon}_t` and regenerate the series. This parametric approach captures dependence structure efficiently when the AR approximation is adequate.
+
+- **Cluster bootstrap**: When data are grouped (students within schools, patients within hospitals), resample entire clusters rather than individual observations. This preserves within-cluster correlation.
+
+**Connection to Chapter 4**: The multinomial structure of iid bootstrap (Section 4.3) generalizes to block-multinomial for block bootstrap. The effective sample size concept from importance sampling (Chapter 2) helps diagnose block bootstrap performance.
+
+**Recommended Reading**: Lahiri, S. N. (2003). *Resampling Methods for Dependent Data*. Springer. Comprehensive treatment of block bootstrap and related methods.
+
+High-Dimensional Settings
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the number of parameters :math:`p` approaches or exceeds :math:`n`, standard resampling methods require modification:
+
+- **Residual bootstrap for regularized estimators**: For LASSO or ridge regression, resample residuals from the regularized fit rather than cases. The regularization parameter should be re-selected in each bootstrap sample for valid inference.
+
+- **Debiased bootstrap**: Regularized estimators are biased; the standard bootstrap inherits this bias. Debiasing techniques (e.g., for LASSO) combined with bootstrap can provide valid confidence intervals.
+
+- **Subsampling**: Draw subsamples of size :math:`m < n` without replacement. Under weaker conditions than bootstrap, subsampling provides consistent inference, though with reduced efficiency.
+
+**Connection to Chapter 4**: The plug-in principle (Section 4.2) faces challenges when :math:`\hat{F}_n` is a poor approximation in high dimensions. Cross-validation (Section 4.8) becomes essential for selecting regularization parameters.
+
+**Recommended Reading**: Bühlmann, P., and van de Geer, S. (2011). *Statistics for High-Dimensional Data*. Springer. Chapter 6 covers bootstrap in high dimensions.
+
+Bootstrap Model Averaging
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Rather than selecting a single model, bootstrap can average over model uncertainty:
+
+- **Bagging** (Bootstrap AGGregatING): Train models on :math:`B` bootstrap samples; average predictions. This reduces variance for unstable estimators (trees, stepwise selection) at the cost of interpretability.
+
+- **Model selection uncertainty**: The "selected" model varies across bootstrap samples. Examining which variables appear in models across bootstrap replicates quantifies selection stability.
+
+- **Bayesian model averaging connection**: Bootstrap model weights can approximate Bayesian posterior model probabilities under suitable conditions.
+
+**Connection to Chapter 4**: The .632 and .632+ bootstrap estimators (Section 4.8) address prediction error estimation when bagging. The out-of-bag observations (~36.8% excluded from each bootstrap sample) provide "free" validation data.
+
+**Recommended Reading**: Breiman, L. (1996). Bagging predictors. *Machine Learning*, 24(2), 123–140. The foundational paper on bootstrap aggregating.
+
+Conformal Prediction
+~~~~~~~~~~~~~~~~~~~~
+
+A recent development uses resampling ideas for distribution-free prediction intervals:
+
+- **Split conformal**: Hold out a calibration set; compute nonconformity scores (e.g., residual magnitudes); use their quantile to construct prediction intervals with guaranteed finite-sample coverage.
+
+- **Full conformal**: Avoid data splitting by computing leave-one-out nonconformity scores. Computationally expensive but uses data efficiently.
+
+- **Conformalized quantile regression**: Combine quantile regression with conformal calibration for adaptive prediction intervals.
+
+**Connection to Chapter 4**: Conformal prediction generalizes the cross-validation perspective (Section 4.8) to prediction interval construction. The coverage guarantee parallels permutation test exactness (Section 4.6).
+
+**Recommended Reading**: Angelopoulos, A. N., and Bates, S. (2023). Conformal prediction: A gentle introduction. *Foundations and Trends in Machine Learning*, 16(4), 494–591.
+
+
+Final Perspective
+-----------------
+
+The resampling revolution, launched by Efron's 1979 bootstrap paper, fundamentally changed how statisticians think about inference. Before the bootstrap, uncertainty quantification required either distributional assumptions or analytical derivations that were often intractable. The bootstrap offered a third way: **let the computer derive the sampling distribution through simulation**.
+
+This computational approach embodies a profound philosophical shift. Classical statistics asked: "Given a model, what can we derive?" Resampling methods ask: "Given data, what can we learn?" The answer, remarkably, is nearly everything. Standard errors, confidence intervals, hypothesis tests, bias corrections, prediction errors—all become accessible through the simple act of resampling.
+
+The methods form a coherent toolkit:
+
+1. **Bootstrap** for general-purpose inference with minimal assumptions
+2. **Jackknife** for efficient variance estimation of smooth statistics
+3. **Permutation tests** for exact inference under exchangeability
+4. **Cross-validation** for prediction-focused model assessment
+
+These tools are not merely academic—they pervade modern data science. Every machine learning pipeline uses cross-validation. Every uncertainty estimate in complex models relies on bootstrap or its variants. The bootstrap's intellectual descendants (bagging, random forests, conformal prediction) drive much of applied statistics today.
+
+As we move to Bayesian computation in Part III, the resampling perspective remains central. MCMC generates dependent samples from posterior distributions; diagnostics assess convergence and effective sample size. The bootstrap's insight—that simulation can replace derivation—underlies the entire enterprise of computational statistics. Master these fundamentals, and you hold the key to inference in the modern era.
+
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **The Fundamental Target**: The sampling distribution :math:`G` determines all uncertainty measures—bias, variance, MSE, CIs, p-values. Resampling methods estimate :math:`G` when analytical derivation fails.
+
+   2. **The Bootstrap Principle**: Sample with replacement from :math:`\hat{F}_n` to simulate sampling from :math:`F`. Consistency follows from Glivenko-Cantelli; :math:`B = 1000-5000` replicates suffice for most purposes.
+
+   3. **Method Hierarchy**: Percentile CIs are first-order accurate (:math:`O(n^{-1/2})`); BCa and studentized CIs are second-order (:math:`O(n^{-1})`). Use BCa as default; studentized when maximum accuracy is needed.
+
+   4. **Testing vs. Estimation**: Bootstrap for CIs resamples from observed data; bootstrap for testing resamples from data transformed to satisfy :math:`H_0`. This distinction is critical.
+
+   5. **Cross-Validation**: Estimates prediction error at a specific training set size. K-fold (:math:`K = 5-10`) balances bias and variance. LOOCV has low bias but high variance; the hat matrix shortcut makes it :math:`O(np^2)` for linear models.
+
+   6. **Learning Outcome Alignment**: This chapter directly addresses LO 3 (resampling methods for variability, CIs, bias correction). The methods also connect to LO 1 (simulation), LO 4 (Bayesian approximation), and LO 6 (capstone applications).
+
+
+References
+----------
+
+**Foundational Bootstrap Papers**
+
+.. [Efron1979] Efron, B. (1979). Bootstrap methods: Another look at the jackknife. *The Annals of Statistics*, 7(1), 1–26.
+
+.. [EfronTibshirani1993] Efron, B., and Tibshirani, R. J. (1993). *An Introduction to the Bootstrap*. Chapman & Hall/CRC.
+
+**Confidence Interval Theory**
+
+.. [Hall1988] Hall, P. (1988). Theoretical comparison of bootstrap confidence intervals. *The Annals of Statistics*, 16(3), 927–953.
+
+.. [DiCiccioEfron1996] DiCiccio, T. J., and Efron, B. (1996). Bootstrap confidence intervals. *Statistical Science*, 11(3), 189–228.
+
+**Jackknife Methods**
+
+.. [Quenouille1949] Quenouille, M. H. (1949). Approximate tests of correlation in time-series. *Journal of the Royal Statistical Society: Series B*, 11(1), 68–84.
+
+.. [Tukey1958] Tukey, J. W. (1958). Bias and confidence in not quite large samples. *The Annals of Mathematical Statistics*, 29, 614.
+
+**Permutation and Hypothesis Testing**
+
+.. [Fisher1935] Fisher, R. A. (1935). *The Design of Experiments*. Oliver & Boyd.
+
+.. [PhipsonSmyth2010] Phipson, B., and Smyth, G. K. (2010). Permutation p-values should never be zero. *Statistical Applications in Genetics and Molecular Biology*, 9(1), Article 39.
+
+**Cross-Validation**
+
+.. [Stone1974] Stone, M. (1974). Cross-validatory choice and assessment of statistical predictions. *Journal of the Royal Statistical Society: Series B*, 36(2), 111–147.
+
+.. [Efron1983] Efron, B. (1983). Estimating the error rate of a prediction rule: Improvement on cross-validation. *Journal of the American Statistical Association*, 78(382), 316–331.
+
+.. [EfronTibshirani1997] Efron, B., and Tibshirani, R. (1997). Improvements on cross-validation: The .632+ bootstrap method. *Journal of the American Statistical Association*, 92(438), 548–560.
+
+**Modern References**
+
+.. [EfronHastie2016] Efron, B., and Hastie, T. (2016). *Computer Age Statistical Inference*. Cambridge University Press.
+
+.. [DavisonHinkley1997] Davison, A. C., and Hinkley, D. V. (1997). *Bootstrap Methods and their Application*. Cambridge University Press.
+
+.. [VanDerVaart1998] van der Vaart, A. W. (1998). *Asymptotic Statistics*. Cambridge University Press.
