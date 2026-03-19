@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROPE & HDI Decision Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.05);
+            border-radius: 24px;
+            padding: 36px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.2em;
+            margin-bottom: 6px;
+            background: linear-gradient(45deg, #778da9, #e0e1dd, #778da9);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 4s ease infinite;
+        }
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.55);
+            font-size: 1.0em;
+            margin-bottom: 28px;
+        }
+        @keyframes shine { to { background-position: 200% center; } }
+
+        /* ── Info banner ── */
+        .info-panel {
+            background: rgba(119,141,169,0.12);
+            border: 1px solid rgba(119,141,169,0.35);
+            border-radius: 14px;
+            padding: 16px 22px;
+            margin-bottom: 26px;
+            cursor: pointer;
+            transition: background 0.3s;
+            font-size: 0.97em;
+            line-height: 1.6;
+        }
+        .info-panel:hover { background: rgba(119,141,169,0.20); }
+        .info-expand { color: #778da9; font-size: 0.85em; margin-top: 6px; }
+
+        /* ── Layout ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+            margin-bottom: 22px;
+        }
+
+        .canvas-wrap {
+            background: rgba(0,0,0,0.3);
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 16px;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        /* ── Controls panel ── */
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .ctrl-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 14px;
+            padding: 18px;
+        }
+        .ctrl-card h3 {
+            font-size: 0.88em;
+            font-weight: 600;
+            color: #778da9;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-bottom: 14px;
+        }
+
+        .ctrl-row {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .ctrl-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .ctrl-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.82em;
+            color: rgba(255,255,255,0.65);
+        }
+        .ctrl-val {
+            font-weight: 600;
+            color: #e0e1dd;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.12);
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .slider-blue::-webkit-slider-thumb {
+            background: #4cc9f0;
+            box-shadow: 0 0 8px rgba(76,201,240,0.5);
+        }
+        .slider-blue::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+            box-shadow: 0 0 16px rgba(76,201,240,0.8);
+        }
+        .slider-orange::-webkit-slider-thumb {
+            background: #f4a261;
+            box-shadow: 0 0 8px rgba(244,162,97,0.5);
+        }
+        .slider-orange::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+            box-shadow: 0 0 16px rgba(244,162,97,0.8);
+        }
+        .slider-green::-webkit-slider-thumb {
+            background: #57cc99;
+            box-shadow: 0 0 8px rgba(87,204,153,0.5);
+        }
+        .slider-green::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+            box-shadow: 0 0 16px rgba(87,204,153,0.8);
+        }
+
+        /* ── Decision badge ── */
+        .decision-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 1.05em;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-align: center;
+            transition: all 0.4s;
+            min-height: 56px;
+        }
+        .badge-undecided {
+            background: rgba(244,162,97,0.18);
+            border: 2px solid rgba(244,162,97,0.6);
+            color: #f4a261;
+        }
+        .badge-reject {
+            background: rgba(87,204,153,0.18);
+            border: 2px solid rgba(87,204,153,0.6);
+            color: #57cc99;
+        }
+        .badge-accept {
+            background: rgba(76,201,240,0.18);
+            border: 2px solid rgba(76,201,240,0.6);
+            color: #4cc9f0;
+        }
+
+        /* ── Stat cards ── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+            transition: border-color 0.3s;
+        }
+        .stat-val {
+            font-size: 1.5em;
+            font-weight: 700;
+            background: linear-gradient(45deg, #4cc9f0, #a8dadc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-lbl {
+            font-size: 0.75em;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-top: 4px;
+        }
+
+        /* ── Reset button ── */
+        .btn-reset {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid rgba(119,141,169,0.4);
+            border-radius: 10px;
+            background: rgba(119,141,169,0.1);
+            color: #e0e1dd;
+            font-size: 0.88em;
+            cursor: pointer;
+            transition: all 0.25s;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn-reset:hover {
+            background: rgba(119,141,169,0.22);
+            border-color: #778da9;
+        }
+
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <h1>ROPE &amp; HDI Decision Dashboard</h1>
+    <p class="subtitle">How posterior width, effect size, and ROPE boundaries drive Bayesian decisions</p>
+
+    <div class="info-panel" id="infoPanel">
+        <p>Adjust the posterior (via <strong>n</strong> and <strong>k/n</strong>) and the ROPE boundaries to see how the HDI–ROPE relationship changes the decision in real time.</p>
+        <p class="info-expand">▾ click for more detail</p>
+    </div>
+
+    <div class="main-grid">
+
+        <!-- Posterior plot -->
+        <div class="canvas-wrap">
+            <canvas id="c" height="380"></canvas>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-panel">
+
+            <!-- Posterior controls -->
+            <div class="ctrl-card">
+                <h3>Posterior (Beta conjugate)</h3>
+                <div class="ctrl-row">
+                    <div class="ctrl-item">
+                        <div class="ctrl-label">
+                            <span>Sample size <em>n</em></span>
+                            <span class="ctrl-val" id="lbl-n">20</span>
+                        </div>
+                        <input type="range" id="sl-n" class="slider-blue"
+                               min="4" max="300" step="1" value="20">
+                    </div>
+                    <div class="ctrl-item">
+                        <div class="ctrl-label">
+                            <span>Observed proportion <em>k/n</em></span>
+                            <span class="ctrl-val" id="lbl-p">0.750</span>
+                        </div>
+                        <input type="range" id="sl-p" class="slider-blue"
+                               min="0.10" max="0.95" step="0.01" value="0.75">
+                    </div>
+                    <div class="ctrl-item">
+                        <div class="ctrl-label">
+                            <span>Prior: Beta(α₀, β₀) — each</span>
+                            <span class="ctrl-val" id="lbl-a0">1</span>
+                        </div>
+                        <input type="range" id="sl-a0" class="slider-blue"
+                               min="0.5" max="15" step="0.5" value="1">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROPE controls -->
+            <div class="ctrl-card">
+                <h3>ROPE</h3>
+                <div class="ctrl-row">
+                    <div class="ctrl-item">
+                        <div class="ctrl-label">
+                            <span>ROPE centre θ₀</span>
+                            <span class="ctrl-val" id="lbl-rc">0.55</span>
+                        </div>
+                        <input type="range" id="sl-rc" class="slider-orange"
+                               min="0.10" max="0.90" step="0.01" value="0.55">
+                    </div>
+                    <div class="ctrl-item">
+                        <div class="ctrl-label">
+                            <span>ROPE half-width ε</span>
+                            <span class="ctrl-val" id="lbl-rw">0.100</span>
+                        </div>
+                        <input type="range" id="sl-rw" class="slider-orange"
+                               min="0.01" max="0.25" step="0.005" value="0.10">
+                    </div>
+                </div>
+            </div>
+
+            <!-- HDI level -->
+            <div class="ctrl-card">
+                <h3>HDI Coverage</h3>
+                <div class="ctrl-item">
+                    <div class="ctrl-label">
+                        <span>Level</span>
+                        <span class="ctrl-val" id="lbl-hdi">95%</span>
+                    </div>
+                    <input type="range" id="sl-hdi" class="slider-green"
+                           min="0.50" max="0.99" step="0.01" value="0.95">
+                </div>
+            </div>
+
+            <!-- Decision output -->
+            <div class="decision-badge badge-undecided" id="decisionBadge">
+                —
+            </div>
+
+            <button class="btn-reset" id="resetBtn">↺ Reset defaults</button>
+
+        </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-val" id="sv-post-mean">—</div>
+            <div class="stat-lbl">Posterior mean</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sv-hdi">—</div>
+            <div class="stat-lbl">HDI bounds</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sv-prope">—</div>
+            <div class="stat-lbl">P(in ROPE)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sv-pabove">—</div>
+            <div class="stat-lbl">P(above ROPE)</div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ── Regularised incomplete beta (for Beta CDF) ──────────────────────────────
+// Lanczos-free iterative continued fraction via `betainc` approximation.
+// For a teaching tool we use numerical integration (Simpson) over the PDF —
+// accurate enough and transparent.
+function betaPDF(x, a, b) {
+    // log beta function via log-gamma (Stirling-based approx)
+    function lgamma(z) {
+        // Lanczos approximation, g=7, n=9
+        const g = 7;
+        const c = [0.99999999999980993,676.5203681218851,-1259.1392167224028,
+                   771.32342877765313,-176.61502916214059,12.507343278686905,
+                   -0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+        if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - lgamma(1 - z);
+        z -= 1;
+        let x = c[0];
+        for (let i = 1; i < g + 2; i++) x += c[i] / (z + i);
+        const t = z + g + 0.5;
+        return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+    }
+    const logB = lgamma(a) + lgamma(b) - lgamma(a + b);
+    if (x <= 0 || x >= 1) return 0;
+    return Math.exp((a - 1) * Math.log(x) + (b - 1) * Math.log(1 - x) - logB);
+}
+
+function betaCDF(x, a, b, nSteps = 400) {
+    // Simpson integration of Beta PDF from 0 to x
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    const h = x / nSteps;
+    let sum = betaPDF(0, a, b) + betaPDF(x, a, b);
+    for (let i = 1; i < nSteps; i++) {
+        const v = betaPDF(i * h, a, b);
+        sum += (i % 2 === 0) ? 2 * v : 4 * v;
+    }
+    return (h / 3) * sum;
+}
+
+function betaQuantile(p, a, b, tol = 1e-6) {
+    // Bisection on Beta CDF
+    let lo = 1e-8, hi = 1 - 1e-8;
+    for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (betaCDF(mid, a, b) < p) lo = mid; else hi = mid;
+        if (hi - lo < tol) break;
+    }
+    return (lo + hi) / 2;
+}
+
+function computeHDI(a, b, level, nGrid = 2000) {
+    // Bounds via betaQuantile (bisection) — called twice only per frame
+    const lo = betaQuantile(0.0001, a, b);
+    const hi = betaQuantile(0.9999, a, b);
+    const dx = (hi - lo) / (nGrid - 1);
+
+    // Typed arrays: contiguous memory, no GC pressure per frame
+    const theta = new Float64Array(nGrid);
+    const cdf   = new Float64Array(nGrid);
+
+    // Single-pass trapezoidal accumulation: O(nGrid) PDF evaluations total.
+    // One betaCDF call for the left-tail offset, then pure trapezoid accumulation.
+    // Previously: nGrid * nSteps = 2000 * 400 = 800,000 PDF evals per frame.
+    // Now: nGrid = 2000 PDF evals per frame — a 400x reduction.
+    let runningSum = betaCDF(lo, a, b);
+    let prevPdf    = betaPDF(lo, a, b);
+    theta[0] = lo;
+    cdf[0]   = runningSum;
+
+    for (let i = 1; i < nGrid; i++) {
+        const t       = lo + i * dx;
+        const currPdf = betaPDF(t, a, b);
+        runningSum   += (prevPdf + currPdf) * 0.5 * dx;
+        theta[i]      = t;
+        cdf[i]        = runningSum;
+        prevPdf       = currPdf;
+    }
+
+    // Two-pointer sliding-window HDI search: O(nGrid)
+    let bestWidth = Infinity, bestLo = lo, bestHi = hi;
+    let j = 0;
+    for (let i = 0; i < nGrid; i++) {
+        while (j < nGrid - 1 && cdf[j] - cdf[i] < level) j++;
+        if (cdf[j] - cdf[i] >= level) {
+            const w = theta[j] - theta[i];
+            if (w < bestWidth) { bestWidth = w; bestLo = theta[i]; bestHi = theta[j]; }
+        }
+    }
+    return [bestLo, bestHi];
+}
+
+// ── Canvas drawing ──────────────────────────────────────────────────────────
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d');
+
+const BLUE   = '#4cc9f0';
+const ORANGE = '#f4a261';
+const GREEN  = '#57cc99';
+const GRAY   = 'rgba(255,255,255,0.3)';
+const LIGHT  = 'rgba(255,255,255,0.55)';
+
+function toPixX(x, xMin, xMax, pl, W, pr) {
+    return pl + (x - xMin) / (xMax - xMin) * (W - pl - pr);
+}
+function toPixY(y, yMax, pt, H, pb) {
+    return pt + (1 - y / yMax) * (H - pt - pb);
+}
+
+function draw() {
+    const n   = parseInt(document.getElementById('sl-n').value);
+    const mle = parseFloat(document.getElementById('sl-p').value);
+    const a0  = parseFloat(document.getElementById('sl-a0').value);
+    const rc  = parseFloat(document.getElementById('sl-rc').value);
+    const rw  = parseFloat(document.getElementById('sl-rw').value);
+    const hdl = parseFloat(document.getElementById('sl-hdi').value);
+
+    const k   = Math.round(mle * n);
+    const aN  = a0 + k;
+    const bN  = a0 + (n - k);
+    const postMean = aN / (aN + bN);
+    const rope_lo = Math.max(0.001, rc - rw);
+    const rope_hi = Math.min(0.999, rc + rw);
+
+    // HDI
+    const [hdi_lo, hdi_hi] = computeHDI(aN, bN, hdl);
+
+    // Probabilities
+    const p_rope  = betaCDF(rope_hi, aN, bN) - betaCDF(rope_lo, aN, bN);
+    const p_below = betaCDF(rope_lo, aN, bN);
+    const p_above = 1 - betaCDF(rope_hi, aN, bN);
+
+    // Decision
+    const hdi_in_rope  = hdi_lo >= rope_lo && hdi_hi <= rope_hi;
+    const hdi_out_rope = hdi_lo >= rope_hi || hdi_hi <= rope_lo;
+    let decision, badgeClass, badgeText;
+    if (hdi_in_rope) {
+        decision = 'accept'; badgeClass = 'badge-accept';
+        badgeText = '✓ Accept H₀ — HDI inside ROPE';
+    } else if (hdi_out_rope) {
+        decision = 'reject'; badgeClass = 'badge-reject';
+        badgeText = '✗ Reject H₀ — HDI outside ROPE';
+    } else {
+        decision = 'undecided'; badgeClass = 'badge-undecided';
+        badgeText = '⊘ Undecided — HDI overlaps ROPE';
+    }
+
+    // ── Draw ──────────────────────────────────────────────────────────────
+    const W = cvs.offsetWidth; cvs.width = W; cvs.height = 380;
+    const H = 380, pl = 54, pr = 18, pt = 18, pb = 42;
+
+    // Build PDF curve
+    const NX = 400;
+    const xs = [], ys = [];
+    for (let i = 0; i <= NX; i++) {
+        const x = 0.001 + 0.998 * i / NX;
+        xs.push(x); ys.push(betaPDF(x, aN, bN));
+    }
+    const yMax = Math.max(...ys) * 1.12;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 5; i++) {
+        const gy = pt + (H - pt - pb) * i / 5;
+        ctx.beginPath(); ctx.moveTo(pl, gy); ctx.lineTo(W - pr, gy); ctx.stroke();
+    }
+
+    // ROPE shading
+    const rx0 = toPixX(rope_lo, 0, 1, pl, W, pr);
+    const rx1 = toPixX(rope_hi, 0, 1, pl, W, pr);
+    ctx.fillStyle = 'rgba(244,162,97,0.12)';
+    ctx.fillRect(rx0, pt, rx1 - rx0, H - pt - pb);
+    ctx.strokeStyle = ORANGE; ctx.lineWidth = 1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(rx0, pt); ctx.lineTo(rx0, H - pb); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx1, pt); ctx.lineTo(rx1, H - pb); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Posterior fill
+    ctx.beginPath();
+    ctx.moveTo(toPixX(xs[0], 0, 1, pl, W, pr), H - pb);
+    xs.forEach((x, i) => {
+        ctx.lineTo(toPixX(x, 0, 1, pl, W, pr), toPixY(ys[i], yMax, pt, H, pb));
+    });
+    ctx.lineTo(toPixX(xs[NX], 0, 1, pl, W, pr), H - pb);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(76,201,240,0.15)'; ctx.fill();
+
+    // Posterior curve
+    ctx.beginPath();
+    xs.forEach((x, i) => {
+        const px = toPixX(x, 0, 1, pl, W, pr);
+        const py = toPixY(ys[i], yMax, pt, H, pb);
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    });
+    ctx.strokeStyle = BLUE; ctx.lineWidth = 2.8; ctx.stroke();
+
+    // HDI bracket
+    const decColor = decision === 'reject' ? GREEN : decision === 'accept' ? BLUE : ORANGE;
+    const hx0 = toPixX(hdi_lo, 0, 1, pl, W, pr);
+    const hx1 = toPixX(hdi_hi, 0, 1, pl, W, pr);
+    const yBrac = H - pb + 14;
+    ctx.strokeStyle = decColor; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(hx0, yBrac); ctx.lineTo(hx1, yBrac);
+    ctx.moveTo(hx0, yBrac - 5); ctx.lineTo(hx0, yBrac + 5);
+    ctx.moveTo(hx1, yBrac - 5); ctx.lineTo(hx1, yBrac + 5);
+    ctx.stroke();
+
+    // HDI label
+    ctx.fillStyle = decColor; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(`${(hdl*100).toFixed(0)}% HDI`, (hx0+hx1)/2, yBrac + 16);
+    ctx.fillText(hdi_lo.toFixed(3), hx0, yBrac - 8);
+    ctx.fillText(hdi_hi.toFixed(3), hx1, yBrac - 8);
+
+    // ROPE label
+    ctx.fillStyle = ORANGE; ctx.textAlign = 'center';
+    ctx.fillText(`ROPE [${rope_lo.toFixed(2)}, ${rope_hi.toFixed(2)}]`,
+                 (rx0 + rx1) / 2, pt + 14);
+
+    // Posterior mean marker
+    const mx = toPixX(postMean, 0, 1, pl, W, pr);
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(mx, pt); ctx.lineTo(mx, H - pb); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Axis
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pl, pt); ctx.lineTo(pl, H - pb); ctx.lineTo(W - pr, H - pb);
+    ctx.stroke();
+
+    // X ticks
+    ctx.fillStyle = LIGHT; ctx.font = '11px system-ui'; ctx.textAlign = 'center';
+    for (let v = 0; v <= 1; v += 0.1) {
+        const px = toPixX(v, 0, 1, pl, W, pr);
+        ctx.fillText(v.toFixed(1), px, H - pb + 14);
+    }
+    ctx.fillText('θ  (parameter)', pl + (W - pl - pr) / 2, H - 4);
+
+    // Y ticks
+    ctx.textAlign = 'right'; ctx.font = '10px system-ui';
+    for (let i = 0; i <= 4; i++) {
+        const yv = yMax * i / 4;
+        const py = toPixY(yv, yMax, pt, H, pb);
+        ctx.fillText(yv.toFixed(1), pl - 6, py + 4);
+    }
+    ctx.save(); ctx.translate(14, pt + (H - pt - pb) / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillText('Posterior density', 0, 0); ctx.restore();
+
+    // Beta label
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '11px system-ui';
+    ctx.textAlign = 'right';
+    ctx.fillText(`Beta(${aN.toFixed(1)}, ${bN.toFixed(1)})  |  k=${k}, n=${n}`,
+                 W - pr, pt + 14);
+
+    // ── Update DOM ───────────────────────────────────────────────────────
+    const badge = document.getElementById('decisionBadge');
+    badge.textContent = badgeText;
+    badge.className = 'decision-badge ' + badgeClass;
+
+    document.getElementById('sv-post-mean').textContent = postMean.toFixed(4);
+    document.getElementById('sv-hdi').textContent =
+        `(${hdi_lo.toFixed(3)}, ${hdi_hi.toFixed(3)})`;
+    document.getElementById('sv-prope').textContent  = (p_rope  * 100).toFixed(1) + '%';
+    document.getElementById('sv-pabove').textContent = (p_above * 100).toFixed(1) + '%';
+}
+
+// ── Slider bindings ──────────────────────────────────────────────────────────
+function bind(id, labelId, fmt) {
+    const el = document.getElementById(id);
+    const lb = document.getElementById(labelId);
+    el.addEventListener('input', () => {
+        lb.textContent = fmt(parseFloat(el.value));
+        draw();
+    });
+}
+bind('sl-n',   'lbl-n',   v => Math.round(v));
+bind('sl-p',   'lbl-p',   v => v.toFixed(3));
+bind('sl-a0',  'lbl-a0',  v => v.toFixed(1));
+bind('sl-rc',  'lbl-rc',  v => v.toFixed(2));
+bind('sl-rw',  'lbl-rw',  v => v.toFixed(3));
+bind('sl-hdi', 'lbl-hdi', v => (v*100).toFixed(0) + '%');
+
+// ── Reset ───────────────────────────────────────────────────────────────────
+document.getElementById('resetBtn').addEventListener('click', () => {
+    document.getElementById('sl-n').value   = 20;
+    document.getElementById('sl-p').value   = 0.75;
+    document.getElementById('sl-a0').value  = 1;
+    document.getElementById('sl-rc').value  = 0.55;
+    document.getElementById('sl-rw').value  = 0.10;
+    document.getElementById('sl-hdi').value = 0.95;
+    document.getElementById('lbl-n').textContent   = '20';
+    document.getElementById('lbl-p').textContent   = '0.750';
+    document.getElementById('lbl-a0').textContent  = '1';
+    document.getElementById('lbl-rc').textContent  = '0.55';
+    document.getElementById('lbl-rw').textContent  = '0.100';
+    document.getElementById('lbl-hdi').textContent = '95%';
+    draw();
+});
+
+// ── Info panel ───────────────────────────────────────────────────────────────
+document.getElementById('infoPanel').addEventListener('click', function () {
+    const open = this.dataset.open === '1';
+    if (!open) {
+        this.innerHTML = `
+<p>This dashboard connects the posterior distribution, the HDI, and the ROPE to the three-outcome Bayesian decision rule.</p>
+<br>
+<p><strong>Posterior:</strong>  Beta(α₀+k, α₀+(n−k))  where k = round(k/n × n). Drag <em>n</em> to change width; drag <em>k/n</em> to shift location.</p>
+<p><strong>ROPE:</strong>  [θ₀ − ε, θ₀ + ε] — the region of practical equivalence. Drag the centre θ₀ and half-width ε.</p>
+<p><strong>Decision rules:</strong></p>
+<ul style="padding-left:1.5em; line-height:2">
+  <li>HDI entirely <em>inside</em> ROPE → <span style="color:#4cc9f0">Accept H₀</span> (effect is negligible)</li>
+  <li>HDI entirely <em>outside</em> ROPE → <span style="color:#57cc99">Reject H₀</span> (effect is meaningful)</li>
+  <li>HDI <em>overlaps</em> ROPE → <span style="color:#f4a261">Undecided</span> (collect more data)</li>
+</ul>
+<p>Notice that increasing <em>n</em> shrinks the HDI, eventually forcing one of the first two decisions. The ROPE half-width ε encodes the smallest effect that matters — a scientific judgment, not a statistical one.</p>
+<p class="info-expand">▴ click to collapse</p>`;
+        this.dataset.open = '1';
+    } else {
+        this.innerHTML = `<p>Adjust the posterior (via <strong>n</strong> and <strong>k/n</strong>) and the ROPE boundaries to see how the HDI–ROPE relationship changes the decision in real time.</p><p class="info-expand">▾ click for more detail</p>`;
+        this.dataset.open = '0';
+    }
+});
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+    const sl = document.getElementById('sl-n');
+    if (e.key === 'ArrowRight') {
+        sl.value = Math.min(300, parseInt(sl.value) + 5);
+        document.getElementById('lbl-n').textContent = sl.value;
+        draw();
+    } else if (e.key === 'ArrowLeft') {
+        sl.value = Math.max(4, parseInt(sl.value) - 5);
+        document.getElementById('lbl-n').textContent = sl.value;
+        draw();
+    } else if (e.key === 'r' || e.key === 'R') {
+        document.getElementById('resetBtn').click();
+    }
+});
+
+window.addEventListener('load', () => { cvs.width = cvs.offsetWidth; draw(); });
+window.addEventListener('resize', draw);
+</script>
+</body>
+</html>
