@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leave-One-Out Leverage Explorer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:        #0f1117;
+    --bg2:       #181c27;
+    --bg3:       #1e2333;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.13);
+    --text:      #e8eaf0;
+    --muted:     rgba(232,234,240,0.45);
+    --blue:      #4fa3e0;
+    --blue-dim:  rgba(79,163,224,0.15);
+    --coral:     #e07060;
+    --coral-dim: rgba(224,112,96,0.15);
+    --good:      #52b788;
+    --ok:        #f4a261;
+    --bad:       #e07060;
+    --vbad:      #c1440e;
+    --good-dim:  rgba(82,183,136,0.12);
+    --ok-dim:    rgba(244,162,97,0.12);
+    --bad-dim:   rgba(224,112,96,0.12);
+    --vbad-dim:  rgba(193,68,14,0.12);
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-weight: 300;
+    min-height: 100vh;
+    padding: 2rem 1.5rem;
+  }
+
+  .shell {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ─────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+    padding-bottom: 1rem;
+    border-bottom: 0.5px solid var(--border2);
+  }
+  .header-left h1 {
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -0.3px;
+    margin-bottom: 4px;
+  }
+  .header-left p {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+    line-height: 1.6;
+  }
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 0.5px solid var(--border2);
+    border-radius: 3px;
+    color: var(--muted);
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  /* ── Data strip ─────────────────────────────── */
+  .strip-wrap {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px 10px;
+    margin-bottom: 14px;
+  }
+  .strip-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── Controls ───────────────────────────────── */
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .ctrl-card {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .ctrl-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .ctrl-label span {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    font-family: var(--mono);
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    outline: none;
+    margin-bottom: 6px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+    border: none;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    cursor: pointer;
+    border: none;
+  }
+  .ctrl-hint {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+    line-height: 1.5;
+  }
+
+  /* ── Main panels ────────────────────────────── */
+  .panels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .panel {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .panel-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 4px;
+  }
+  .panel-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+
+  /* ── Metrics row ────────────────────────────── */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .metric {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .metric-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric-value {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text);
+    transition: color 0.3s;
+  }
+
+  /* ── k gauge ────────────────────────────────── */
+  .gauge-wrap {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .gauge-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .gauge-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .gauge-kval {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 500;
+    transition: color 0.3s;
+  }
+  .gauge-bar {
+    height: 6px;
+    border-radius: 3px;
+    position: relative;
+    background: linear-gradient(to right,
+      var(--good) 0%, var(--good) 33.3%,
+      var(--ok) 33.3%, var(--ok) 46.7%,
+      var(--bad) 46.7%, var(--bad) 66.7%,
+      var(--vbad) 66.7%, var(--vbad) 100%);
+    margin-bottom: 6px;
+  }
+  .gauge-marker {
+    position: absolute;
+    top: -5px;
+    width: 3px;
+    height: 16px;
+    background: var(--text);
+    border-radius: 1.5px;
+    transform: translateX(-50%);
+    transition: left 0.25s cubic-bezier(0.4,0,0.2,1);
+    left: 0%;
+  }
+  .gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── Message ────────────────────────────────── */
+  .message {
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.7;
+    font-family: var(--mono);
+    transition: background 0.3s, color 0.3s, border-color 0.3s;
+    border: 0.5px solid transparent;
+    min-height: 20px;
+  }
+
+  canvas { display: block; width: 100%; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Leave-One-Out Leverage Explorer</h1>
+      <p>Gamma–Poisson conjugate model &nbsp;·&nbsp; prior: λ ~ Gamma(α₀, α₀/5) &nbsp;·&nbsp; 2 000 posterior draws</p>
+    </div>
+    <div class="badge">STAT 418 · §5.7</div>
+  </div>
+
+  <!-- Data strip -->
+  <div class="strip-wrap">
+    <div class="strip-label">
+      <span>observed species counts &nbsp;(n = 15 total)</span>
+      <span style="color:var(--coral)">coral ▲ = focus observation y₀</span>
+    </div>
+    <canvas id="c-strip" height="58"></canvas>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="ctrl-card">
+      <div class="ctrl-label">Focus count y₀ <span id="out-yf">5</span></div>
+      <input type="range" id="sl-yf" min="0" max="25" step="1" value="5">
+      <div class="ctrl-hint">background mean = 5.0 · range 3–8 · drag toward 20–25 to see LOO fail</div>
+    </div>
+    <div class="ctrl-card">
+      <div class="ctrl-label">Prior strength α₀ <span id="out-a0">4</span></div>
+      <input type="range" id="sl-a0" min="2" max="40" step="1" value="4">
+      <div class="ctrl-hint" id="prior-hint">prior mean = 5.0 · prior SD ≈ 2.50 (weak)</div>
+    </div>
+  </div>
+
+  <!-- Main panels -->
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-title">Posterior distribution of λ</div>
+      <div class="panel-sub">
+        <span style="color:var(--blue)">— full (n=15)</span>
+        &ensp;
+        <span style="color:var(--coral)">– – loo (n=14)</span>
+        &ensp;
+        <span style="opacity:0.5">dashed lines = posterior means</span>
+      </div>
+      <canvas id="c-post" height="195"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Importance weights (2 000 draws, sorted)</div>
+      <div class="panel-sub">Uniform = reliable LOO &nbsp;·&nbsp; Spiky = LOO breaks down</div>
+      <canvas id="c-wts" height="195"></canvas>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">μ full</div>
+      <div class="metric-value" id="m-mf">5.000</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">μ loo</div>
+      <div class="metric-value" id="m-ml">5.000</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">|Δμ| shift</div>
+      <div class="metric-value" id="m-sh">0.000</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">ESS / 2000</div>
+      <div class="metric-value" id="m-ess">2000</div>
+    </div>
+  </div>
+
+  <!-- k gauge -->
+  <div class="gauge-wrap">
+    <div class="gauge-header">
+      <span class="gauge-title">Pareto-k̂ diagnostic</span>
+      <span class="gauge-kval" id="k-val">0.000</span>
+    </div>
+    <div class="gauge-bar">
+      <div class="gauge-marker" id="k-mk"></div>
+    </div>
+    <div class="gauge-labels">
+      <span>0 · good</span>
+      <span>0.5 · ok</span>
+      <span>0.7 · bad</span>
+      <span>1.0 · very bad</span>
+      <span>1.5+</span>
+    </div>
+  </div>
+
+  <!-- Message -->
+  <div class="message" id="msg"></div>
+
+</div><!-- .shell -->
+
+<script>
+(function(){
+'use strict';
+
+// ── Color constants ─────────────────────────────────────────────
+const C = {
+  blue:  '#4fa3e0',
+  coral: '#e07060',
+  good:  '#52b788',
+  ok:    '#f4a261',
+  bad:   '#e07060',
+  vbad:  '#c1440e',
+  muted: 'rgba(232,234,240,0.4)',
+  grid:  'rgba(255,255,255,0.04)',
+  axis:  'rgba(255,255,255,0.18)',
+  text:  '#e8eaf0',
+};
+
+// ── Seeded PRNG (mulberry32) ────────────────────────────────────
+function mkRNG(seed){
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Box-Muller standard normal
+function mkNorm(rng){
+  let spare = null;
+  return () => {
+    if(spare !== null){ const v = spare; spare = null; return v; }
+    let u, v, s;
+    do { u = rng()*2-1; v = rng()*2-1; s = u*u+v*v; } while(s >= 1 || s === 0);
+    const f = Math.sqrt(-2 * Math.log(s) / s);
+    spare = v * f;
+    return u * f;
+  };
+}
+
+// Marsaglia-Tsang Gamma sampler (rate parameterisation: mean = alpha/beta)
+function mkGamma(rng, norm){
+  function gam(a){
+    if(a < 1) return gam(a + 1) * Math.pow(rng(), 1/a);
+    const d = a - 1/3, c = 1 / Math.sqrt(9*d);
+    for(;;){
+      let x, v;
+      do { x = norm(); v = 1 + c*x; } while(v <= 0);
+      v = v*v*v;
+      const u = rng();
+      if(u < 1 - 0.0331*(x*x)*(x*x)) return d*v;
+      if(Math.log(u) < 0.5*x*x + d*(1-v+Math.log(v))) return d*v;
+    }
+  }
+  return (a, b) => gam(a) / b;
+}
+
+// Lanczos lgamma
+function lgam(x){
+  const p = [676.5203681218851,-1259.1392167224028,771.32342877765313,
+    -176.61502916214059,12.507343278686905,-0.13857109526572012,
+    9.9843695780195716e-6,1.5056327351493116e-7];
+  x -= 1;
+  let a = 0.99999999999980993;
+  const t = x + 7.5;
+  for(let i = 0; i < 8; i++) a += p[i] / (x + i + 1);
+  return 0.5*Math.log(2*Math.PI) + (x+0.5)*Math.log(t) - t + Math.log(a);
+}
+
+function log_gamma_pdf(x, a, b){
+  if(x <= 0) return -Infinity;
+  return a*Math.log(b) - lgam(a) + (a-1)*Math.log(x) - b*x;
+}
+
+// ── Fixed data ──────────────────────────────────────────────────
+const BG    = [4,6,5,7,3,5,4,6,5,4,7,5,3,6]; // 14 background obs
+const N_BG  = BG.length;                       // 14
+const SUM   = BG.reduce((a,b) => a+b, 0);      // 70
+const S     = 2000;                            // posterior samples
+
+// ── Canvas setup ────────────────────────────────────────────────
+function prep(id, h){
+  const c = document.getElementById(id);
+  const dpr = window.devicePixelRatio || 1;
+  const W = c.parentElement.clientWidth - 28; // card padding
+  c.width  = Math.round(W * dpr);
+  c.height = Math.round(h * dpr);
+  c.style.width  = W + 'px';
+  c.style.height = h + 'px';
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W, H: h };
+}
+
+// ── Draw: data strip ────────────────────────────────────────────
+function drawStrip(yf){
+  const { ctx, W, H } = prep('c-strip', 58);
+  ctx.clearRect(0, 0, W, H);
+  const all = [...BG, yf];
+  const n   = all.length;
+  const maxV = Math.max(...all) + 0.5;
+  const PX = 4, PB = 16;
+  const step = (W - PX*2) / (n + 1);
+  const scaleH = (H - PB - 4) / maxV;
+
+  // mean reference line
+  const refY = H - PB - 5 * scaleH;
+  ctx.strokeStyle = 'rgba(79,163,224,0.25)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(PX, refY); ctx.lineTo(W - PX, refY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(79,163,224,0.4)';
+  ctx.font = '9px IBM Plex Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('μ = 5', PX + 2, refY - 3);
+
+  all.forEach((v, i) => {
+    const cx  = PX + (i + 1) * step;
+    const bh  = v * scaleH;
+    const by  = H - PB - bh;
+    const isF = (i === n - 1);
+
+    if(isF){
+      // Coral filled bar
+      ctx.fillStyle = 'rgba(224,112,96,0.7)';
+      ctx.fillRect(cx - 7, by, 14, bh);
+      // Triangle
+      ctx.fillStyle = C.coral;
+      ctx.beginPath();
+      ctx.moveTo(cx, by - 10);
+      ctx.lineTo(cx - 6, by - 2);
+      ctx.lineTo(cx + 6, by - 2);
+      ctx.closePath();
+      ctx.fill();
+      // count label
+      ctx.fillStyle = C.coral;
+      ctx.font = 'bold 10px IBM Plex Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(v, cx, H - 2);
+    } else {
+      // Grey bar
+      const a = 0.28 + 0.32 * (v / maxV);
+      ctx.fillStyle = `rgba(232,234,240,${a})`;
+      ctx.fillRect(cx - 4, by, 8, bh);
+      ctx.fillStyle = `rgba(232,234,240,${a + 0.15})`;
+      ctx.beginPath(); ctx.arc(cx, by, 3.5, 0, 2*Math.PI); ctx.fill();
+    }
+  });
+
+  // axis
+  ctx.strokeStyle = C.axis;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(PX, H - PB); ctx.lineTo(W - PX, H - PB); ctx.stroke();
+
+  // footers
+  ctx.fillStyle = C.muted;
+  ctx.font = '9px IBM Plex Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('background (n = 14)', PX, H - 2);
+  ctx.fillStyle = C.coral;
+  ctx.textAlign = 'right';
+  ctx.fillText('focus →', W - PX, H - 2);
+}
+
+// ── Draw: posterior comparison ──────────────────────────────────
+function drawPost(yf, a0){
+  const { ctx, W, H } = prep('c-post', 195);
+  ctx.clearRect(0, 0, W, H);
+  const PL = 36, PR = 10, PT = 10, PB = 26;
+  const pw = W - PL - PR, ph = H - PT - PB;
+
+  const b0   = a0 / 5;
+  const af   = a0 + SUM + yf,  bf  = b0 + N_BG + 1;  // full
+  const al   = a0 + SUM,       bl  = b0 + N_BG;       // loo
+  const mu_f = af / bf,        mu_l = al / bl;
+  const sd_f = Math.sqrt(af) / bf;
+  const sd_l = Math.sqrt(al) / bl;
+
+  // x range: 5 SD around combined means
+  const spread = 5 * Math.max(sd_f, sd_l);
+  const xlo = Math.max(0.3, Math.min(mu_f, mu_l) - spread);
+  const xhi = Math.max(mu_f, mu_l) + spread;
+  const tx = v => PL + (v - xlo) / (xhi - xlo) * pw;
+
+  // Evaluate PDFs
+  const NP = 320;
+  const xs  = Array.from({ length: NP }, (_, i) => xlo + i/(NP-1)*(xhi-xlo));
+  const ydf = xs.map(x => Math.exp(log_gamma_pdf(x, af, bf)));
+  const ydl = xs.map(x => Math.exp(log_gamma_pdf(x, al, bl)));
+  const ymx = Math.max(...ydf, ...ydl) * 1.12;
+  const ty  = v => PT + ph * (1 - v / ymx);
+
+  // Grid lines
+  ctx.strokeStyle = C.grid;
+  ctx.lineWidth = 0.5;
+  [0.25, 0.5, 0.75, 1.0].forEach(f => {
+    const y = ty(f * ymx);
+    ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(PL + pw, y); ctx.stroke();
+  });
+
+  // Overlap fill
+  ctx.beginPath();
+  xs.forEach((x, i) => {
+    const y = ty(Math.min(ydf[i], ydl[i]));
+    i === 0 ? ctx.moveTo(tx(x), y) : ctx.lineTo(tx(x), y);
+  });
+  ctx.lineTo(tx(xhi), ty(0)); ctx.lineTo(tx(xlo), ty(0)); ctx.closePath();
+  ctx.fillStyle = 'rgba(232,234,240,0.05)';
+  ctx.fill();
+
+  // Curves: loo first (underneath)
+  function curve(yd, col, dash){
+    ctx.beginPath();
+    xs.forEach((x, i) => {
+      const px = tx(x), py = ty(yd[i]);
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    });
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.5;
+    if(dash) ctx.setLineDash([7, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  curve(ydl, C.coral, true);
+  curve(ydf, C.blue,  false);
+
+  // Mean dashed verticals
+  [{ mu: mu_f, col: C.blue }, { mu: mu_l, col: C.coral }].forEach(({ mu, col }) => {
+    const x = tx(mu);
+    if(x < PL || x > PL + pw) return;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, PT + ph); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    // Mean label at bottom
+    ctx.fillStyle = col;
+    ctx.font = '10px IBM Plex Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(mu.toFixed(2), x, PT + ph + 20);
+  });
+
+  // Axes
+  ctx.strokeStyle = C.axis;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(PL, PT + ph); ctx.lineTo(PL + pw, PT + ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PL, PT); ctx.lineTo(PL, PT + ph); ctx.stroke();
+
+  // x ticks
+  ctx.fillStyle = C.muted;
+  ctx.font = '10px IBM Plex Mono, monospace';
+  ctx.textAlign = 'center';
+  const nt = 5;
+  for(let i = 0; i <= nt; i++){
+    const v = xlo + i/nt*(xhi-xlo);
+    const x = tx(v);
+    ctx.beginPath(); ctx.moveTo(x, PT+ph); ctx.lineTo(x, PT+ph+3); ctx.stroke();
+    ctx.fillText(v.toFixed(1), x, PT+ph+14);
+  }
+  ctx.fillText('λ (Poisson rate)', PL + pw/2, H - 2);
+
+  // y label
+  ctx.save();
+  ctx.translate(12, PT + ph/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center';
+  ctx.fillText('density', 0, 0);
+  ctx.restore();
+
+  return { mu_f, mu_l, af, bf };
+}
+
+// ── Draw: importance weights ────────────────────────────────────
+function drawWts(yf, af, bf){
+  const { ctx, W, H } = prep('c-wts', 195);
+  ctx.clearRect(0, 0, W, H);
+  const PL = 8, PR = 8, PT = 10, PB = 26;
+  const pw = W - PL - PR, ph = H - PT - PB;
+
+  // Deterministic seed for (yf, af rounded)
+  const seed = 42 + yf * 997 + Math.round(af) * 31;
+  const rng  = mkRNG(seed);
+  const norm = mkNorm(rng);
+  const gam  = mkGamma(rng, norm);
+
+  // Draw S samples from full posterior
+  const lam = Array.from({ length: S }, () => gam(af, bf));
+
+  // log importance weights: -log Poisson(yf | lambda)
+  // = -yf*log(lam) + lam  [constant log(yf!) drops in normalisation]
+  const log_w = lam.map(l => (l <= 0 ? -Infinity : -yf * Math.log(l) + l));
+
+  // Normalise
+  const lw_max = Math.max(...log_w);
+  const w_raw  = log_w.map(lw => Math.exp(lw - lw_max));
+  const w_sum  = w_raw.reduce((a, b) => a + b, 0);
+  const w      = w_raw.map(v => v / w_sum);
+
+  // Sort descending
+  const ws = [...w].sort((a, b) => b - a);
+
+  // ESS and k
+  const ess_inv = w.reduce((a, b) => a + b*b, 0);
+  const ess     = Math.min(S, Math.round(1 / ess_inv));
+  const rel     = ess / S;
+  const k       = Math.max(0, Math.min(1.5, -Math.log(rel) / 2));
+
+  // Draw sorted bars (top SHOW)
+  const SHOW = Math.min(280, S);
+  const wmax = ws[0];
+  const bw   = pw / SHOW;
+
+  // Background tint by zone
+  ctx.fillStyle = 'rgba(82,183,136,0.04)';
+  ctx.fillRect(PL, PT, pw, ph);
+
+  ws.slice(0, SHOW).forEach((wv, i) => {
+    const bh   = (wv / wmax) * ph;
+    const x    = PL + i * bw;
+    const y    = PT + ph - bh;
+    const mult = wv * S; // multiple of uniform weight
+    let col;
+    if(mult > 10)       col = C.vbad;
+    else if(mult > 3)   col = C.bad;
+    else if(mult > 1.5) col = C.ok;
+    else                col = C.good;
+    ctx.fillStyle = col + 'bb';
+    ctx.fillRect(x, y, Math.max(bw - 0.2, 0.3), bh);
+  });
+
+  // Uniform reference line (1/S)
+  const unif_frac = 1 / S;
+  const unif_y = PT + ph * (1 - unif_frac / wmax);
+  if(unif_y >= PT && unif_y <= PT + ph - 2){
+    ctx.strokeStyle = 'rgba(232,234,240,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(PL, unif_y); ctx.lineTo(PL + pw, unif_y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = C.muted;
+    ctx.font = '9px IBM Plex Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('uniform', PL + pw - 2, unif_y - 3);
+  }
+
+  // Axes
+  ctx.strokeStyle = C.axis;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(PL, PT+ph); ctx.lineTo(PL+pw, PT+ph); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(PL, PT); ctx.lineTo(PL, PT+ph); ctx.stroke();
+
+  // x labels
+  ctx.fillStyle = C.muted;
+  ctx.font = '10px IBM Plex Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('rank 1', PL, H - 2);
+  ctx.textAlign = 'right';
+  ctx.fillText(`rank ${SHOW}`, PL + pw, H - 2);
+
+  // ESS annotation (prominent, top-right)
+  const essCol = rel > 0.5 ? C.good : rel > 0.2 ? C.ok : C.bad;
+  ctx.fillStyle = essCol;
+  ctx.font = '500 12px IBM Plex Mono, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`ESS = ${ess.toLocaleString()} / ${S.toLocaleString()}`, PL + pw - 2, PT + 18);
+
+  // Color legend (bottom)
+  const leg = [
+    { col: C.good, label: '≤ 1.5× unif' },
+    { col: C.ok,   label: '> 1.5×' },
+    { col: C.bad,  label: '> 3×' },
+    { col: C.vbad, label: '> 10×' },
+  ];
+  const lStep = pw / leg.length;
+  ctx.font = '9px IBM Plex Mono, monospace';
+  leg.forEach(({ col, label }, i) => {
+    const lx = PL + i * lStep;
+    ctx.fillStyle = col + 'cc';
+    ctx.fillRect(lx, H - 10, 6, 6);
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = 'left';
+    ctx.fillText(label, lx + 9, H - 3);
+  });
+
+  return { ess, k };
+}
+
+// ── Main update ─────────────────────────────────────────────────
+function update(){
+  const yf = +document.getElementById('sl-yf').value;
+  const a0 = +document.getElementById('sl-a0').value;
+
+  document.getElementById('out-yf').textContent = yf;
+  document.getElementById('out-a0').textContent = a0;
+
+  // Prior hint
+  const b0 = a0 / 5;
+  const prior_sd = (Math.sqrt(a0) / b0).toFixed(2);
+  const strength = a0 <= 5 ? 'weak' : a0 <= 15 ? 'moderate' : 'strong';
+  document.getElementById('prior-hint').textContent =
+    `prior mean = 5.0 · prior SD ≈ ${prior_sd} (${strength})`;
+
+  // Draw
+  drawStrip(yf);
+  const { mu_f, mu_l, af, bf } = drawPost(yf, a0);
+  const { ess, k } = drawWts(yf, af, bf);
+
+  // Metrics
+  const shift = Math.abs(mu_f - mu_l);
+
+  document.getElementById('m-mf').textContent = mu_f.toFixed(3);
+  document.getElementById('m-ml').textContent = mu_l.toFixed(3);
+
+  const shEl = document.getElementById('m-sh');
+  shEl.textContent = shift.toFixed(3);
+  shEl.style.color = shift > 0.8 ? C.bad : shift > 0.3 ? C.ok : C.good;
+
+  const essEl = document.getElementById('m-ess');
+  essEl.textContent = ess.toLocaleString();
+  essEl.style.color = ess > 1000 ? C.good : ess > 400 ? C.ok : C.bad;
+
+  // k gauge
+  const kPct = Math.min(100, (k / 1.5) * 100);
+  document.getElementById('k-mk').style.left = kPct + '%';
+
+  const kEl = document.getElementById('k-val');
+  kEl.textContent = k.toFixed(3);
+
+  let kc, bg, border, msg;
+  if(k < 0.5){
+    kc = C.good; bg = 'rgba(82,183,136,0.08)'; border = 'rgba(82,183,136,0.25)';
+    msg = `k̂ = ${k.toFixed(3)} — reliable.  The ${S.toLocaleString()} importance weights are approximately uniform (ESS = ${ess.toLocaleString()}). The full and leave-one-out posteriors nearly coincide. This observation is not influential: leaving it out would not meaningfully change the posterior, so importance sampling approximates the true LOO posterior well.`;
+  } else if(k < 0.7){
+    kc = C.ok; bg = 'rgba(244,162,97,0.08)'; border = 'rgba(244,162,97,0.25)';
+    msg = `k̂ = ${k.toFixed(3)} — acceptable.  Some weight concentration (ESS = ${ess.toLocaleString()}). The two posterior curves are beginning to separate. The LOO estimate slightly underestimates uncertainty but is still usable. Watch the right side of the weight panel — a few bars are rising above the uniform reference.`;
+  } else if(k < 1.0){
+    kc = C.bad; bg = 'rgba(224,112,96,0.08)'; border = 'rgba(224,112,96,0.25)';
+    msg = `k̂ = ${k.toFixed(3)} — unreliable.  A small fraction of the ${S.toLocaleString()} draws carry most of the weight (ESS = ${ess.toLocaleString()}). ArviZ flags this with a warning. The full and LOO posteriors diverge visibly. The leftmost bars in the weight panel are disproportionately tall. Consider refitting without this observation (az.reloo) or switching to a heavier-tailed likelihood.`;
+  } else {
+    kc = C.vbad; bg = 'rgba(193,68,14,0.09)'; border = 'rgba(193,68,14,0.30)';
+    msg = `k̂ = ${k.toFixed(3)} — invalid.  Importance sampling has broken down (ESS = ${ess.toLocaleString()}). With y₀ = ${yf}, the observation is so far outside what the model expects (λ ≈ ${mu_l.toFixed(1)}) that a handful of draws overwhelm all others. The posteriors with and without this point are fundamentally different. Manual refitting (az.reloo) is required — the approximate LOO ELPD cannot be trusted.`;
+  }
+
+  kEl.style.color = kc;
+
+  const msgEl = document.getElementById('msg');
+  msgEl.textContent = msg;
+  msgEl.style.background = bg;
+  msgEl.style.color = kc;
+  msgEl.style.borderColor = border;
+}
+
+// ── Event wiring ────────────────────────────────────────────────
+let timer;
+['sl-yf', 'sl-a0'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(update, 20);
+  });
+});
+
+// Initial render (wait for fonts + layout)
+window.addEventListener('load', () => setTimeout(update, 120));
+setTimeout(update, 120);
+
+})();
+</script>
+</body>
+</html>
