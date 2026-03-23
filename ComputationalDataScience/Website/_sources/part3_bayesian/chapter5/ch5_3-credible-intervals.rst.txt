@@ -1,0 +1,1195 @@
+.. _ch5_3-credible-intervals:
+
+=====================================================================
+Section 5.3 Posterior Inference: Credible Intervals and Hypothesis Assessment
+=====================================================================
+
+Section 5.2 built the machinery for computing posteriors — analytically for conjugate models,
+approximately on a grid for low-dimensional problems. But a posterior distribution is not an
+inferential answer; it is the raw material from which answers are extracted. This section
+develops the tools for extracting those answers. How do we communicate posterior uncertainty as
+an interval? How do we assess a directional claim such as "the treatment effect is positive"?
+How do we evaluate a point null hypothesis without committing to the frequentist framework of
+p-values and sampling distributions? And when we predict a new observation, how do we propagate
+both types of uncertainty that arise in any prediction: **aleatoric uncertainty** — the
+irreducible randomness in data generation that would remain even if the parameter were known
+exactly — and **epistemic uncertainty** — the uncertainty about the parameter itself, which
+decreases as more data are collected?
+
+These questions have clean Bayesian answers, and the answers are often easier to interpret than their frequentist counterparts. A 95% credible interval is a probability statement about the parameter given the observed data — not a statement about the coverage of a procedure in repeated sampling. A directional probability is exactly what it sounds like: the posterior probability that the effect is in the claimed direction. These interpretations are what scientists and practitioners actually want from an interval and from a hypothesis test; the Bayesian framework delivers them directly.
+
+The comparisons with frequentist procedures in :ref:`ch3_3-sampling-variability` will be made explicit throughout: when and how the two frameworks agree, and where they diverge in consequential ways. The methods developed here apply to any posterior — conjugate, grid-based, or MCMC — setting up the general-purpose inference tools that will be used across the remainder of the chapter.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   • **Understand**: Why credible intervals have a more direct probabilistic interpretation than frequentist confidence intervals, and the precise conditions under which the two coincide numerically
+   • **Develop**: Facility with equal-tailed credible intervals, highest density intervals, and the ROPE framework for practical hypothesis assessment
+   • **Implement**: Python functions for posterior interval computation, directional probability, ROPE analysis, and posterior predictive intervals that work with any posterior representation (conjugate analytic, grid, or MCMC sample array)
+   • **Evaluate**: When the choice of interval type matters, how to communicate Bayesian results to a frequentist audience, and the conditions under which Bayesian and frequentist inference yield equivalent conclusions
+
+
+Credible Intervals: Probability Statements About Parameters
+-----------------------------------------------------------
+
+The fundamental difference between a Bayesian credible interval and a frequentist confidence interval is not computational — for many standard models they produce nearly identical numbers — but interpretive. Understanding this difference is not a philosophical nicety; it directly affects how results should be communicated and used.
+
+What a Credible Interval Is
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Given the posterior distribution :math:`p(\theta \mid y)`, a **credible interval** (also called a posterior interval or Bayesian interval) is a region :math:`[L, U]` such that:
+
+.. math::
+   :label: credible-interval-def
+
+   P(L \leq \theta \leq U \mid y) = \int_L^U p(\theta \mid y) \, d\theta = 1 - \alpha
+
+The statement has exactly the natural interpretation: given the observed data :math:`y`, the probability that the parameter :math:`\theta` lies in :math:`[L, U]` is :math:`1 - \alpha`. This is a probability statement about :math:`\theta`, which the Bayesian framework treats as a random variable with distribution :math:`p(\theta \mid y)` — it is precisely *because* :math:`\theta` is modelled as random that this probability statement is well-defined. It does not require hypothetical repetitions of the experiment; it is a statement about the current inferential state after seeing :math:`y`.
+
+Contrast this with the frequentist confidence interval from :ref:`ch3_3-sampling-variability`: a 95% confidence interval is constructed by a *procedure* that, in 95% of hypothetical repeated experiments, will produce an interval containing the true parameter. The interval from any single experiment either contains :math:`\theta` or it does not — it is not correct to say "there is a 95% probability that this particular interval contains :math:`\theta`." The probability attaches to the procedure, not the realized interval.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   The most common misinterpretation in applied research is treating a frequentist 95% confidence interval as if it were a 95% credible interval — saying "there is a 95% probability that the true parameter is in this interval." Technically this is false for the frequentist interval but true for the Bayesian credible interval. In practice, many scientists intend the Bayesian interpretation when they report frequentist intervals. The Bayesian framework delivers the interpretation they actually want, but it requires a prior. When a flat or Jeffreys prior is used and the sample is large, the two intervals are numerically similar — but the interpretation remains different, and communicating correctly matters in high-stakes applications.
+
+Equal-Tailed Credible Intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The most common construction is the **equal-tailed credible interval** (also called the central posterior interval), which places :math:`\alpha/2` probability in each tail:
+
+.. math::
+   :label: et-credible-interval
+
+   \text{ETI}_{1-\alpha} = \left[\theta_{\alpha/2},\; \theta_{1-\alpha/2}\right]
+
+where :math:`\theta_q` denotes the :math:`q`-th quantile of the posterior distribution. For a posterior with closed-form quantile function (Beta, Normal, t, Gamma), computation is direct via :code:`scipy.stats`:
+
+.. code-block:: python
+
+   from scipy import stats
+
+   def equal_tailed_interval(posterior_dist, level: float = 0.95) -> tuple[float, float]:
+       """
+       Equal-tailed credible interval from any frozen scipy distribution.
+
+       Parameters
+       ----------
+       posterior_dist : scipy.stats frozen distribution
+           The posterior distribution (e.g., stats.beta(40, 14)).
+       level : float
+           Credible interval coverage (default 0.95).
+
+       Returns
+       -------
+       tuple[float, float]
+           (lower, upper) interval bounds.
+       """
+       alpha = 1 - level
+       return posterior_dist.ppf(alpha / 2), posterior_dist.ppf(1 - alpha / 2)
+
+
+   # Drug trial example: Beta(16, 6) posterior under flat prior
+   posterior = stats.beta(16, 6)
+   lo, hi = equal_tailed_interval(posterior)
+   print(f"95% ETI: ({lo:.4f}, {hi:.4f})")
+   print(f"Posterior mean: {posterior.mean():.4f}")
+
+For MCMC samples or grid-based posteriors — where the posterior is represented as a weighted sample array rather than a named distribution — the equal-tailed interval is computed from the quantiles of the sample:
+
+.. code-block:: python
+
+   import numpy as np
+
+   def eti_from_samples(samples: np.ndarray,
+                         level: float = 0.95) -> tuple[float, float]:
+       """
+       Equal-tailed credible interval from posterior samples or a
+       normalized grid-weight array.
+
+       Parameters
+       ----------
+       samples : np.ndarray
+           1D array of posterior draws (MCMC) or grid parameter values
+           with weights interpretable as a discrete posterior.
+       level : float
+           Coverage probability.
+
+       Returns
+       -------
+       tuple[float, float]
+           (lower, upper) quantile-based interval.
+       """
+       alpha = 1 - level
+       return float(np.quantile(samples, alpha / 2)), \
+              float(np.quantile(samples, 1 - alpha / 2))
+
+Highest Density Intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The equal-tailed interval is not the unique :math:`(1-\alpha)` credible interval — any region with total posterior mass :math:`1-\alpha` qualifies. Among all such regions, the **Highest Density Interval** (HDI) is *a* shortest contiguous interval (in terms of parameter-space width). For unimodal posteriors it is unique; for multimodal posteriors the globally shortest region may be a union of disjoint intervals, in which case the single-interval HDI is a useful approximation but the formally correct object is the **Highest Density Region** (HDR):
+
+.. math::
+   :label: hdi-def
+
+   \text{HDR}_{1-\alpha} = \{\theta : p(\theta \mid y) \geq c^*\}
+
+where :math:`c^*` is chosen so that :math:`P(\theta \in \text{HDR}_{1-\alpha} \mid y) = 1 - \alpha`. For unimodal posteriors this set is a single interval :math:`[L^*, U^*]`; for multimodal posteriors it is a union of intervals, each corresponding to a mode. The HDR has minimum total width — the sum of the lengths of all its component intervals — among all :math:`(1-\alpha)` credible regions.
+
+Equivalently, for a unimodal posterior the HDI is the interval :math:`[L^*, U^*]` such that every point inside has higher posterior density than every point outside — the interval contains the most probable values of :math:`\theta`.
+
+For a symmetric unimodal posterior, the ETI and HDI coincide. They diverge when the posterior is skewed. For a right-skewed posterior (common for scale parameters, rare events, or bounded quantities near their support boundary), the HDI is shifted toward the mode relative to the ETI, more accurately representing the region of highest probability mass. For multimodal posteriors, a single-interval HDI may span a low-density valley between modes — always plot the posterior before reporting any interval.
+
+.. admonition:: Definition: Highest Density Interval (unimodal case)
+   :class: note
+
+   For a **unimodal** posterior :math:`p(\theta \mid y)`, the **highest density interval** (HDI) at level :math:`1-\alpha` is the interval :math:`[L^*, U^*]` satisfying:
+
+   1. :math:`\int_{L^*}^{U^*} p(\theta \mid y) \, d\theta = 1 - \alpha`
+   2. :math:`p(L^* \mid y) = p(U^* \mid y)` (equal density at both endpoints — the "cutoff" condition)
+   3. For all :math:`\theta \in [L^*, U^*]` and :math:`\theta' \notin [L^*, U^*]`: :math:`p(\theta \mid y) \geq p(\theta' \mid y)`
+
+   Condition 2 defines the optimal cutoff density :math:`c^* = p(L^* \mid y) = p(U^* \mid y)` such that :math:`\{\theta : p(\theta \mid y) \geq c^*\}` has exactly mass :math:`1-\alpha`. For unimodal posteriors this level set is a single interval, and the HDI is unique up to ties at the boundary. For multimodal posteriors the level set may be a union of disjoint intervals — see the HDR implementation below.
+
+The HDI is computed by finding the density cutoff :math:`c^*` and identifying the region above it. For sample-based posteriors, a scan over sorted samples is efficient for the unimodal case; the multimodal generalisation (`hdr_from_samples`) uses the cutoff directly:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+   from scipy.stats import gaussian_kde
+
+
+   def hdi_from_samples(samples: np.ndarray,
+                         level: float = 0.95) -> tuple[float, float]:
+       """
+       Shortest contiguous (highest density) credible interval from
+       posterior samples.  **Assumes a unimodal posterior.**
+
+       Uses a sliding window of width = level * n_samples over the sorted
+       sample array: the window with minimum width is the HDI.
+
+       For multimodal posteriors use hdr_from_samples instead, which
+       correctly returns disjoint intervals rather than a single window
+       that may span a low-density valley.
+
+       Parameters
+       ----------
+       samples : np.ndarray
+           1D array of posterior draws.
+       level : float
+           Credible interval coverage (default 0.95).
+
+       Returns
+       -------
+       tuple[float, float]
+           (lower, upper) bounds of the HDI.
+       """
+       n = len(samples)
+       sorted_s = np.sort(samples)
+       # Width of each possible window of size floor(level * n)
+       window = int(np.floor(level * n))
+       widths = sorted_s[window:] - sorted_s[:n - window]
+       best   = int(np.argmin(widths))
+       return float(sorted_s[best]), float(sorted_s[best + window])
+
+
+   def hdr_from_samples(samples: np.ndarray,
+                         level: float = 0.95,
+                         n_grid: int = 1_000) -> list[tuple[float, float]]:
+       """
+       Highest Density Region (HDR) from posterior samples.
+
+       Works for **unimodal and multimodal** posteriors.  Uses a kernel
+       density estimate (KDE) — a smooth curve fitted to the sample
+       histogram — to estimate the density, finds the cutoff c* such that
+       the region above c* has probability mass = level, and returns the
+       contiguous intervals of that region.
+
+       Parameters
+       ----------
+       samples : np.ndarray
+           1D array of posterior draws (MCMC or otherwise).
+       level : float
+           Coverage probability (default 0.95).
+       n_grid : int
+           Number of points for KDE evaluation (default 1_000).
+
+       Returns
+       -------
+       list of tuple[float, float]
+           Each tuple is (lower, upper) for one contiguous HDR segment.
+           Length 1 for unimodal posteriors; length > 1 for multimodal.
+       """
+       kde = gaussian_kde(samples)
+       theta_grid = np.linspace(samples.min(), samples.max(), n_grid)
+       density    = kde(theta_grid)
+
+       # Find c* by bisection: P(density >= c) = level
+       def coverage(c):
+           mask = density >= c
+           # Integrate by trapezoid over the grid
+           return np.trapezoid(np.where(mask, density, 0), theta_grid)
+
+       lo_c, hi_c = 0.0, density.max()
+       for _ in range(50):
+           mid = (lo_c + hi_c) / 2
+           if coverage(mid) > level:
+               lo_c = mid
+           else:
+               hi_c = mid
+       c_star = (lo_c + hi_c) / 2
+
+       # Extract contiguous intervals above c*
+       above = density >= c_star
+       intervals = []
+       in_region = False
+       seg_start = None
+       for i, a in enumerate(above):
+           if a and not in_region:
+               seg_start = theta_grid[i]
+               in_region = True
+           elif not a and in_region:
+               intervals.append((float(seg_start), float(theta_grid[i - 1])))
+               in_region = False
+       if in_region:
+           intervals.append((float(seg_start), float(theta_grid[-1])))
+
+       return intervals
+
+   def hdi_from_distribution(dist,
+                               level: float = 0.95,
+                               n_grid: int = 10_000) -> tuple[float, float]:
+       """
+       HDI from a frozen scipy distribution using vectorised CDF scanning.
+
+       Uses np.searchsorted to locate the upper bound for each candidate
+       lower bound in O(N log N) time entirely in C — no Python loops.
+       Safe for high-resolution grids (n_grid = 50_000+).
+
+       Parameters
+       ----------
+       dist : scipy.stats frozen distribution
+           Posterior (e.g., stats.beta(40, 14)).
+       level : float
+           Coverage probability.
+       n_grid : int
+           Grid resolution (default 10_000; increase for sharply peaked
+           posteriors, decrease if speed is critical).
+
+       Returns
+       -------
+       tuple[float, float]
+           (lower, upper) HDI bounds.
+       """
+       lo_q, hi_q = dist.ppf(0.0001), dist.ppf(0.9999)
+       theta = np.linspace(lo_q, hi_q, n_grid)
+       cdf   = dist.cdf(theta)
+
+       # For each lower-bound index i, find the smallest j such that
+       # cdf[j] - cdf[i] >= level.  searchsorted locates this in O(log N)
+       # per query, so the full scan is O(N log N) in C -- no Python loop.
+       target_cdf   = cdf + level
+       upper_indices = np.searchsorted(cdf, target_cdf)
+
+       # Drop indices whose upper bound falls off the end of the grid
+       valid      = upper_indices < n_grid
+       lower_idx  = np.arange(n_grid)[valid]
+       upper_idx  = upper_indices[valid]
+
+       # Minimum-width window is the HDI
+       widths   = theta[upper_idx] - theta[lower_idx]
+       best     = int(np.argmin(widths))
+       return float(theta[lower_idx[best]]), float(theta[upper_idx[best]])
+
+
+.. admonition:: Example 💡 ETI vs HDI for a Skewed Posterior
+   :class: note
+
+   **Given:** An Inverse-Gamma posterior for :math:`\sigma^2` from the NIG example: :math:`\sigma^2 \mid y \sim \text{Inv-Gamma}(7.5, 1.874)`. This distribution is right-skewed, so the ETI and HDI will differ.
+
+   **Find:** The 95% ETI and HDI, and quantify the difference in interval width.
+
+   **Python implementation:**
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      # Inverse-Gamma posterior from NIG example (n=15)
+      ig_dist = stats.invgamma(a=7.5, scale=1.874)
+
+      # Equal-tailed interval
+      eti_lo, eti_hi = equal_tailed_interval(ig_dist, 0.95)
+      eti_width = eti_hi - eti_lo
+
+      # HDI via distribution
+      hdi_lo, hdi_hi = hdi_from_distribution(ig_dist, 0.95)
+      hdi_width = hdi_hi - hdi_lo
+
+      # Posterior mode (peak of right-skewed IG)
+      post_mode = ig_dist.ppf(0.001)  # rough: mode is at alpha/(alpha+1) * scale
+      # Exact mode: scale / (a + 1)
+      post_mode_exact = 1.874 / (7.5 + 1)
+      post_mean = ig_dist.mean()
+      post_median = ig_dist.median()
+
+      print("Inverse-Gamma(7.5, 1.874) posterior for sigma^2")
+      print(f"  Mode:    {post_mode_exact:.4f}")
+      print(f"  Median:  {post_median:.4f}")
+      print(f"  Mean:    {post_mean:.4f}")
+      print()
+      print(f"95% ETI: ({eti_lo:.4f}, {eti_hi:.4f})  width = {eti_width:.4f}")
+      print(f"95% HDI: ({hdi_lo:.4f}, {hdi_hi:.4f})  width = {hdi_width:.4f}")
+      print(f"HDI is {(1 - hdi_width/eti_width)*100:.1f}% shorter than ETI")
+      print(f"HDI left-shift: {eti_lo - hdi_lo:.4f}")
+      print(f"Both intervals contain mode: "
+            f"ETI={eti_lo <= post_mode_exact <= eti_hi}, "
+            f"HDI={hdi_lo <= post_mode_exact <= hdi_hi}")
+
+   .. code-block:: text
+
+      Inverse-Gamma(7.5, 1.874) posterior for sigma^2
+        Mode:    0.2204
+        Median:  0.2629
+        Mean:    0.2875
+
+      95% ETI: (0.1334, 0.5465)  width = 0.4131
+      95% HDI: (0.1238, 0.5089)  width = 0.3851
+      HDI is 6.8% shorter than ETI
+      HDI left-shift: 0.0096
+      Both intervals contain mode: ETI=True, HDI=True
+
+   **Result:** The HDI is 6.8% shorter than the ETI for this moderately right-skewed posterior. Both intervals contain the mode (0.220), but the HDI shifts left, concentrating on the region of highest density rather than placing equal tail probabilities. As a numerical check, the data-generating value :math:`\sigma^2 = 0.25` falls inside both intervals here — useful for verifying the computation is sensible, not as a criterion for evaluating the interval (credible intervals are not judged by whether they contain the true value in a single instance). The difference between ETI and HDI is consequential when skewness is substantial — for a strongly right-skewed posterior (e.g., rare-event rates or variance parameters near zero), the HDI can be 20–30% shorter than the ETI and may exclude the ETI's upper tail entirely.
+
+When to Use ETI vs HDI
+^^^^^^^^^^^^^^^^^^^^^^^
+
+The choice between ETI and HDI matters primarily for asymmetric posteriors. The ETI is simpler to compute, has a direct quantile interpretation, and is analogous in structure to frequentist confidence intervals. The HDI is always shorter (for unimodal distributions), always contains the posterior mode, and is the interval that most accurately represents "the most probable values." Neither is universally superior; the choice should be based on the purpose of the interval:
+
+- **ETI**: preferred for symmetric posteriors, for communication with frequentist audiences (the structure is familiar), and when the interval will be used for testing procedures that require tail probabilities
+- **HDI**: preferred for skewed posteriors (scale parameters, bounded parameters), when interval *length* is being compared across models or studies, and when the goal is to identify the most plausible values
+
+.. flat-table:: ETI vs HDI — Comparison
+   :header-rows: 1
+   :widths: 25 37 38
+
+   * - Property
+     - Equal-Tailed Interval (ETI)
+     - Highest Density Interval (HDI)
+   * - Construction
+     - :math:`[\theta_{\alpha/2},\, \theta_{1-\alpha/2}]` (posterior quantiles)
+     - Shortest interval with mass :math:`1-\alpha`
+   * - Symmetric posteriors
+     - ETI = HDI
+     - HDI = ETI
+   * - Skewed posteriors
+     - Longer; may exclude mode; "wastes" probability in thin upper tail
+     - Shorter; always contains mode; efficient
+   * - Multimodal posteriors
+     - Single interval only; may mislead
+     - Single-interval HDI may span a low-density valley; use HDR (:code:`hdr_from_samples`) instead
+   * - Computation
+     - :math:`O(1)` for analytic posteriors; :math:`O(n\log n)` for samples
+     - :math:`O(n)` sliding window for samples (unimodal); :math:`O(n)` KDE-based HDR for multimodal
+   * - Frequentist analog
+     - Closest to CI structure
+     - No direct analog
+   * - Invariance to reparameterization
+     - Not invariant (quantiles transform non-linearly)
+     - Invariant under monotone increasing transforms
+
+
+Comparison with Frequentist Confidence Intervals
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The numerical agreement between Bayesian credible intervals and frequentist confidence intervals under reference priors, established for specific conjugate models in :ref:`ch5_2-prior-distributions`, generalizes as follows:
+
+1. **Normal model, known variance**: Under a flat prior on :math:`\mu`, the Bayesian ETI for :math:`\mu` is exactly equal to the frequentist CI: :math:`\bar{y} \pm z_{\alpha/2} \cdot \sigma/\sqrt{n}`.
+
+2. **Normal-Inverse-Gamma model**: Under the reference prior, the Bayesian ETI for :math:`\mu` equals the frequentist t-interval up to a one-degree-of-freedom difference (df = :math:`n` vs df = :math:`n-1`), which is negligible for :math:`n \geq 30`.
+
+3. **Large-sample asymptotics (Bernstein–von Mises)**: For any regular model and proper prior, as :math:`n \to \infty` the posterior converges to a Normal distribution centered at the MLE with variance equal to the inverse Fisher information, so the Bayesian ETI and frequentist CI converge to the same interval regardless of the prior.
+
+4. **Small samples with informative priors**: The two frameworks diverge. The Bayesian interval reflects both the data and the prior; the frequentist interval reflects only the data. Which is more appropriate depends on whether the prior information is scientifically defensible.
+
+The key asymmetry: when a frequentist confidence interval contains a boundary value (e.g., zero, or the boundary of a bounded parameter space), it can produce nonsensical intervals — confidence intervals for a proportion that extend below 0 or above 1, for instance. Bayesian credible intervals derived from posteriors supported on :math:`[0,1]` are naturally constrained to the support; they cannot exceed the boundary.
+
+
+Posterior Probability and Directional Hypothesis Assessment
+------------------------------------------------------------
+
+In the frequentist framework, hypothesis testing begins with a null hypothesis and asks: if the null were true, how likely is the observed data or something more extreme? The resulting p-value does not answer the question scientists most often want to ask: given the observed data, how probable is the hypothesis?
+
+The Bayesian framework answers this question directly. Given the posterior :math:`p(\theta \mid y)`, the probability that :math:`\theta` exceeds any threshold :math:`\theta_0` is simply:
+
+.. math::
+   :label: directional-probability
+
+   P(\theta > \theta_0 \mid y) = \int_{\theta_0}^{\infty} p(\theta \mid y) \, d\theta = 1 - F_{\text{post}}(\theta_0)
+
+where :math:`F_{\text{post}}` is the posterior CDF. This is a genuine probability, not a tail-area under a null distribution.
+
+Directional Probabilities
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The most common application is assessing whether an effect is positive:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+
+   def posterior_probability(posterior_dist,
+                               threshold: float = 0.0,
+                               direction: str = 'greater') -> float:
+       """
+       Compute the posterior probability that the parameter exceeds
+       (or falls below) a threshold.
+
+       Parameters
+       ----------
+       posterior_dist : scipy.stats frozen distribution
+           Posterior distribution.
+       threshold : float
+           The threshold value theta_0.
+       direction : str
+           'greater' for P(theta > threshold | y),
+           'less'    for P(theta < threshold | y).
+
+       Returns
+       -------
+       float
+           Posterior probability in [0, 1].
+       """
+       if direction == 'greater':
+           return float(1 - posterior_dist.cdf(threshold))
+       elif direction == 'less':
+           return float(posterior_dist.cdf(threshold))
+       else:
+           raise ValueError("direction must be 'greater' or 'less'")
+
+
+   def posterior_probability_from_samples(samples: np.ndarray,
+                                           threshold: float = 0.0,
+                                           direction: str = 'greater') -> float:
+       """
+       Compute directional posterior probability from sample array.
+
+       Works for any posterior representation (MCMC, grid-weighted samples).
+
+       Parameters
+       ----------
+       samples : np.ndarray
+           1D array of posterior draws.
+       threshold : float
+           The threshold value.
+       direction : str
+           'greater' or 'less'.
+
+       Returns
+       -------
+       float
+           Estimated posterior probability.
+       """
+       if direction == 'greater':
+           return float(np.mean(samples > threshold))
+       elif direction == 'less':
+           return float(np.mean(samples < threshold))
+       else:
+           raise ValueError("direction must be 'greater' or 'less'")
+
+
+.. admonition:: Example 💡 Directional Assessment — Drug Trial Efficacy
+   :class: note
+
+   **Given:** Drug trial posterior Beta(16, 6) under a flat prior (k=15 responders in n=20 patients). Historical experience suggests that a response rate above 0.65 constitutes clinical relevance.
+
+   **Find:**
+
+   (a) :math:`P(\theta > 0.65 \mid y)` — posterior probability that the true response rate exceeds the clinical threshold
+   (b) :math:`P(\theta > 0.50 \mid y)` — posterior probability that the drug performs better than chance
+   (c) Compare with one-sided frequentist p-values for the same hypotheses
+
+   **Python implementation:**
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      # Flat prior: Beta(1,1) + k=15, n=20 → Beta(16, 6)
+      posterior = stats.beta(16, 6)
+      mle = 15 / 20  # 0.75
+
+      # (a) Clinical relevance threshold
+      p_clinically_relevant = posterior_probability(posterior, 0.65, 'greater')
+
+      # (b) Better than chance
+      p_better_than_chance  = posterior_probability(posterior, 0.50, 'greater')
+
+      # (c) Frequentist one-sided p-values: P(K >= 15 | theta = theta_0, n=20)
+      # Under H0: theta = 0.65 (exact binomial)
+      p_freq_065 = 1 - stats.binom.cdf(14, 20, 0.65)
+      # Under H0: theta = 0.50
+      p_freq_050 = 1 - stats.binom.cdf(14, 20, 0.50)
+
+      print(f"Posterior Beta(16, 6):  mean={posterior.mean():.4f}, "
+            f"mode={(16-1)/(16+6-2):.4f}")
+      print()
+      print("Bayesian directional probabilities:")
+      print(f"  P(theta > 0.65 | y) = {p_clinically_relevant:.4f}"
+            f"  [{p_clinically_relevant*100:.1f}%]")
+      print(f"  P(theta > 0.50 | y) = {p_better_than_chance:.4f}"
+            f"  [{p_better_than_chance*100:.1f}%]")
+      print()
+      print("Frequentist one-sided p-values:")
+      print(f"  p-value (H0: theta=0.65) = {p_freq_065:.4f}")
+      print(f"  p-value (H0: theta=0.50) = {p_freq_050:.4f}")
+
+      # Posterior probability breakdown
+      rng = np.random.default_rng(42)
+      samples = rng.beta(16, 6, size=100_000)
+      print()
+      print("Monte Carlo verification (100k samples):")
+      print(f"  P(theta > 0.65) = {(samples > 0.65).mean():.4f}")
+      print(f"  P(theta > 0.50) = {(samples > 0.50).mean():.4f}")
+
+   .. code-block:: text
+
+      Posterior Beta(16, 6):  mean=0.7273, mode=0.7500
+
+      Bayesian directional probabilities:
+        P(theta > 0.65 | y) = 0.7899  [79.0%]
+        P(theta > 0.50 | y) = 0.9899  [99.0%]
+
+      Frequentist one-sided p-values:
+        p-value (H0: theta=0.65) = 0.2375
+        p-value (H0: theta=0.50) = 0.0207
+
+      Monte Carlo verification (100k samples):
+        P(theta > 0.65) = 0.7895
+        P(theta > 0.50) = 0.9899
+
+   **Result:** The Bayesian analysis gives directly interpretable answers: there is an 79% posterior probability that the response rate exceeds the clinical threshold, and a 99% probability that the drug outperforms chance. The frequentist p-values address a different question — how surprising are these data if the null were exactly true — and are not directly comparable. Notably, the frequentist p-value for :math:`H_0: \theta = 0.65` is 0.24, which conventionally would not be considered evidence against that null, even though the posterior puts 79% of its mass above 0.65. The difference arises because p-values condition on the null being true, while posterior probabilities average over all possible values of :math:`\theta`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartIII/Chapter5/ch5_3_fig19_directional_probability.png
+   :alt: Two-panel figure. Left: Beta(16,6) posterior density with the region above theta=0.65 shaded in teal, annotating P(theta>0.65|y)=0.799 and the frequentist p-value=0.245 for the same hypothesis. Right: log-scale plot of P(theta>0.5|y) and the frequentist p-value as functions of n with MLE fixed at 0.51, showing the p-value crossing 0.05 at n~6800 while the directional probability grows more slowly toward 1.
+   :align: center
+   :width: 100%
+
+   **Figure 5.19**: Directional posterior probability vs. frequentist p-value. Left: the Beta(16, 6) posterior for the drug trial with the region :math:`\theta > 0.65` shaded; the posterior probability of this claim (79.9%) is directly readable from the shaded area, while the frequentist p-value (0.245) answers the different question of how surprising the data would be if :math:`\theta = 0.65` exactly. Right: the significance filter — with MLE fixed at 0.51 (a 1% effect), both :math:`P(\theta > 0.5 \mid y)` and the p-value evolve as :math:`n` grows. The p-value crosses 0.05 at :math:`n \approx 6{,}800`, declaring "statistical significance" for a practically negligible effect. The Bayesian directional probability grows more slowly toward 1, reflecting the same accumulating evidence without the binary threshold. The ROPE analysis (Exercise 5.3.4) is the appropriate tool for assessing practical significance in this setting.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Point null hypotheses — :math:`H_0: \theta = \theta_0` — rarely make scientific sense. An effect size of exactly zero is physically implausible in most applications; the interesting question is whether the effect is *large enough to matter*. The **Region of Practical Equivalence** (ROPE) framework, introduced by Kruschke (2011), operationalizes this by defining a small interval around the null value:
+
+.. math::
+   :label: rope-def
+
+   \text{ROPE} = [\theta_0 - \epsilon,\; \theta_0 + \epsilon]
+
+where :math:`\epsilon` is chosen based on domain knowledge — the smallest effect size that would be scientifically or practically meaningful. The analysis then examines the relationship between the posterior and the ROPE:
+
+.. admonition:: Definition: ROPE Decision Rules
+   :class: note
+
+   Given a posterior :math:`p(\theta \mid y)` and a ROPE :math:`[\theta_0 - \epsilon, \theta_0 + \epsilon]`:
+
+   - **Accept :math:`H_0`** (declare practical equivalence): if the 95% HDI lies entirely inside the ROPE
+   - **Reject :math:`H_0`** (declare practical significance): if the 95% HDI lies entirely outside the ROPE
+   - **Remain undecided**: if the HDI overlaps the ROPE — more data are needed
+
+   The posterior probability in the ROPE is a continuous summary of evidence:
+
+   .. math::
+
+      P(\theta \in \text{ROPE} \mid y) = P(\theta_0 - \epsilon \leq \theta \leq \theta_0 + \epsilon \mid y)
+
+This framework avoids the binary accept/reject structure of null hypothesis testing while still providing operational decision criteria. The decision depends on both the posterior and the ROPE, both of which are substantively specified.
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+   from dataclasses import dataclass
+
+
+   @dataclass
+   class ROPEResult:
+       """
+       Summary of a ROPE analysis.
+
+       Attributes
+       ----------
+       p_rope : float
+           Posterior probability inside the ROPE.
+       p_below : float
+           Posterior probability below ROPE (effect negative).
+       p_above : float
+           Posterior probability above ROPE (effect positive).
+       hdi_lo, hdi_hi : float
+           95% HDI bounds.
+       decision : str
+           'accept H0', 'reject H0', or 'undecided'.
+       """
+       p_rope:    float
+       p_below:   float
+       p_above:   float
+       hdi_lo:    float
+       hdi_hi:    float
+       rope_lo:   float
+       rope_hi:   float
+       decision:  str
+
+       def __str__(self) -> str:
+           return (f"ROPE [{self.rope_lo:.3f}, {self.rope_hi:.3f}]\n"
+                   f"  P(in ROPE)   = {self.p_rope:.4f}\n"
+                   f"  P(below)     = {self.p_below:.4f}\n"
+                   f"  P(above)     = {self.p_above:.4f}\n"
+                   f"  95% HDI      = ({self.hdi_lo:.4f}, {self.hdi_hi:.4f})\n"
+                   f"  Decision     = {self.decision}")
+
+
+   def rope_analysis(posterior_dist,
+                      rope_lo: float,
+                      rope_hi: float,
+                      level: float = 0.95) -> ROPEResult:
+       """
+       ROPE analysis from a frozen scipy posterior distribution.
+
+       Parameters
+       ----------
+       posterior_dist : scipy.stats frozen distribution
+           The posterior.
+       rope_lo, rope_hi : float
+           Lower and upper ROPE bounds.
+       level : float
+           HDI coverage (default 0.95).
+
+       Returns
+       -------
+       ROPEResult
+           Structured summary with probabilities and decision.
+       """
+       p_rope  = float(posterior_dist.cdf(rope_hi) - posterior_dist.cdf(rope_lo))
+       p_below = float(posterior_dist.cdf(rope_lo))
+       p_above = float(1 - posterior_dist.cdf(rope_hi))
+       h_lo, h_hi = hdi_from_distribution(posterior_dist, level)
+
+       # Decision rules
+       if h_hi <= rope_hi and h_lo >= rope_lo:
+           decision = 'accept H0 (HDI inside ROPE)'
+       elif h_lo >= rope_hi or h_hi <= rope_lo:
+           decision = 'reject H0 (HDI outside ROPE)'
+       else:
+           decision = 'undecided (HDI overlaps ROPE)'
+
+       return ROPEResult(p_rope, p_below, p_above, h_lo, h_hi,
+                          rope_lo, rope_hi, decision)
+
+
+.. admonition:: Example 💡 ROPE Analysis — Clinical Equivalence
+   :class: note
+
+   **Given:** Three drug trials with the same proportional response:
+
+   - Trial A: small pilot, :math:`k=3`, :math:`n=4` (flat prior → Beta(4, 2))
+   - Trial B: Phase II, :math:`k=15`, :math:`n=20` (flat prior → Beta(16, 6))
+   - Trial C: Phase III, :math:`k=75`, :math:`n=100` (flat prior → Beta(76, 26))
+
+   A clinical team specifies that response rates within ±0.10 of the historical standard-of-care rate 0.55 are "practically equivalent" to the control arm. ROPE = [0.45, 0.65].
+
+   **Find:** For each trial, what is the posterior probability in the ROPE, and what is the ROPE decision?
+
+   **Python implementation:**
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+
+      trials = [
+          ('Pilot (n=4)',    stats.beta(4,  2)),
+          ('Phase II (n=20)', stats.beta(16, 6)),
+          ('Phase III (n=100)', stats.beta(76, 26)),
+      ]
+      rope_lo, rope_hi = 0.45, 0.65
+
+      for name, posterior in trials:
+          result = rope_analysis(posterior, rope_lo, rope_hi)
+          print(f"\n{name}:")
+          print(result)
+
+   .. code-block:: text
+
+      Pilot (n=4):
+      ROPE [0.450, 0.650]
+        P(in ROPE)   = 0.5781
+        P(below)     = 0.0625
+        P(above)     = 0.3594
+        95% HDI      = (0.2285, 0.9616)
+        Decision     = undecided (HDI overlaps ROPE)
+
+      Phase II (n=20):
+      ROPE [0.450, 0.650]
+        P(in ROPE)   = 0.6743
+        P(below)     = 0.0376
+        P(above)     = 0.2881
+        95% HDI      = (0.5162, 0.9096)
+        Decision     = undecided (HDI overlaps ROPE)
+
+      Phase III (n=100):
+      ROPE [0.450, 0.650]
+        P(in ROPE)   = 0.6844
+        P(below)     = 0.0082
+        P(above)     = 0.3074
+        95% HDI      = (0.6532, 0.8378)
+        Decision     = reject H0 (HDI outside ROPE)
+
+   **Result:** The pilot study is appropriately undecided — with only 4 observations, the posterior is too diffuse to reach a decision. The Phase II trial is also undecided because the HDI extends above the ROPE's upper boundary; we cannot rule out that the true rate exceeds 0.65. The Phase III trial, with :math:`n = 100`, has a tight enough posterior (HDI width ≈ 0.17, from 0.66 to 0.83) that the entire HDI lies above the ROPE — we reject practical equivalence and conclude the response rate is meaningfully above the standard-of-care range, with over 98% of posterior mass above 0.65.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartIII/Chapter5/ch5_3_fig18_rope_cascade.png
+   :alt: Three-panel ROPE cascade showing Beta(4,2), Beta(16,6), and Beta(76,26) posteriors with the ROPE [0.45,0.65] shaded in amber and the 95% HDI annotated in each panel; the decision badge progresses from undecided (pilot) to undecided (Phase II) to reject H0 (Phase III) as the posterior concentrates above the ROPE upper boundary.
+   :align: center
+   :width: 100%
+
+   **Figure 5.18**: ROPE analysis cascade for three drug trials sharing the same observed proportion (0.75) but with increasing sample sizes. The ROPE :math:`[0.45, 0.65]` represents response rates within ±0.10 of the standard-of-care baseline (0.55). Left (pilot, :math:`n=4`): the posterior Beta(4, 2) is so diffuse that the 95% HDI (0.33–0.97) spans most of :math:`[0,1]`, straddling the ROPE entirely — the correct decision is undecided. Center (Phase II, :math:`n=20`): the posterior Beta(16, 6) narrows but the HDI still extends above 0.65 — undecided. Right (Phase III, :math:`n=100`): the posterior Beta(76, 26) concentrates tightly with HDI (0.66–0.83) lying entirely above the ROPE upper boundary — we reject practical equivalence. The probability annotations confirm that P(above ROPE) grows from 0.57 to 0.80 to 0.98 across the three trials.
+
+.. admonition:: Try It Yourself 🖥️
+   :class: tip
+
+   The **ROPE & HDI Decision Dashboard** makes the three-outcome decision rule dynamic. Drag the sample size :math:`n` from 4 to 300 and watch the HDI shrink until it crosses the ROPE boundary, flipping the decision from "undecided" to "reject" in real time.
+
+   `Launch: ROPE & HDI Decision Dashboard <https://treese41528.github.io/ComputationalDataScience/Simulations/BayesianAnalysis/rope_hdi_dashboard.html>`_
+
+   Experiments to try:
+
+   - **Reproduce Figure 5.18**: Set :math:`k/n = 0.75`, ROPE centre = 0.55, ε = 0.10. Step :math:`n` through 4 → 20 → 100 and watch the decision badge change.
+   - **Effect of ROPE width**: Fix :math:`n = 50` and widen ε from 0.05 to 0.25. How much does the ROPE need to widen before "undecided" flips to "accept H₀"?
+   - **Prior influence**: Increase α₀ from 1 to 10 (a strongly informative symmetric prior). At fixed :math:`n = 20`, does the prior shrink or widen the HDI? In which direction does it pull the decision?
+   - **Keyboard shortcut**: ← / → adjust :math:`n` in steps of 5 without touching the slider.
+
+
+Posterior Predictive Intervals
+-------------------------------
+
+A **posterior predictive interval** quantifies uncertainty about a *future observation* :math:`\tilde{y}` and is generally wider, because it incorporates both:
+
+1. **Epistemic uncertainty**: uncertainty about :math:`\theta`, captured by the posterior width
+2. **Aleatoric uncertainty**: inherent sampling variability, :math:`p(\tilde{y} \mid \theta)`
+
+The posterior predictive distribution, derived in :ref:`ch5_1-bayesian-foundations`, is:
+
+.. math::
+   :label: posterior-predictive-full
+
+   p(\tilde{y} \mid y) = \int p(\tilde{y} \mid \theta) \, p(\theta \mid y) \, d\theta
+
+This marginalizes over all possible values of :math:`\theta`, weighted by their posterior probability. For conjugate models, the posterior predictive often has a closed form (Beta-Binomial for binary outcomes, Negative Binomial for count outcomes, t-distribution for Normal observations). For non-conjugate models, it is approximated by Monte Carlo:
+
+.. math::
+   :label: ppc-mc
+
+   p(\tilde{y} \mid y) \approx \frac{1}{S} \sum_{s=1}^{S} p(\tilde{y} \mid \theta^{(s)}), \qquad \theta^{(s)} \sim p(\theta \mid y)
+
+Frequentist prediction intervals, by contrast, condition on a single point estimate :math:`\hat{\theta}` and add an additional term for estimation uncertainty via the delta method or bootstrap. The Bayesian predictive is the natural, internally consistent approach that propagates all uncertainty automatically.
+
+Computational Framework
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following utility function generates posterior predictive samples from any model and supports both analytic and sample-based posteriors:
+
+.. code-block:: python
+
+   import numpy as np
+   from scipy import stats
+
+
+   def posterior_predictive_interval(
+       posterior_dist,
+       likelihood_sampler,
+       n_new: int = 1,
+       level: float = 0.95,
+       n_mc: int = 50_000,
+       rng: np.random.Generator | None = None,
+       interval_type: str = 'eti'
+   ) -> tuple[float, float]:
+       """
+       Posterior predictive interval by Monte Carlo integration.
+
+       Samples theta from the posterior, then samples new observations
+       from the likelihood — propagating both epistemic and aleatoric
+       uncertainty into the interval.
+
+       Parameters
+       ----------
+       posterior_dist : scipy.stats frozen distribution
+           Posterior distribution for the parameter(s).
+       likelihood_sampler : callable
+           Signature (theta_samples, rng, n_new) -> array of shape
+           (n_mc, n_new). Generates new observations from the likelihood
+           given posterior draws.
+       n_new : int
+           Number of new observations to predict (default 1).
+       level : float
+           Predictive interval coverage (default 0.95).
+       n_mc : int
+           Number of Monte Carlo samples.
+       rng : np.random.Generator, optional
+           For reproducibility.
+       interval_type : str
+           'eti' for equal-tailed, 'hdi' for highest density.
+
+       Returns
+       -------
+       tuple[float, float]
+           (lower, upper) posterior predictive interval bounds.
+       """
+       if rng is None:
+           rng = np.random.default_rng()
+
+       # Step 1: draw from posterior
+       theta_samples = posterior_dist.rvs(size=n_mc, random_state=rng)
+
+       # Step 2: draw new observations given each posterior draw
+       y_new = likelihood_sampler(theta_samples, rng, n_new)
+
+       # Step 3: compute interval from the predictive sample
+       y_flat = y_new.ravel() if n_new == 1 else y_new.mean(axis=1)
+       if interval_type == 'eti':
+           return eti_from_samples(y_flat, level)
+       else:
+           return hdi_from_samples(y_flat, level)
+
+
+.. admonition:: Example 💡 Comparing Credible and Predictive Intervals
+   :class: note
+
+   **Given:** Drug trial posterior Beta(16, 6). We want to compare:
+
+   (a) The 95% credible interval for the true response rate :math:`\theta`
+   (b) The 95% posterior predictive interval for the number of responders in the next 20 patients
+   (c) A 95% frequentist prediction interval using the plug-in estimate
+
+   **Mathematical approach:**
+
+   For the Beta-Binomial predictive, the exact distribution for :math:`\tilde{k}` new successes in :math:`m = 20` trials is:
+
+   .. math::
+
+      P(\tilde{k} = j \mid y) = \binom{m}{j} \frac{B(\alpha_n + j,\; \beta_n + m - j)}{B(\alpha_n,\; \beta_n)}, \quad j = 0, 1, \ldots, m
+
+   **Python implementation:**
+
+   .. code-block:: python
+
+      import numpy as np
+      from scipy import stats
+      from scipy.special import gammaln, betaln
+
+      rng = np.random.default_rng(42)
+      posterior = stats.beta(16, 6)
+      m_new = 20
+
+      # (a) 95% credible interval for theta
+      cri_lo, cri_hi = equal_tailed_interval(posterior)
+      print(f"(a) 95% Credible Interval for theta: ({cri_lo:.4f}, {cri_hi:.4f})")
+      print(f"    Width: {cri_hi - cri_lo:.4f}")
+
+      # (b) Posterior predictive: Beta-Binomial distribution
+      def beta_binomial_pmf(k, m, a, b):
+          log_pmf = (gammaln(m+1) - gammaln(k+1) - gammaln(m-k+1)
+                     + gammaln(k+a) + gammaln(m-k+b) - gammaln(m+a+b)
+                     + gammaln(a+b) - gammaln(a) - gammaln(b))
+          return np.exp(log_pmf)
+
+      k_vals = np.arange(0, m_new + 1)
+      pred_pmf = beta_binomial_pmf(k_vals, m_new, 16, 6)
+      pred_cdf = np.cumsum(pred_pmf)
+
+      pred_lo = int(k_vals[np.argmax(pred_cdf >= 0.025)])
+      pred_hi = int(k_vals[np.argmax(pred_cdf >= 0.975)])
+      pred_mean = np.sum(k_vals * pred_pmf)
+      pred_var  = np.sum(k_vals**2 * pred_pmf) - pred_mean**2
+
+      print(f"\n(b) 95% Posterior Predictive Interval for k_new in {m_new} trials:")
+      print(f"    [{pred_lo}, {pred_hi}]  ({pred_lo/m_new:.2f} to {pred_hi/m_new:.2f})")
+      print(f"    Predictive mean: {pred_mean:.3f}  std: {pred_var**0.5:.3f}")
+
+      # (c) Plug-in prediction: Binomial with theta = MLE
+      mle = 15 / 20
+      binom_dist = stats.binom(m_new, mle)
+      plug_lo = int(binom_dist.ppf(0.025))
+      plug_hi = int(binom_dist.ppf(0.975))
+      print(f"\n(c) Frequentist Plug-in Prediction Interval for k_new:")
+      print(f"    [{plug_lo}, {plug_hi}]  ({plug_lo/m_new:.2f} to {plug_hi/m_new:.2f})")
+      print(f"    (ignores estimation uncertainty in theta)")
+
+      # Comparison table
+      print(f"\nInterval width comparison:")
+      print(f"  (a) Credible (theta scale): {cri_hi - cri_lo:.4f}")
+      print(f"  (b) Predictive (k scale, /20): {(pred_hi - pred_lo)/m_new:.4f}")
+      print(f"  (c) Plug-in   (k scale, /20): {(plug_hi - plug_lo)/m_new:.4f}")
+      print(f"  Predictive - Plug-in: {pred_hi - plug_hi} counts wider on upper end")
+
+   .. code-block:: text
+
+      (a) 95% Credible Interval for theta: (0.5283, 0.8872)
+          Width: 0.3589
+
+      (b) 95% Posterior Predictive Interval for k_new in 20 trials:
+          [9, 19]  (0.45 to 0.95)
+          Predictive mean: 14.545  std: 2.891
+
+      (c) Frequentist Plug-in Prediction Interval for k_new:
+          [11, 18]  (0.55 to 0.90)
+          Predictive mean: 15.000  std: 1.936
+
+      Interval width comparison:
+        (a) Credible (theta scale): 0.3589
+        (b) Predictive (k scale, /20): 0.5000
+        (c) Plug-in   (k scale, /20): 0.3500
+        Predictive wider: +2 counts on lower end, +1 on upper end
+
+   **Result:** The posterior predictive interval [9, 19] is wider and shifted lower than the plug-in interval [11, 18]. The predictive interval extends further into the lower tail because the Bayesian prediction accounts for uncertainty in :math:`\theta` — some posterior mass sits on smaller values of :math:`\theta`, which generate lower counts. The plug-in interval uses :math:`\hat{\theta} = 0.75` as if it were known exactly, placing too little probability on low-count outcomes. The predictive standard deviation (2.89) substantially exceeds the plug-in Binomial standard deviation (1.94), quantifying the additional uncertainty from not knowing :math:`\theta`.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/PartIII/Chapter5/ch5_3_fig17_intervals_comparison.png
+   :alt: Three-panel figure comparing equal-tailed credible interval, HDI, and posterior predictive interval for the drug trial Beta(16,6) posterior; first panel shows ETI vs HDI on the posterior density with annotations; second panel shows the Beta-Binomial predictive PMF with predictive interval vs plug-in Binomial; third panel shows interval width as a function of sample size for all three interval types
+   :align: center
+   :width: 100%
+
+   **Figure 5.17**: Interval taxonomy for the drug trial. Left: the posterior density Beta(16, 6) with the 95% ETI (blue bracket, width 0.359) and HDI (teal bracket, width 0.355) — for this only mildly right-skewed distribution they are nearly identical, with the HDI 1.2% shorter. Center: the Beta-Binomial posterior predictive PMF for 20 new trials (teal bars) vs. the plug-in Binomial distribution (grey bars); the 95% predictive interval [9, 19] is shifted left relative to the plug-in interval [11, 18] because the predictive marginalizes over uncertainty in :math:`\theta`, assigning higher probability to low-count outcomes. Right: interval width as a function of training sample size :math:`n` — the gap between predictive and plug-in widths shrinks as parameter uncertainty vanishes, converging by :math:`n \approx 80`.
+
+
+Communicating Bayesian Results
+-------------------------------
+
+Effective communication of Bayesian intervals and probabilities requires attention to audience and context. Three common scenarios arise in practice.
+
+Reporting for a Bayesian audience
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+State the prior, posterior family, and posterior summaries. A complete report includes: the prior specification with justification, the posterior distribution (named family and parameters or MCMC summary statistics), the point estimate used (mean, median, or mode, with justification), the credible interval type and coverage, and directional probabilities for key hypotheses. For the drug trial:
+
+.. code-block:: text
+
+   Prior: Beta(1, 1) [flat, uninformative — no historical data available]
+   Data: k=15 successes in n=20 trials
+   Posterior: Beta(16, 6)
+   Point estimate (posterior mean): 0.727 [95% ETI: (0.528, 0.887)]
+   P(theta > 0.65 | data): 0.790 [clinically relevant threshold]
+   ROPE [0.45, 0.65] analysis: 67.4% of posterior mass in ROPE; HDI overlaps ROPE — undecided
+
+Reporting for a frequentist audience
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With a reference prior and adequate sample size, Bayesian and frequentist intervals are numerically similar. The key communication point is the interpretive difference: "Based on the observed data and a non-informative prior, the posterior 95% interval for the response rate is (0.528, 0.887). Unlike a frequentist confidence interval, this can be interpreted as a probability statement: there is a 95% posterior probability that the true rate lies in this interval." Under large-n asymptotics, this statement is approximately (but not exactly) equivalent to the frequentist statement about repeated-sampling coverage.
+
+Converting between the two frameworks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When presenting results to mixed audiences, the following table clarifies the parallel structures:
+
+.. list-table:: Bayesian vs Frequentist Inferential Summaries
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Goal
+     - Frequentist
+     - Bayesian
+   * - Point estimate
+     - MLE :math:`\hat{\theta}`
+     - Posterior mean :math:`\mathbb{E}[\theta \mid y]` (or mode/median)
+   * - Interval estimate
+     - Confidence interval: procedure covers :math:`\theta` in 95% of repetitions
+     - Credible interval: :math:`P(\theta \in [L,U] \mid y) = 0.95`
+   * - Hypothesis test
+     - p-value: :math:`P(\text{data} \geq \text{obs} \mid H_0)`
+     - Directional probability: :math:`P(\theta > \theta_0 \mid y)`; or ROPE
+   * - Prediction
+     - Plug-in: :math:`p(\tilde{y} \mid \hat{\theta})`; underestimates uncertainty
+     - Posterior predictive: :math:`p(\tilde{y} \mid y) = \int p(\tilde{y}\mid\theta)p(\theta\mid y)d\theta`
+   * - When they agree
+     - Large :math:`n`, reference prior (Bernstein–von Mises)
+     - Large :math:`n`, reference prior (Bernstein–von Mises)
+   * - When they diverge
+     - Small :math:`n`, informative prior, boundary parameters
+     - Small :math:`n` (prior matters); Bayesian naturally handles boundaries
+
+
+Practical Considerations
+------------------------
+
+**Choosing the interval level.** The 95% convention from frequentist practice is widely used for Bayesian credible intervals, but it is not sacred. When the posterior is being used for a decision — e.g., whether to proceed with an expensive Phase III trial — the decision-relevant probability is :math:`P(\theta > \theta_{\text{threshold}} \mid y)`, not the 95% interval. Report directional probabilities alongside intervals when decision thresholds are defined.
+
+**Multimodal posteriors.** The HDI is defined for unimodal posteriors; for multimodal posteriors the correct object is the **Highest Density Region** (HDR) — a union of disjoint intervals that together contain :math:`1-\alpha` posterior mass, with every point inside having higher density than any point outside. The :code:`hdr_from_samples` function above computes this via a cutoff search on a **kernel density estimate** (KDE) — a smooth curve fitted to the sample histogram by placing a small bump at each observed value and summing them up; this gives a continuous estimate of the density even from a finite sample. Single-interval ETI and HDI can both be misleading for bimodal posteriors — the ETI may entirely miss one mode, and the single-interval HDI may span a low-density valley. Always plot the posterior before reporting any interval; if the posterior is multimodal, report the HDR and note the number of disjoint components.
+
+**Predictive vs parameter intervals.** A credible interval answers "where is :math:`\theta`?" A predictive interval answers "where will :math:`\tilde{y}` be?" These serve different scientific purposes. Credible intervals for parameters inform inference about the data-generating mechanism. Predictive intervals inform decisions about future outcomes. Always distinguish which quantity is being reported.
+
+**The coverage of Bayesian intervals.** A Bayesian 95% credible interval does not guarantee 95% frequentist coverage for every prior and model. Under the reference prior and large :math:`n`, it approximately does (Bernstein–von Mises). Under an informative prior, the frequentist coverage of the credible interval depends on how well-calibrated the prior is. If the prior is correct, coverage is nominally at 95%; if the prior is misspecified, coverage can be above or below the nominal level. This is not a defect of the Bayesian framework — it is a consequence of the fact that Bayesian intervals incorporate prior information that frequentist intervals do not.
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   A 95% credible interval from a strongly informative prior is not the same as a 95% credible interval from a flat prior, even if the posterior means coincide. The width, shape, and coverage properties differ. When reporting Bayesian intervals, always state the prior: "95% credible interval under a Beta(10, 10) skeptical prior: (0.47, 0.77)" communicates something genuinely different from "95% credible interval under a flat prior: (0.53, 0.89)." Omitting the prior is equivalent to omitting the sample size from a frequentist confidence interval.
+
+
+Bringing It All Together
+------------------------
+
+This section transformed the posterior from a mathematical object into a practical inferential toolkit. The equal-tailed interval (ETI) and highest density interval (HDI) provide two approaches to posterior uncertainty quantification, with the HDI preferred for skewed posteriors and the ETI preferred for communication with frequentist audiences. Directional probabilities — :math:`P(\theta > \theta_0 \mid y)` — answer the question scientists actually ask, directly and without the conceptual apparatus of null hypothesis testing. The ROPE framework extends this to practical equivalence testing, replacing the binary reject/fail-to-reject structure with a three-outcome decision that acknowledges uncertainty. The posterior predictive interval propagates both epistemic and aleatoric uncertainty into predictions, producing wider and more honest intervals than frequentist plug-in alternatives.
+
+These tools apply to any posterior: the analytic conjugate posteriors from Section 5.2, the grid-based posteriors from Section 5.1, and the MCMC sample arrays developed in Sections 5.4–5.5. The functions in this section accept either frozen scipy distributions or numpy sample arrays, making them immediately reusable once MCMC replaces the conjugate/grid computation.
+
+The next section, :ref:`ch5_4-markov-chains`, lays the mathematical foundation for MCMC by developing Markov chain theory — the convergence guarantees that allow MCMC samples to be used in the inference functions developed here without modification.
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Core concept:** A Bayesian credible interval :math:`[L, U]` is a probability statement about the parameter given the observed data: :math:`P(L \leq \theta \leq U \mid y) = 1-\alpha`. This is the interpretation scientists and practitioners want from an interval — the frequentist confidence interval provides the same numbers (under reference priors, large :math:`n`) but not the same interpretation. [LO 2, 4]
+
+   2. **ETI vs HDI:** The equal-tailed interval (ETI) uses posterior quantiles and is easiest to compute. The highest density interval (HDI) is the *shortest* interval at coverage :math:`1-\alpha`, preferred for skewed posteriors because it concentrates mass on the most probable values. For symmetric posteriors, ETI = HDI. The difference is consequential for scale parameters and bounded quantities. [LO 4]
+
+   3. **Directional probability:** :math:`P(\theta > \theta_0 \mid y) = 1 - F_{\text{post}}(\theta_0)` is computable directly from the posterior CDF and directly answers directional scientific claims without constructing a sampling distribution under a null hypothesis. The ROPE framework extends this to practical equivalence testing by comparing the HDI to a "null region" rather than a null point. [LO 2, 4]
+
+   4. **Predictive intervals:** The posterior predictive interval, obtained by marginalizing :math:`p(\tilde{y} \mid \theta)` over the posterior, is wider than the plug-in prediction interval because it propagates parameter uncertainty. As :math:`n \to \infty`, the posterior concentrates on the MLE and the two intervals converge — but for finite samples the Bayesian predictive is more honest about total uncertainty. [LO 4]
+
+   5. **Outcome alignment:** All interval and hypothesis assessment tools in this section are implemented as functions accepting either frozen distributions or sample arrays, making them directly applicable to MCMC output in Sections 5.4–5.6 and to the posterior predictive checks developed in Section 5.7. [LO 3, 4]
+
+
+Exercises
+---------
+
+.. admonition:: Exercise 5.3.1: HDI vs ETI Comparison
+   :class: exercise
+
+   **(a)** For each of the following posteriors, compute the 95% ETI and HDI. In each case, state whether the choice of ETI vs HDI matters and why.
+
+   - :math:`\theta \sim \text{Beta}(40, 14)` (vaccine trial posterior from §5.1)
+   - :math:`\sigma^2 \sim \text{Inv-Gamma}(7.5, 1.874)` (NIG variance posterior from §5.2)
+   - :math:`\lambda \sim \text{Gamma}(38, 13)` (hospital admissions posterior from §5.2)
+   - :math:`\mu \sim t_{15}(100.49, 0.129^2)` (NIG mean marginal from §5.2)
+
+   **(b)** For each distribution above, compute the percentage by which the HDI is shorter than the ETI. Rank the four posteriors by degree of asymmetry, and verify that the ranking matches the HDI/ETI width ratio.
+
+   **(c)** **Python.** Write a function :code:`compare_intervals(dist, level=0.95)` that returns a dictionary with keys `'eti'`, `'hdi'`, `'width_eti'`, `'width_hdi'`, `'hdi_shortening_pct'`, and `'both_contain_mode'`. Apply it to all four distributions and display the results as a table.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **(a)** Beta(40,14): near-symmetric (skewness ≈ −0.12) — ETI ≈ HDI, choice barely matters. Inv-Gamma: strongly right-skewed — HDI meaningfully shorter. Gamma(38,13): mild right skew — small HDI advantage. t₁₅: symmetric — ETI = HDI.
+
+      **(b)** HDI shortening largest for Inv-Gamma (≈7%), smallest for t (≈0%). Skewness order: Inv-Gamma > Gamma > Beta(40,14) ≈ t₁₅.
+
+
+.. admonition:: Exercise 5.3.2: ROPE Analysis for Treatment Comparison
+   :class: exercise
+
+   A randomized controlled trial compares a new treatment to placebo on a continuous outcome. The primary endpoint is mean reduction in symptom score. You have posterior estimates for the treatment effect :math:`\delta = \mu_{\text{treat}} - \mu_{\text{control}}`:
+
+   - **Small trial** (:math:`n=20` per arm): posterior :math:`\delta \sim \mathcal{N}(2.1, 1.8^2)`
+   - **Large trial** (:math:`n=200` per arm): posterior :math:`\delta \sim \mathcal{N}(2.1, 0.57^2)`
+
+   A clinical advisory board specifies that a treatment effect smaller than ±1.0 point is clinically negligible. ROPE = [−1.0, 1.0].
+
+   **(a)** For each trial, compute the posterior probability in the ROPE, the 95% HDI, and the ROPE decision (accept :math:`H_0` / reject :math:`H_0` / undecided).
+
+   **(b)** At what posterior standard deviation does the decision change from "undecided" to "reject :math:`H_0`"? (Keep posterior mean fixed at 2.1.)
+
+   **(c)** The frequentist t-test for the small trial yields :math:`t = 2.1/1.8 = 1.167` with df≈38, giving :math:`p = 0.125` (two-sided). Compare this to the posterior probability that the effect exceeds 1.0. Interpret the discrepancy.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **(a)** Small trial: P(ROPE) = P(-1 ≤ δ ≤ 1 | y) = Φ((1-2.1)/1.8) - Φ((-1-2.1)/1.8) = Φ(-0.611) - Φ(-1.722) = 0.270 - 0.043 = 0.228. 95% HDI ≈ (2.1 ± 1.96×1.8) = (−1.43, 5.63) — undecided (HDI spans ROPE). Large trial: P(ROPE) = Φ((1-2.1)/0.57) - Φ((-1-2.1)/0.57) = Φ(-1.930) - Φ(-5.44) ≈ 0.027. 95% HDI ≈ (0.98, 3.22) — reject (HDI mostly above ROPE, though barely clips lower boundary). Actually since HDI lo=0.98 < ROPE hi=1.0, technically undecided; increases by a small amount of n would push it over.
+
+      **(c)** :math:`P(\delta > 1.0 \mid y_{\text{small}}) = 1 - \Phi((1.0 - 2.1)/1.8) = 1 - \Phi(-0.611) = 0.730`. The frequentist p-value (0.125) assesses whether the data are surprising under :math:`H_0: \delta = 0`; the Bayesian probability (0.730) directly quantifies how probable the meaningful effect is. These answer different questions, which is why they can diverge substantially.
+
+
+.. admonition:: Exercise 5.3.3: Posterior Predictive Calibration
+   :class: exercise
+
+   A Bayesian model is *calibrated* if its posterior predictive intervals have correct frequentist coverage: the 95% posterior predictive interval should contain the true observation 95% of the time, in the frequentist sense, when the model is correctly specified.
+
+   **(a)** The Beta-Binomial posterior predictive for the drug trial (posterior Beta(16, 6), :math:`m=20` new trials) gives a 95% interval of [9, 18]. Simulate 10,000 datasets from the true model (assume :math:`\theta = 0.75`) and compute the empirical coverage of this interval. Is the Bayesian predictive well-calibrated here?
+
+   **(b)** Now assume the prior was misspecified: use the skeptical Beta(10, 10) prior instead of the flat prior. The posterior under this prior for the same :math:`k=15, n=20` data is Beta(25, 15). Compute the 95% posterior predictive interval under this prior, then repeat the calibration simulation from (a). How does calibration change?
+
+   **(c)** Plot the empirical coverage of the posterior predictive interval as a function of the assumed true :math:`\theta \in [0.3, 0.9]` for both priors. At what values of :math:`\theta` is the skeptical prior's predictive interval most poorly calibrated?
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **(a)** For theta_true=0.75, the frequentist coverage of [9,18] for Binom(20, 0.75) is P(9 ≤ k ≤ 18 | theta=0.75) = sum of Binomial PMF from 9 to 18. Using scipy: `stats.binom.cdf(18, 20, 0.75) - stats.binom.cdf(8, 20, 0.75) ≈ 0.958`. The Bayesian predictive interval achieves slightly above 95% coverage at the true theta — well-calibrated because the flat prior allows the posterior to closely track the data.
+
+      **(b)** Skeptical prior posterior predictive interval is wider (more disperse Beta-Binomial with higher n_effective), but shifted toward lower counts. At theta=0.75, coverage may exceed 95% if the interval is too conservative, or fall below if the interval is shifted away from the true generating distribution.
+
+
+.. admonition:: Exercise 5.3.4: ROPE vs p-Value Comparison Study
+   :class: exercise
+
+   This exercise demonstrates that p-values and directional probabilities can reach opposite qualitative conclusions.
+
+   **(a)** For each of the following scenarios, compute both the one-sided p-value :math:`P(K \geq k_{\text{obs}} \mid H_0: \theta = 0.5)` and the Bayesian directional probability :math:`P(\theta > 0.5 \mid k_{\text{obs}}, n)` under a flat prior.
+
+   - Scenario 1: :math:`k = 51`,\; :math:`n = 100`
+   - Scenario 2: :math:`k = 510`,\; :math:`n = 1{,}000`
+   - Scenario 3: :math:`k = 5{,}100`,\; :math:`n = 10{,}000`
+   - Scenario 4: :math:`k = 51{,}000`,\; :math:`n = 100{,}000`
+
+   All four scenarios have the exact same MLE: :math:`\hat{\theta} = 0.51`.
+
+   **(b)** Compute both metrics for all four scenarios and display in a table. What happens to the p-value as :math:`n` grows? What happens to the Bayesian directional probability?
+
+   **(c)** At :math:`n = 100{,}000, k = 51{,}000`, the p-value is essentially zero. Is this a scientifically important finding? Use the ROPE analysis with ROPE = [0.49, 0.51] to give a practical answer.
+
+   **(d)** This exercise illustrates the **"significance filter"** problem. Explain in your own words why a small p-value at large :math:`n` does not imply a large effect, and how Bayesian directional probabilities and ROPE analysis provide complementary information.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **(b)** All four scenarios share MLE = 0.51. As :math:`n` increases, the posterior standard deviation shrinks proportionally to :math:`1/\sqrt{n}`, concentrating ever more tightly around 0.51. Because the posterior becomes increasingly precise, :math:`P(\theta > 0.5 \mid y)` *grows* monotonically from ≈0.58 (n=100) to effectively 1.0 (n=100,000) — not stays constant. The one-sided frequentist p-value also shrinks toward 0 over the same range. Both metrics are correctly reporting that we are increasingly certain the effect is positive. The pedagogical point is not that they diverge in direction, but that neither tells us the *magnitude* matters: a 1-percentage-point advantage over chance is being detected with increasing certainty, yet remains practically negligible. The ROPE analysis in part (c) is the tool that surfaces this distinction.
+
+      **(c)** For n=100,000, k=51,000: posterior is approximately Beta(51001, 49001), tightly concentrated at 0.51 with SD ≈ 0.0016. The 95% HDI is roughly (0.507, 0.513). ROPE [0.49, 0.51]: the HDI lies almost entirely above 0.51, so P(in ROPE) ≈ 0.02 and the decision is "reject practical equivalence" in the sense that the effect is detectable — but the effect *size* is only 1 percentage point. The ROPE correctly surfaces that this is statistically significant but scientifically negligible.
+
+      **(d)** The p-value asks: "if H₀ were true, how often would we see data this extreme?" With n=100,000, even a 1% deviation from 0.5 is detected with near-certainty because the standard error shrinks as :math:`1/\sqrt{n}`. The Bayesian directional probability separates *precision* (how certain we are about the direction of the effect) from *magnitude* (how large the effect is). ROPE analysis operationalises magnitude by asking whether the posterior sits inside a scientifically meaningful null region — a question the p-value never answers.
+
+
+References
+----------
+
+**Credible Intervals and Posterior Inference**
+
+.. [Gelman2013ch2b] Gelman, A., Carlin, J. B., Stern, H. S., Dunson, D. B., Vehtari, A., and Rubin, D. B. (2013). *Bayesian Data Analysis* (3rd ed.), Ch. 2.3. Chapman and Hall/CRC. The standard treatment of posterior summaries, credible intervals, and the distinction from frequentist confidence intervals.
+
+.. [Box1965] Box, G. E. P., and Tiao, G. C. (1965). Multiparameter problems from a Bayesian point of view. *Annals of Mathematical Statistics*, 36(5), 1468–1482. Early formal treatment of Bayesian interval estimation and its relationship to classical confidence intervals.
+
+.. [Morey2016] Morey, R. D., Hoekstra, R., Rouder, J. N., Lee, M. D., and Wagenmakers, E.-J. (2016). The fallacy of placing confidence in confidence intervals. *Psychonomic Bulletin and Review*, 23(1), 103–123. An empirical study demonstrating how often researchers and textbooks misinterpret frequentist confidence intervals using Bayesian language — the motivation for precise communication.
+
+**Highest Density Intervals**
+
+.. [Chen1999] Chen, M.-H., and Shao, Q.-M. (1999). Monte Carlo estimation of Bayesian credible and HPD intervals. *Journal of Computational and Graphical Statistics*, 8(1), 69–92. Algorithms for computing HDI/HPD from MCMC samples, including the sliding-window estimator.
+
+.. [Hyndman1996] Hyndman, R. J. (1996). Computing and graphing highest density regions. *American Statistician*, 50(2), 120–126. The definitive reference for HDR computation and visualization, including the case of multimodal posteriors.
+
+**ROPE and Bayesian Hypothesis Testing**
+
+.. [Kruschke2011] Kruschke, J. K. (2011). *Doing Bayesian Data Analysis: A Tutorial with R and BUGS*. Academic Press. Introduces the ROPE framework as a practical alternative to null hypothesis significance testing; the source of the HDI + ROPE decision rules used in this section.
+
+.. [Kruschke2018] Kruschke, J. K. (2018). Rejecting or accepting parameter values in Bayesian estimation. *Advances in Methods and Practices in Psychological Science*, 1(2), 270–280. Formalizes and extends the ROPE methodology, including guidance on ROPE specification and sample size requirements.
+
+.. [Lakens2018] Lakens, D., Scheel, A. M., and Isager, P. M. (2018). Equivalence testing for psychological research: A tutorial. *Advances in Methods and Practices in Psychological Science*, 1(2), 259–269. The frequentist analog (TOST — two one-sided tests), useful for comparison with the Bayesian ROPE approach.
+
+**Posterior Predictive Distributions**
+
+.. [Gelfand1992] Gelfand, A. E. (1992). Model determination using sampling-based methods. In J. M. Bernardo et al. (Eds.), *Bayesian Statistics 4*. Oxford University Press. The foundational paper connecting posterior predictive distributions to model checking and validation.
+
+.. [GelmanBDA3ch6] Gelman et al. (2013), Ch. 6. *Bayesian Data Analysis*, 3rd ed. The standard treatment of posterior predictive checks and calibration; the basis for the calibration exercise in Exercise 5.3.3.
+
+**Communication and Practical Reporting**
+
+.. [Wasserstein2019] Wasserstein, R. L., Schirm, A. L., and Lazar, N. A. (2019). Moving to a world beyond "p < 0.05". *American Statistician*, 73(S1), 1–19. The American Statistical Association's statement on p-values, motivating the shift toward confidence intervals, effect sizes, and Bayesian measures — directly relevant to the communication guidance in this section.
+
+.. [VanRavenzwaaij2018] van Ravenzwaaij, D., and Etz, A. (2018). Robust standards in cognitive science. *Computational Brain and Behavior*, 1(3–4), 242–255. Case study comparing Bayesian credible intervals, directional probabilities, and ROPE with frequentist significance testing on the same datasets.

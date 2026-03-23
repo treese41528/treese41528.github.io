@@ -1,0 +1,483 @@
+.. _ch5_9-chapter-summary:
+
+=============================
+Section 5.9 Chapter 5 Summary
+=============================
+
+This chapter developed a complete Bayesian toolkit — from the philosophical foundations of
+treating parameters as random variables, through the mathematical machinery of conjugate
+analysis and Markov chain theory, to the practical implementation of MCMC in PyMC, the
+quantitative tools for model comparison, and the hierarchical models that let groups borrow
+strength from one another. The result is a framework in which prior beliefs, data, and
+uncertainty are combined into a coherent posterior distribution, and every inferential question
+— point estimation, interval estimation, prediction, model selection — has a direct
+probabilistic answer.
+
+
+The Bayesian Workflow
+---------------------
+
+Every applied Bayesian analysis follows a five-stage workflow. The sections of this chapter map
+onto these stages:
+
+.. code-block:: text
+
+   ========================================================================
+                          THE BAYESIAN WORKFLOW
+   ========================================================================
+
+   Stage 1: SPECIFY          Stage 2: COMPUTE         Stage 3: DIAGNOSE
+   (Sections 5.1-5.2)        (Sections 5.4-5.6)       (Sections 5.5-5.6)
+   +----------------+         +----------------+        +----------------+
+   | Prior +        |         | Sample from    |        | Verify         |
+   | Likelihood     |         | Posterior      |        | Convergence    |
+   |                | -model->|                | -draws->|                |
+   | * Conjugate    |         | * Grid         |        | * R-hat ~ 1.00 |
+   | * Weakly inf   |         | * MH / Gibbs   |        | * ESS > 400    |
+   | * Jeffreys     |         | * NUTS / PyMC  |        | * 0 divergences|
+   +----------------+         +----------------+        +----------------+
+          |                                                    |
+          +------------------------+---------------------------+
+                                   |
+                                   v
+                       Stage 4: INFER & COMPARE
+                       (Sections 5.3, 5.7)
+                       +------------------------------------------+
+                       | * Credible intervals (ETI, HDI)          |
+                       | * ROPE hypothesis assessment              |
+                       | * Posterior predictive checks              |
+                       | * LOO / WAIC model comparison              |
+                       +------------------------------------------+
+                                   |
+                                   v
+                       Stage 5: EXTEND
+                       (Section 5.8)
+                       +------------------------------------------+
+                       | * Hierarchical structure                  |
+                       | * Partial pooling / shrinkage             |
+                       | * Non-centred parameterisation             |
+                       | * New-group prediction                     |
+                       +------------------------------------------+
+
+
+Section-by-Section Synthesis
+----------------------------
+
+**Section 5.1: Foundations of Bayesian Inference**
+
+Bayes' theorem — :math:`p(\theta \mid y) \propto p(y \mid \theta) \, p(\theta)` — is the engine
+of the entire chapter. Section 5.1 established the three-step Bayesian workflow (specify, compute,
+evaluate), the distinction between prior, likelihood, and posterior, and the computational
+challenge: the normalising constant :math:`p(y) = \int p(y \mid \theta) p(\theta) \, d\theta`
+is typically intractable. Grid approximation provided the first computational solution for
+low-dimensional problems, and the vaccine trial example introduced the Beta-Binomial conjugate
+pair that recurs throughout the chapter.
+
+*Key formula:*
+
+.. math::
+
+   p(\theta \mid y) = \frac{p(y \mid \theta) \, p(\theta)}{p(y)}
+
+**Section 5.2: Prior Specification and Conjugate Analysis**
+
+Five conjugate families — Beta-Binomial, Normal-Normal, Poisson-Gamma, Normal-Inverse-Gamma,
+and Multinomial-Dirichlet — give closed-form posteriors that bypass MCMC entirely. Each
+posterior mean is a weighted average of the prior mean and the MLE, with the weight determined
+by the ratio of sample size to effective prior sample size. Jeffreys priors provide an
+objective, reparameterisation-invariant default. Prior predictive simulation is the primary tool
+for evaluating whether a prior encodes reasonable assumptions.
+
+*Key formula:*
+
+.. math::
+
+   \mathbb{E}[\theta \mid y] = w \cdot \hat{\theta}_{\text{MLE}} + (1 - w) \cdot \mu_0,
+   \qquad w = \frac{n}{n + n_0}
+
+**Section 5.3: Credible Intervals and Hypothesis Assessment**
+
+Credible intervals give direct probability statements about parameters: "there is a 95%
+probability that :math:`\theta` lies in this interval." Equal-tailed intervals (ETI) place equal
+probability in each tail; highest density intervals (HDI) are the shortest intervals containing
+the specified probability mass. The ROPE framework replaces binary null hypothesis testing with
+a practical assessment: does the posterior concentrate inside, outside, or across a region of
+practical equivalence? Posterior predictive intervals propagate both epistemic and aleatoric
+uncertainty into predictions.
+
+*Key distinction:* A 95% credible interval is a probability statement about :math:`\theta` given
+the observed data. A 95% confidence interval is a statement about the procedure's long-run
+coverage rate. For symmetric posteriors they coincide numerically; for skewed posteriors the
+HDI is shorter.
+
+**Section 5.4: Markov Chains**
+
+When conjugate analysis is unavailable (most real models), we need algorithms that can sample
+from arbitrary posteriors. Section 5.4 built the mathematical foundation: a Markov chain with
+the posterior as its stationary distribution will, after sufficient burn-in, produce dependent
+samples that can be used for Monte Carlo integration. The key properties — irreducibility,
+aperiodicity, detailed balance, and the ergodic theorem — guarantee that time averages converge
+to posterior expectations. The convergence diagnostics :math:`\hat{R}` and ESS, which appear in
+every ``az.summary`` output, measure whether the chain has run long enough.
+
+*Key result:* The ergodic theorem for Markov chains:
+
+.. math::
+
+   \frac{1}{S}\sum_{s=1}^{S} g(\theta^{(s)}) \xrightarrow{\text{a.s.}}
+   \mathbb{E}_{p(\theta \mid y)}[g(\theta)]
+
+**Section 5.5: MCMC Algorithms**
+
+Three algorithms implement the Markov chain theory in practice. The Metropolis-Hastings
+algorithm constructs a chain with any target distribution as its stationary distribution via
+a propose-accept/reject mechanism. The Gibbs sampler eliminates the rejection step by sampling
+each parameter from its full conditional distribution. Hamiltonian Monte Carlo (HMC) and its
+adaptive variant NUTS use gradient information to make large, efficient moves through the
+posterior, suppressing the random-walk behaviour that makes Metropolis-Hastings slow in high
+dimensions.
+
+*Key formula:* Metropolis-Hastings acceptance probability:
+
+.. math::
+
+   \alpha(\theta^*, \theta^{(t)}) = \min\left(1, \;
+   \frac{p(\theta^* \mid y) \, q(\theta^{(t)} \mid \theta^*)}
+        {p(\theta^{(t)} \mid y) \, q(\theta^* \mid \theta^{(t)})}\right)
+
+**Section 5.6: Probabilistic Programming with PyMC**
+
+PyMC automates the entire MCMC pipeline: model specification via a computation graph,
+automatic gradient computation via Pytensor, adaptive NUTS sampling, and ArviZ-based
+diagnostics. The workflow is: define the model in a ``with pm.Model()`` block, call
+``pm.sample()``, check ``az.summary()`` for :math:`\hat{R}` and ESS, examine ``az.plot_trace``
+and ``az.plot_pair`` for pathology, and run posterior predictive checks. Logistic and Poisson
+regression examples demonstrated the full workflow on non-conjugate models where hand-coded
+MCMC would be impractical.
+
+*Key pattern:*
+
+.. code-block:: python
+
+   with pm.Model():
+       # Priors
+       theta = pm.Normal('theta', mu=0, sigma=1)
+       # Likelihood
+       y = pm.Normal('y', mu=theta, sigma=sigma, observed=y_obs)
+       # Sample
+       idata = pm.sample(draws=2000, tune=1000, chains=4,
+                         target_accept=0.90, random_seed=42,
+                         idata_kwargs={"log_likelihood": True})
+
+**Section 5.7: Bayesian Model Comparison**
+
+Posterior predictive checks ask whether a model is adequate; LOO and WAIC ask which model
+predicts best. The expected log pointwise predictive density (ELPD) measures out-of-sample
+predictive accuracy without refitting, using Pareto-smoothed importance sampling (PSIS) to
+approximate leave-one-out cross-validation from a single MCMC run. The Pareto
+:math:`\hat{k}` diagnostic flags observations where the approximation is unreliable
+(:math:`\hat{k} > 0.7`). Bayes factors provide a formal alternative but are sensitive to
+prior specification and computationally harder to obtain; LOO is preferred for routine model
+comparison.
+
+*Key formula:*
+
+.. math::
+
+   \widehat{\text{ELPD}}_{\text{LOO}} = \sum_{i=1}^{n}
+   \log p(y_i \mid y_{-i})
+
+**Section 5.8: Hierarchical Models and Partial Pooling**
+
+Hierarchical models address the most common structure in applied data: multiple related groups
+with different sample sizes. Complete pooling ignores group differences; no pooling ignores
+cross-group information. Partial pooling — the hierarchical solution — lets the data determine
+how much each group's estimate is pulled toward the grand mean. The shrinkage factor
+:math:`B_i = \sigma_i^2 / (\sigma_i^2 + \tau^2)` quantifies this pull for Normal models,
+and the same logic extends to any likelihood family via the hyperparameter structure. The
+non-centred parameterisation eliminates Neal's funnel geometry, and LOO comparison confirms
+that partial pooling improves out-of-sample prediction.
+
+*Key formula:*
+
+.. math::
+
+   \hat{\theta}_i = (1 - B_i) \, y_i + B_i \, \mu, \qquad
+   B_i = \frac{\sigma_i^2}{\sigma_i^2 + \tau^2}
+
+
+Decision Guide: Which Bayesian Tool When
+-----------------------------------------
+
+**Choosing the Computational Method**
+
+.. code-block:: text
+
+   How many parameters? What model structure?
+   |
+   |-- 1-2 parameters, conjugate model?
+   |   --> CONJUGATE ANALYSIS (S5.2)
+   |       Analytical posterior; no MCMC needed
+   |
+   |-- 1-2 parameters, non-conjugate?
+   |   --> GRID APPROXIMATION (S5.1)
+   |       Discretise parameter space; normalise
+   |
+   |-- 3+ parameters, single-level model?
+   |   --> PyMC with NUTS (S5.6)
+   |       Default target_accept=0.90
+   |
+   +-- Grouped data, multiple related units?
+       --> HIERARCHICAL MODEL (S5.8)
+           Non-centred parameterisation by default
+           Check for divergences; use az.plot_pair
+
+**Choosing the Interval Type**
+
+.. code-block:: text
+
+   What shape is the posterior?
+   |
+   |-- Symmetric (Normal, t)?
+   |   --> ETI and HDI are equivalent; use either
+   |
+   |-- Skewed (Gamma, Inv-Gamma, Beta near boundary)?
+   |   --> HDI is shorter; prefer HDI
+   |       Report both if audience expects ETI
+   |
+   +-- Multimodal?
+       --> HDI may be disjoint -- report it as a union
+           of intervals; consider whether multimodality
+           reflects a genuine scientific distinction
+
+**Choosing the Model Comparison Method**
+
+.. code-block:: text
+
+   Comparing candidate models?
+   |
+   |-- Routine comparison of 2+ fitted models?
+   |   --> PSIS-LOO via az.compare (S5.7)
+   |       Check Pareto k-hat < 0.7
+   |       Delta-ELPD / dSE > 4 --> meaningful difference
+   |
+   |-- Checking model adequacy (not comparison)?
+   |   --> POSTERIOR PREDICTIVE CHECK (S5.6)
+   |       az.plot_ppc; visual + test statistics
+   |
+   +-- Formal hypothesis test with precise null?
+       --> BAYES FACTOR (S5.7)
+           Sensitive to prior; use only when
+           priors are scientifically justified
+
+
+Quick Reference: Core Formulas
+------------------------------
+
+**Bayes' Theorem and Conjugate Updates**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Quantity
+     - Formula
+
+   * - Bayes' theorem
+     - :math:`p(\theta \mid y) = p(y \mid \theta) \, p(\theta) \; / \; p(y)`
+
+   * - Posterior mean (conjugate)
+     - :math:`w \cdot \hat{\theta}_{\text{MLE}} + (1-w) \cdot \mu_0`, where
+       :math:`w = n/(n+n_0)`
+
+   * - Beta-Binomial update
+     - :math:`\text{Beta}(\alpha_0 + k, \; \beta_0 + n - k)`
+
+   * - Normal-Normal update (known :math:`\sigma^2`)
+     - :math:`\mu_n = w\bar{y} + (1-w)\mu_0`, :math:`\sigma_n^2 = (n/\sigma^2 + 1/\sigma_0^2)^{-1}`
+
+   * - Poisson-Gamma update
+     - :math:`\text{Gamma}(\alpha_0 + \textstyle\sum y_i, \; \beta_0 + n)`
+
+**MCMC Diagnostics**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Diagnostic
+     - Rule of Thumb
+
+   * - :math:`\hat{R}` (split-R-hat)
+     - :math:`\hat{R} < 1.01` for all parameters; :math:`> 1.1` indicates non-convergence
+
+   * - ESS (bulk and tail)
+     - :math:`\text{ESS} > 400` per parameter; low ESS means high autocorrelation
+
+   * - Divergent transitions
+     - Must be 0 for trustworthy results; if present, reparameterise
+
+   * - Trace plots
+     - Should resemble "fuzzy caterpillars" with no trends or stuck regions
+
+**Model Comparison**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Quantity
+     - Interpretation
+
+   * - ELPD (LOO)
+     - Expected log predictive density; higher = better prediction
+
+   * - :math:`\Delta` ELPD / dSE
+     - Ratio :math:`> 4`: meaningful difference; :math:`< 4`: inconclusive
+
+   * - Pareto :math:`\hat{k}`
+     - :math:`< 0.5`: good; :math:`0.5`–:math:`0.7`: acceptable;
+       :math:`> 0.7`: unreliable — investigate observation or refit
+
+   * - :math:`p_{\text{WAIC}}` / :math:`p_{\text{LOO}}`
+     - Effective number of parameters; much larger than actual count
+       suggests overfitting or prior-data conflict
+
+**Hierarchical Models**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Quantity
+     - Formula / Rule
+
+   * - Shrinkage factor
+     - :math:`B_i = \sigma_i^2 / (\sigma_i^2 + \tau^2)`
+
+   * - Shrunk estimate
+     - :math:`\hat{\theta}_i = (1-B_i) y_i + B_i \mu`
+
+   * - Non-centred parameterisation
+     - :math:`\tilde{\theta}_i \sim \text{Normal}(0,1)`, then
+       :math:`\theta_i = \mu + \tau \tilde{\theta}_i`
+
+   * - When to use hierarchical
+     - Grouped data with :math:`J \geq 5` exchangeable groups, especially with
+       heterogeneous :math:`n_i`
+
+
+Common Pitfalls
+---------------
+
+.. admonition:: Common Pitfall ⚠️ Ignoring Divergences
+   :class: warning
+
+   Divergent transitions indicate that the posterior geometry defeated the sampler.
+   Increasing ``target_accept`` is a band-aid, not a cure. The correct response is to
+   reparameterise the model — typically switching from centred to non-centred for hierarchical
+   variance parameters. Report divergence counts alongside all posterior summaries.
+
+.. admonition:: Common Pitfall ⚠️ Overinterpreting Small ELPD Differences
+   :class: warning
+
+   An ELPD difference smaller than four times its standard error
+   (:math:`\Delta\text{ELPD}/\text{dSE} < 4`) does not provide strong evidence for one model
+   over another. Report the uncertainty in the comparison and consider model averaging rather
+   than selecting the "winner."
+
+.. admonition:: Common Pitfall ⚠️ Using Credible Intervals as Confidence Intervals
+   :class: warning
+
+   A 95% credible interval is not a 95% confidence interval unless the prior is non-informative
+   and the posterior is approximately Normal. For informative priors or skewed posteriors, the
+   two can differ substantially. Always state which interval you are reporting and what it means.
+
+.. admonition:: Common Pitfall ⚠️ Assuming Exchangeability Without Checking
+   :class: warning
+
+   Hierarchical models assume that group labels are interchangeable before observing data. If
+   there are known structural differences between groups (e.g., public vs. private schools),
+   these should be encoded as group-level covariates, not assumed away. Posterior predictive
+   checks on per-group residuals can reveal exchangeability violations.
+
+
+Connections Across the Chapter
+------------------------------
+
+The eight sections form a tightly linked sequence in which each section depends on earlier ones
+and enables later ones:
+
+- **Conjugate analysis** (§5.2) provides closed-form posteriors that serve as ground truth for
+  testing MCMC implementations (§5.5) and as building blocks for hierarchical models (§5.8).
+
+- **Credible intervals** (§5.3) apply identically to conjugate posteriors, grid approximations,
+  and MCMC samples — the inference tools are representation-agnostic.
+
+- **Markov chain theory** (§5.4) justifies the MCMC algorithms (§5.5) and explains why the
+  diagnostics (:math:`\hat{R}`, ESS, divergences) work. The ergodic theorem is the Bayesian
+  analog of the law of large numbers from :ref:`ch2.1-monte-carlo-fundamentals`.
+
+- **PyMC** (§5.6) automates what §§5.4–5.5 built from scratch, enabling the applied analyses
+  in §§5.7–5.8. The ``idata_kwargs={"log_likelihood": True}`` pattern connects sampling
+  to model comparison.
+
+- **LOO model comparison** (§5.7) provides the quantitative measure of improvement that
+  justifies the added complexity of hierarchical models (§5.8).
+
+- **Hierarchical partial pooling** (§5.8) closes the arc: the shrinkage formula is a
+  weighted average that generalises the conjugate posterior mean from §5.2, applied at the
+  group level.
+
+
+Connections to Earlier Chapters
+-------------------------------
+
+Bayesian methods do not replace the frequentist tools of Chapters 3–4; they complement them.
+
+- **Exponential families** (:ref:`ch3_1-exponential-families`) define the conjugate prior
+  families of §5.2. The sufficient statistics that drive the MLE also drive the conjugate
+  posterior update.
+
+- **Fisher information** (:ref:`ch3_3-sampling-variability`) reappears as the Jeffreys prior
+  :math:`p(\theta) \propto \sqrt{|I(\theta)|}` and as the basis for the Bernstein–von Mises
+  theorem that guarantees Bayesian–frequentist agreement at large :math:`n`.
+
+- **Bootstrap** (:ref:`ch4_3-nonparametric-bootstrap`) and Bayesian credible intervals both
+  quantify uncertainty, but through different mechanisms: bootstrap resamples the data;
+  Bayesian inference integrates over the posterior. For regular problems the two converge;
+  for small samples or non-standard estimands they can differ meaningfully.
+
+- **Cross-validation** (:ref:`ch4_8-cross-validation`) connects directly to PSIS-LOO (§5.7):
+  both estimate out-of-sample predictive accuracy, but LOO uses importance sampling from a
+  single MCMC fit rather than refitting :math:`n` times.
+
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **The posterior is the complete answer.** Every Bayesian inferential quantity — point
+      estimates, intervals, predictions, model comparisons — is derived from the posterior
+      distribution :math:`p(\theta \mid y)`. MCMC produces samples from this distribution;
+      conjugate analysis provides it in closed form; grid approximation discretises it.
+
+   2. **Computation is the bottleneck, and MCMC solves it.** Bayes' theorem is simple to
+      state but requires intractable integrals. Markov chain Monte Carlo — particularly
+      NUTS as implemented in PyMC — makes posterior computation routine for models with
+      hundreds of parameters, provided you diagnose convergence (:math:`\hat{R}`, ESS,
+      divergences) and reparameterise when needed.
+
+   3. **Hierarchical models earn their complexity.** Partial pooling adaptively borrows
+      strength across groups, improving estimates for data-sparse groups without degrading
+      estimates for data-rich groups. The non-centred parameterisation makes this
+      computationally tractable. LOO confirms the predictive improvement quantitatively.
+
+   4. **Model comparison is prediction, not truth.** LOO and WAIC measure which model
+      predicts unseen data best — not which model is "true." Posterior predictive checks
+      assess absolute adequacy. Both tools are essential; neither is sufficient alone.
+
+   5. **Course outcome alignment.** This chapter addressed Learning Outcome 2 (compare
+      frequentist and Bayesian inference; explain modelling roles and tradeoffs), Learning
+      Outcome 4 (construct and analyse Bayesian models; approximate posteriors via MCMC;
+      assess convergence), and laid groundwork for Learning Outcome 6 (synthesise methods
+      in a capstone addressing real-world data challenges).
