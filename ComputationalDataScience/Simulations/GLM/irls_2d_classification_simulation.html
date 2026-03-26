@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRLS for Logistic Regression (2D Classification) — STAT 418</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+  :root {
+    --bg:#0d1117;--bg2:#161b22;--bg3:#1c2129;--bg4:#21262d;
+    --tx:#e6edf3;--tx2:#8b949e;--tx3:#6e7681;
+    --bd:#30363d;--bd2:#484f58;
+    --red:#f85149;--blue:#58a6ff;--green:#3fb950;--amber:#d29922;--purple:#bc8cff;
+    --blue-bg:rgba(88,166,255,.12);--green-bg:rgba(63,185,80,.12);--amber-bg:rgba(210,153,34,.12);--red-bg:rgba(248,81,73,.12);
+    --mono:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+    --fs-base:clamp(12px, 1.1vw, 14px);
+    --fs-sm:clamp(10px, 0.9vw, 12px);
+    --fs-xs:clamp(9px, 0.8vw, 11px);
+    --fs-lg:clamp(14px, 1.3vw, 18px);
+    --fs-mono:clamp(10px, 0.85vw, 12px);
+    --fs-title:clamp(16px, 1.6vw, 22px);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--sans);background:var(--bg);color:var(--tx);min-height:100vh;padding:clamp(8px,1vw,14px);font-size:var(--fs-base);line-height:1.5;}
+  h1{font-size:var(--fs-title);font-weight:600;margin-bottom:2px;}
+  .sub{color:var(--tx2);font-size:var(--fs-sm);margin-bottom:clamp(6px,0.8vh,12px);}
+
+  .controls-wrap{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);margin:0 clamp(-8px,-1vw,-14px);padding:clamp(4px,0.4vh,8px) clamp(8px,1vw,14px);margin-bottom:clamp(4px,0.6vh,10px);}
+  .controls{display:flex;align-items:center;gap:clamp(4px,0.5vw,8px);flex-wrap:wrap;padding:0;margin-bottom:0;}
+  .controls label{font-size:var(--fs-xs);color:var(--tx2);}
+  .sep{width:1px;height:clamp(16px,2vh,22px);background:var(--bd);margin:0 2px;}
+  .btn{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;color:var(--tx);padding:clamp(2px,0.3vw,4px) clamp(6px,0.8vw,12px);cursor:pointer;font-size:var(--fs-sm);font-family:var(--sans);transition:background .15s;}
+  .btn:hover{background:var(--bg4);border-color:var(--bd2);}
+  .btn.active{background:var(--blue-bg);border-color:var(--blue);color:var(--blue);}
+  .btn.warn{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+  .btn-group{display:flex;gap:0;}
+  .btn-group .btn{border-radius:0;border-right-width:0;}
+  .btn-group .btn:first-child{border-radius:6px 0 0 6px;}
+  .btn-group .btn:last-child{border-radius:0 6px 6px 0;border-right-width:1px;}
+  select,input[type="number"]{background:var(--bg3);border:1px solid var(--bd);color:var(--tx);padding:3px 6px;border-radius:4px;font-size:var(--fs-xs);}
+  input[type="number"]{width:55px;font-family:var(--mono);}
+  input[type="range"]{-webkit-appearance:none;background:var(--bg4);height:4px;border-radius:2px;outline:none;min-width:clamp(60px,8vw,100px);}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--blue);cursor:pointer;border:2px solid var(--bg);}
+  .iter-disp{font-family:var(--mono);font-size:var(--fs-base);font-weight:600;color:var(--blue);min-width:50px;text-align:center;}
+
+  .plots{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,0.6vw,10px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .panel{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(6px,0.5vw,10px);position:relative;}
+  .panel-title{font-size:var(--fs-xs);font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:clamp(3px,0.4vh,6px);}
+  canvas{display:block;width:100%;}
+  .canvas-main{aspect-ratio:4/3;max-height:38vh;}
+  .canvas-sm{aspect-ratio:2/1;max-height:25vh;}
+  .legend{display:flex;gap:clamp(6px,0.6vw,10px);font-size:var(--fs-xs);color:var(--tx2);margin-top:clamp(3px,0.3vh,5px);flex-wrap:wrap;}
+  .legend-item{display:flex;align-items:center;gap:3px;}
+  .ldot{width:7px;height:7px;border-radius:50%;}
+  .lline{width:14px;height:2px;border-radius:1px;}
+
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(90px,8vw,120px),1fr));gap:clamp(3px,0.3vw,5px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .mc{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(5px,0.4vw,8px) clamp(6px,0.5vw,10px);}
+  .mc-label{font-size:var(--fs-xs);color:var(--tx3);margin-bottom:1px;}
+  .mc-val{font-family:var(--mono);font-size:var(--fs-base);font-weight:600;}
+
+  .detail{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(8px,0.8vw,12px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .detail-title{font-size:var(--fs-xs);font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:clamp(4px,0.5vh,8px);}
+  .math-row{margin:clamp(3px,0.3vh,5px) 0;font-size:var(--fs-base);line-height:1.8;}
+  .formula-block{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:clamp(6px,0.6vw,10px) clamp(8px,0.8vw,14px);margin:clamp(4px,0.5vh,8px) 0;}
+
+  .table-wrap{overflow-x:auto;max-height:clamp(180px,25vh,280px);overflow-y:auto;}
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-mono);font-family:var(--mono);}
+  th{position:sticky;top:0;background:var(--bg3);color:var(--tx2);padding:clamp(3px,0.3vw,5px) clamp(4px,0.4vw,8px);text-align:right;border-bottom:1px solid var(--bd);font-weight:500;font-size:var(--fs-xs);z-index:1;}
+  th:first-child{text-align:center;}
+  td{padding:clamp(2px,0.2vw,4px) clamp(4px,0.4vw,8px);text-align:right;border-bottom:1px solid var(--bd);color:var(--tx);}
+  td:first-child{text-align:center;color:var(--tx2);}
+  tr.hl td{background:var(--blue-bg);color:var(--blue);font-weight:600;}
+
+  .warn-banner{background:var(--red-bg);border:1px solid rgba(248,81,73,.3);border-radius:8px;padding:clamp(6px,0.6vw,10px) clamp(8px,0.8vw,14px);margin-bottom:clamp(6px,0.6vh,10px);font-size:var(--fs-sm);color:var(--red);display:none;}
+
+  @media(max-width:1100px){.plots3{grid-template-columns:1fr 1fr;} .plots3 .panel:nth-child(3){grid-column:1/-1;}}
+  @media(max-width:700px){.plots{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<h1>IRLS for Logistic Regression &mdash; 2D Classification</h1>
+<div class="sub">No intercept: P(Y=1|x) = &sigma;(&beta;<sub>1</sub>x<sub>1</sub> + &beta;<sub>2</sub>x<sub>2</sub>). Decision boundary is the p&nbsp;=&nbsp;0.5 contour through the origin.</div>
+
+<div class="controls-wrap">
+<div class="controls">
+  <div class="btn-group">
+    <button class="btn" id="btn-reset" title="Reset">&#x23EE;</button>
+    <button class="btn" id="btn-back" title="Back">&#x25C0;</button>
+    <button class="btn" id="btn-play" title="Play">&#x25B6; Play</button>
+    <button class="btn" id="btn-fwd" title="Forward">&#x25B6;</button>
+    <button class="btn" id="btn-end" title="End">&#x23ED;</button>
+  </div>
+  <input type="range" id="iter-slider" min="0" max="10" value="0">
+  <div class="iter-disp" id="iter-label">t = 0</div>
+  <div class="sep"></div>
+  <select id="speed-sel"><option value="1500">Slow</option><option value="800" selected>Med</option><option value="350">Fast</option></select>
+  <div class="sep"></div>
+  <label>n</label>
+  <select id="n-sel"><option value="12">12</option><option value="20" selected>20</option><option value="40">40</option><option value="80">80</option></select>
+  <select id="start-sel">
+    <option value="0">(0, 0)</option>
+    <option value="1">(-1.5, -1)</option>
+    <option value="2">(2, -1)</option>
+    <option value="3">(-2, 3)</option>
+  </select>
+  <button class="btn" id="btn-sep" title="Toggle separable data">Separable</button>
+  <button class="btn" id="btn-regen">&#x21BB;</button>
+  <div class="sep"></div>
+  <input type="checkbox" id="chk-gd" checked style="margin:0 2px;">
+  <label>GD</label>
+  <label>&alpha;</label>
+  <input type="range" id="lr-slider" min="1" max="500" value="50" style="min-width:60px;">
+  <span id="lr-val" style="font-family:var(--mono);font-size:var(--fs-xs);color:var(--amber);min-width:32px;">0.050</span>
+  <span id="lr-crit" style="font-family:var(--mono);font-size:var(--fs-xs);color:var(--tx3);min-width:60px;" title="Critical learning rate: α > 2/λ_max causes divergence"></span>
+  <label>total steps</label>
+  <select id="gd-iters"><option value="50">50</option><option value="100" selected>100</option><option value="300">300</option><option value="1000">1000</option></select>
+</div>
+</div>
+
+<div class="warn-banner" id="sep-warn">
+  <strong>Complete separation detected.</strong> The MLE does not exist in finite parameter space &mdash; &beta; diverges along the separating direction. Watch the weights w<sub>i</sub> collapse toward 0 as &mu;<sub>i</sub> &rarr; 0 or 1, and X<sup>T</sup>WX become increasingly ill-conditioned.
+</div>
+
+<div class="plots">
+  <div class="panel">
+    <div class="panel-title">P(Y=1 | x), data, and decision boundary</div>
+    <canvas id="cv-data" class="canvas-main"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="ldot" style="background:var(--blue)"></div>y=1</div>
+      <div class="legend-item"><div class="ldot" style="background:var(--red)"></div>y=0</div>
+      <div class="legend-item"><div class="lline" style="background:#fff"></div>p=0.5</div>
+      <div class="legend-item"><div class="lline" style="background:var(--green);opacity:.5"></div>True</div>
+      <div class="legend-item" style="color:var(--tx3)">Contours: .1 .25 .75 .9</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Log-likelihood &amp; optimization paths in (&beta;<sub>1</sub>, &beta;<sub>2</sub>) space</div>
+    <canvas id="cv-ll" class="canvas-main"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="lline" style="background:var(--blue)"></div>IRLS</div>
+      <div class="legend-item"><div class="lline" style="background:var(--red)"></div>GD (full path)</div>
+      <div class="legend-item"><div class="ldot" style="background:var(--amber);width:7px;height:7px"></div>MLE</div>
+      <div class="legend-item"><div class="ldot" style="background:var(--green);width:7px;height:7px"></div>True</div>
+    </div>
+  </div>
+</div>
+
+<div class="plots" style="grid-template-columns:1fr 1fr;">
+  <div class="panel">
+    <div class="panel-title">Working response: WLS view at current iteration</div>
+    <canvas id="cv-wls" class="canvas-sm"></canvas>
+    <div class="legend">
+      <div class="legend-item" style="color:var(--tx3)">Point size &prop; w<sub>i</sub></div>
+      <div class="legend-item"><div class="lline" style="background:var(--amber)"></div>WLS fit: z = X&beta;<sup>(t+1)</sup></div>
+      <div class="legend-item"><div class="lline" style="background:var(--tx3)"></div>z = &eta; (identity)</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Convergence (log-log: both axes)</div>
+    <canvas id="cv-conv" class="canvas-sm"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="lline" style="background:var(--blue)"></div>IRLS (quadratic)</div>
+      <div class="legend-item"><div class="lline" style="background:var(--red)"></div>GD (linear)</div>
+    </div>
+  </div>
+</div>
+
+<div class="metrics" id="metrics"></div>
+
+<div class="detail">
+  <div class="detail-title">IRLS computation at current iteration</div>
+  <div id="formulas"></div>
+</div>
+
+<div class="detail">
+  <div class="detail-title">Per-observation quantities</div>
+  <div class="table-wrap"><table id="obs-table"><thead><tr></tr></thead><tbody></tbody></table></div>
+</div>
+
+<div class="detail">
+  <div class="detail-title">Convergence history</div>
+  <div class="table-wrap"><table id="hist-table"><thead><tr></tr></thead><tbody></tbody></table></div>
+</div>
+
+<div class="detail" id="stability-detail" style="display:none;">
+  <div class="detail-title" style="color:var(--red);">Numerical stability warning</div>
+  <div id="stability-msg" style="font-size:13px;line-height:1.7;"></div>
+</div>
+
+<div class="detail">
+  <div class="detail-title">Python reference &mdash; what you should actually write vs. what's under the hood</div>
+  <div style="font-size:var(--fs-sm);color:var(--tx2);margin-bottom:10px;line-height:1.6;">
+    The JavaScript above uses explicit 2&times;2 inversion and scalar loops.
+    In practice, you fit GLMs with <code style="color:var(--blue)">statsmodels</code>. Below: the two-line
+    version first, then the manual IRLS that <code style="color:var(--blue)">sm.GLM.fit()</code> runs internally.
+  </div>
+
+  <div style="font-size:var(--fs-sm);font-weight:600;color:var(--green);margin:10px 0 4px;">What you write</div>
+  <pre style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:clamp(8px,0.8vw,14px);overflow-x:auto;font-family:var(--mono);font-size:var(--fs-mono);line-height:1.65;color:var(--tx);"><code><span style="color:var(--purple)">import</span> numpy <span style="color:var(--purple)">as</span> np
+<span style="color:var(--purple)">import</span> statsmodels.api <span style="color:var(--purple)">as</span> sm
+
+<span style="color:var(--tx3)"># Generate data (same setup as the simulation)</span>
+rng = np.random.default_rng(<span style="color:var(--amber)">418</span>)
+n = <span style="color:var(--amber)">20</span>
+X = rng.normal(size=(n, <span style="color:var(--amber)">2</span>)) * <span style="color:var(--amber)">1.5</span>
+beta_true = np.array([<span style="color:var(--amber)">1.5</span>, <span style="color:var(--amber)">-1.0</span>])
+p_true = <span style="color:var(--amber)">1</span> / (<span style="color:var(--amber)">1</span> + np.exp(-X @ beta_true))
+y = rng.binomial(<span style="color:var(--amber)">1</span>, p_true)
+
+<span style="color:var(--tx3)"># Fit: GLM with Binomial family, logit link (canonical), no intercept</span>
+<span style="color:var(--tx3)"># fit() calls IRLS internally — uses QR on the weighted system</span>
+model = sm.GLM(y, X, family=sm.families.Binomial())
+result = model.fit()
+
+print(result.summary())
+print(<span style="color:var(--green)">f"Converged in {result.fit_history['iteration']} IRLS iterations"</span>)
+
+<span style="color:var(--tx3)"># Diagnostics that connect to this simulation:</span>
+print(<span style="color:var(--green)">f"Coefficients:   {result.params}"</span>)
+print(<span style="color:var(--green)">f"Log-likelihood: {result.llf:.6f}"</span>)
+print(<span style="color:var(--green)">f"Deviance:       {result.deviance:.6f}"</span>)
+
+<span style="color:var(--tx3)"># Detect separation: check the condition number of the final X'WX</span>
+mu_hat = result.mu
+w_hat = mu_hat * (<span style="color:var(--amber)">1</span> - mu_hat)
+XtWX = (X * w_hat[:, None]).T @ X
+print(<span style="color:var(--green)">f"cond(X'WX):     {np.linalg.cond(XtWX):.2e}"</span>)
+print(<span style="color:var(--green)">f"min(w_i):       {w_hat.min():.4e}"</span>)</code></pre>
+
+  <div style="font-size:var(--fs-sm);font-weight:600;color:var(--amber);margin:14px 0 4px;">What statsmodels does internally (manual IRLS)</div>
+  <pre style="background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:clamp(8px,0.8vw,14px);overflow-x:auto;font-family:var(--mono);font-size:var(--fs-mono);line-height:1.65;color:var(--tx);"><code><span style="color:var(--purple)">from</span> scipy.special <span style="color:var(--purple)">import</span> expit  <span style="color:var(--tx3)"># numerically stable sigmoid</span>
+
+<span style="color:var(--purple)">def</span> <span style="color:var(--blue)">irls_logistic</span>(X, y, beta_init, max_iter=<span style="color:var(--amber)">25</span>, tol=<span style="color:var(--amber)">1e-10</span>):
+    <span style="color:var(--tx3)">"""Manual IRLS matching the simulation step-by-step."""</span>
+    beta = beta_init.copy()
+    history = []
+
+    <span style="color:var(--purple)">for</span> t <span style="color:var(--purple)">in</span> range(max_iter):
+        <span style="color:var(--tx3)"># --- All vectorized: no loops over observations ---</span>
+        eta = X @ beta                        <span style="color:var(--tx3)"># (n,) linear predictor</span>
+        mu = expit(eta)                       <span style="color:var(--tx3)"># (n,) stable sigmoid, not 1/(1+exp(-x))</span>
+        w = mu * (<span style="color:var(--amber)">1</span> - mu)                    <span style="color:var(--tx3)"># (n,) weights = b''(eta)</span>
+        z = eta + (y - mu) / w                <span style="color:var(--tx3)"># (n,) working response</span>
+
+        <span style="color:var(--tx3)"># --- Broadcasting: X * w[:,None] avoids n×n diag(w) ---</span>
+        Xw = X * w[:, None]                   <span style="color:var(--tx3)"># (n, p) row-scaled design matrix</span>
+        XtWX = Xw.T @ X                       <span style="color:var(--tx3)"># (p, p) Fisher information</span>
+        XtWz = Xw.T @ z                       <span style="color:var(--tx3)"># (p,) weighted RHS</span>
+
+        <span style="color:var(--tx3)"># --- SOLVE, never invert ---</span>
+        <span style="color:var(--tx3)"># statsmodels uses QR on sqrt(W)*X instead of forming X'WX</span>
+        <span style="color:var(--tx3)"># for better numerical stability; here we use the normal equations</span>
+        beta_new = np.linalg.solve(XtWX, XtWz)
+
+        <span style="color:var(--tx3)"># --- Monitor stability (what the JS hides) ---</span>
+        cond = np.linalg.cond(XtWX)
+        score = X.T @ (y - mu)
+        grad_norm = np.linalg.norm(score)
+
+        history.append({
+            <span style="color:var(--green)">'beta'</span>: beta.copy(), <span style="color:var(--green)">'ll'</span>: np.sum(y*np.log(mu+<span style="color:var(--amber)">1e-15</span>) + (<span style="color:var(--amber)">1</span>-y)*np.log(<span style="color:var(--amber)">1</span>-mu+<span style="color:var(--amber)">1e-15</span>)),
+            <span style="color:var(--green)">'grad_norm'</span>: grad_norm, <span style="color:var(--green)">'cond'</span>: cond, <span style="color:var(--green)">'min_w'</span>: w.min(),
+        })
+
+        <span style="color:var(--purple)">if</span> grad_norm &lt; tol:
+            beta = beta_new
+            <span style="color:var(--purple)">break</span>
+
+        <span style="color:var(--purple)">if</span> cond > <span style="color:var(--amber)">1e12</span>:
+            print(<span style="color:var(--green)">f"⚠ Iter {t}: cond(X'WX)={cond:.1e}, min(w)={w.min():.1e} — separation?"</span>)
+
+        beta = beta_new
+
+    <span style="color:var(--purple)">return</span> beta, history
+
+<span style="color:var(--tx3)"># Verify: manual matches statsmodels</span>
+beta_manual, hist = irls_logistic(X, y, np.zeros(<span style="color:var(--amber)">2</span>))
+print(<span style="color:var(--green)">f"statsmodels: {result.params}"</span>)
+print(<span style="color:var(--green)">f"manual IRLS: {beta_manual}"</span>)
+print(<span style="color:var(--green)">f"max |diff|:  {np.max(np.abs(result.params - beta_manual)):.2e}"</span>)</code></pre>
+
+  <div style="margin-top:12px;font-size:var(--fs-sm);color:var(--tx2);line-height:1.7;">
+    <strong style="color:var(--tx)">Three anti-patterns the JS demo commits (and why):</strong>
+    <div style="margin-top:6px;">
+      <span style="color:var(--red)">1. Explicit inversion</span> &mdash;
+      <code style="color:var(--tx3)">inv2(M)</code> computes (X<sup>T</sup>WX)<sup>&minus;1</sup> directly.
+      In production, <code style="color:var(--blue)">statsmodels</code> uses QR on
+      <code style="color:var(--blue)">sqrt(W) @ X</code>, which avoids forming
+      X<sup>T</sup>WX entirely.
+      The JS gets away with Cramer's formula because p&nbsp;=&nbsp;2.
+    </div>
+    <div style="margin-top:6px;">
+      <span style="color:var(--red)">2. Scalar loops</span> &mdash;
+      The JS accumulates the Hessian element-by-element. In NumPy:
+      <code style="color:var(--blue)">(X * w[:, None]).T @ X</code>. The broadcasting trick
+      <code style="color:var(--blue)">X * w[:, None]</code> scales each row by its weight
+      without the n&times;n diagonal.
+    </div>
+    <div style="margin-top:6px;">
+      <span style="color:var(--red)">3. Silent weight thresholding</span> &mdash;
+      The JS caps w<sub>i</sub> at 10<sup>&minus;12</sup> to prevent NaN.
+      Don't threshold silently &mdash; monitor
+      <code style="color:var(--blue)">np.linalg.cond(XtWX)</code> and switch to
+      penalized likelihood or a prior when the condition number explodes.
+      <code style="color:var(--blue)">statsmodels</code> will warn
+      &ldquo;PerfectSeparationError&rdquo; when it detects this.
+    </div>
+  </div>
+</div>
+
+<script>
+const K=(s,d)=>katex.renderToString(s,{displayMode:!!d,throwOnError:false});
+const km=s=>K(s,false);
+const kd=s=>K(s,true);
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function randn(rng){let u,v;do{u=rng();}while(u===0);v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+const TRUE_B=[1.5,-1.0];
+let seed=418;
+let separable=false;
+
+function sig(z){return z>20?1:z<-20?0:1/(1+Math.exp(-z));}
+function loglik(X,y,b){let s=0;for(let i=0;i<y.length;i++){const e=X[i][0]*b[0]+X[i][1]*b[1];const p=sig(e);s+=y[i]*Math.log(p+1e-15)+(1-y[i])*Math.log(1-p+1e-15);}return s;}
+function inv2(M){const d=M[0][0]*M[1][1]-M[0][1]*M[1][0];if(Math.abs(d)<1e-20)return null;return[[M[1][1]/d,-M[0][1]/d],[-M[1][0]/d,M[0][0]/d]];}
+
+let X=[],y=[],n=20;
+
+function genData(){
+  const rng=mulberry32(seed);
+  n=parseInt(document.getElementById('n-sel').value);
+  X=[];y=[];
+  if(separable){
+    // generate perfectly separable data: shift class means apart
+    for(let i=0;i<n;i++){
+      const cls=i<n/2?1:0;
+      let x1,x2;
+      if(cls===1){
+        x1=randn(rng)*0.6+1.5;
+        x2=randn(rng)*0.6-1.0;
+      } else {
+        x1=randn(rng)*0.6-1.5;
+        x2=randn(rng)*0.6+1.0;
+      }
+      X.push([x1,x2]);
+      y.push(cls);
+    }
+  } else {
+    for(let i=0;i<n;i++){
+      const x1=randn(rng)*1.5,x2=randn(rng)*1.5;
+      X.push([x1,x2]);
+      y.push(rng()<sig(TRUE_B[0]*x1+TRUE_B[1]*x2)?1:0);
+    }
+  }
+}
+
+const STARTS=[[0.0,0.0],[-1.5,-1.0],[2.0,-1.0],[-2.0,3.0]];
+let irlsPath=[];
+let gdPath=[];
+
+function runIRLS(){
+  const si=parseInt(document.getElementById('start-sel').value);
+  let b=STARTS[si].slice();
+  irlsPath=[];
+  const maxIter=separable?20:30;
+  for(let t=0;t<maxIter;t++){
+    const eta=X.map(xi=>xi[0]*b[0]+xi[1]*b[1]);
+    const mu=eta.map(e=>sig(e));
+    const w_raw=mu.map(p=>p*(1-p));
+    const n_thresholded=w_raw.filter(v=>v<1e-12).length;
+    const w=w_raw.map(v=>Math.max(v,1e-12));
+    const z=eta.map((e,i)=>e+(y[i]-mu[i])/w[i]);
+    let sc=[0,0];
+    for(let i=0;i<n;i++){sc[0]+=X[i][0]*(y[i]-mu[i]);sc[1]+=X[i][1]*(y[i]-mu[i]);}
+    const gn=Math.sqrt(sc[0]*sc[0]+sc[1]*sc[1]);
+    let M=[[0,0],[0,0]];
+    for(let i=0;i<n;i++)for(let j=0;j<2;j++)for(let k=0;k<2;k++)M[j][k]+=X[i][j]*X[i][k]*w[i];
+    // 2x2 spectral condition number: ratio of eigenvalues of symmetric PD matrix
+    const tr=M[0][0]+M[1][1];
+    const det=M[0][0]*M[1][1]-M[0][1]*M[1][0];
+    const disc=Math.sqrt(Math.max(0,tr*tr-4*det));
+    const lam1=(tr+disc)/2, lam2=(tr-disc)/2;
+    const condNum=lam2>1e-20?lam1/lam2:Infinity;
+    irlsPath.push({beta:b.slice(),ll:loglik(X,y,b),eta,mu,w,w_raw,z,score:sc.slice(),gradNorm:gn,XtWX:M,condNum,n_thresholded});
+    if(t>0&&gn<1e-10&&!separable)break;
+    let XtWz=[0,0];
+    for(let i=0;i<n;i++){XtWz[0]+=X[i][0]*w[i]*z[i];XtWz[1]+=X[i][1]*w[i]*z[i];}
+    const inv=inv2(M);
+    if(!inv)break;
+    const nb=[inv[0][0]*XtWz[0]+inv[0][1]*XtWz[1],inv[1][0]*XtWz[0]+inv[1][1]*XtWz[1]];
+    // cap step for separable to keep visualization sane
+    const stepMag=Math.sqrt((nb[0]-b[0])**2+(nb[1]-b[1])**2);
+    if(separable&&stepMag>10){
+      const scale=10/stepMag;
+      b=[b[0]+scale*(nb[0]-b[0]),b[1]+scale*(nb[1]-b[1])];
+    } else {
+      b=nb;
+    }
+  }
+}
+
+function runGD(){
+  const si=parseInt(document.getElementById('start-sel').value);
+  let b=STARTS[si].slice();
+  const lr=parseInt(document.getElementById('lr-slider').value)/1000;
+  const maxIt=parseInt(document.getElementById('gd-iters').value);
+  gdPath=[{beta:b.slice(),ll:loglik(X,y,b)}];
+  for(let t=0;t<maxIt;t++){
+    const mu=X.map(xi=>sig(xi[0]*b[0]+xi[1]*b[1]));
+    let sc=[0,0];
+    for(let i=0;i<n;i++){sc[0]+=X[i][0]*(y[i]-mu[i]);sc[1]+=X[i][1]*(y[i]-mu[i]);}
+    b=[b[0]+lr*sc[0],b[1]+lr*sc[1]];
+    // divergence check
+    if(!isFinite(b[0])||!isFinite(b[1])||Math.sqrt(b[0]*b[0]+b[1]*b[1])>100){
+      gdPath.push({beta:b.slice(),ll:-Infinity,diverged:true});
+      break;
+    }
+    gdPath.push({beta:b.slice(),ll:loglik(X,y,b)});
+  }
+}
+
+function computeMLE(){
+  let b=[0,0];
+  for(let t=0;t<300;t++){
+    const mu=X.map(xi=>sig(xi[0]*b[0]+xi[1]*b[1]));
+    const w=mu.map(p=>Math.max(p*(1-p),1e-12));
+    const z=X.map((xi,i)=>(xi[0]*b[0]+xi[1]*b[1])+(y[i]-mu[i])/w[i]);
+    let M=[[0,0],[0,0]],r=[0,0];
+    for(let i=0;i<n;i++){for(let j=0;j<2;j++){r[j]+=X[i][j]*w[i]*z[i];for(let k=0;k<2;k++)M[j][k]+=X[i][j]*X[i][k]*w[i];}}
+    const inv=inv2(M);if(!inv)break;
+    const nb=[inv[0][0]*r[0]+inv[0][1]*r[1],inv[1][0]*r[0]+inv[1][1]*r[1]];
+    const stepMag=Math.sqrt((nb[0]-b[0])**2+(nb[1]-b[1])**2);
+    if(stepMag<1e-12)break;
+    b=nb;
+  }
+  return b;
+}
+let mle=[0,0];
+let alphaCrit=1;
+
+function computeAlphaCrit(){
+  // eigenvalues of X'WX at MLE — 2x2 symmetric so analytic
+  const mu=X.map(xi=>sig(xi[0]*mle[0]+xi[1]*mle[1]));
+  const w=mu.map(p=>Math.max(p*(1-p),1e-12));
+  let M=[[0,0],[0,0]];
+  for(let i=0;i<n;i++)for(let j=0;j<2;j++)for(let k=0;k<2;k++)M[j][k]+=X[i][j]*X[i][k]*w[i];
+  const tr=M[0][0]+M[1][1];
+  const det=M[0][0]*M[1][1]-M[0][1]*M[1][0];
+  const disc=Math.sqrt(Math.max(0,tr*tr-4*det));
+  const lamMax=(tr+disc)/2;
+  alphaCrit=lamMax>1e-10?2/lamMax:1;
+}
+
+function setupCv(cv){
+  const rect=cv.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  cv.width=rect.width*dpr;cv.height=rect.height*dpr;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  // scale canvas fonts relative to a 400px reference width
+  const s=Math.max(0.7,Math.min(1.2,rect.width/400));
+  const ff=getComputedStyle(document.body).fontFamily;
+  const fTick=Math.round(10*s)+'px '+ff;
+  const fLabel=Math.round(11*s)+'px '+ff;
+  const fSmall=Math.round(9*s)+'px '+ff;
+  const fBold='bold '+Math.round(9*s)+'px '+ff;
+  const ptR=Math.max(3,Math.round(5*s)); // point radius
+  return{ctx,w:rect.width,h:rect.height,s,fTick,fLabel,fSmall,fBold,ptR};
+}
+
+function dataRange(){
+  const all=X.flat();
+  const mx=Math.max(...all.map(Math.abs));
+  return{min:-Math.max(mx*1.35,2.5),max:Math.max(mx*1.35,2.5)};
+}
+
+// ======== PLOT 1: DATA + PROBABILITY ========
+function drawData(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall,fBold,ptR}=setupCv(document.getElementById('cv-data'));
+  const pad={l:36,r:10,t:10,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const range=dataRange();
+  const toSx=v=>pad.l+(v-range.min)/(range.max-range.min)*pw;
+  const toSy=v=>pad.t+ph-(v-range.min)/(range.max-range.min)*ph;
+  const st=irlsPath[step];
+  const b1=st.beta[0],b2=st.beta[1];
+  const bMag=Math.sqrt(b1*b1+b2*b2);
+
+  // heatmap
+  const res=Math.ceil(pw/3),resY=Math.ceil(ph/3);
+  const imgData=ctx.createImageData(res,resY);
+  for(let py=0;py<resY;py++)for(let px=0;px<res;px++){
+    const x1=range.min+(px/res)*(range.max-range.min);
+    const x2=range.max-(py/resY)*(range.max-range.min);
+    const p=sig(b1*x1+b2*x2);
+    const idx=(py*res+px)*4;
+    if(bMag<1e-6){imgData.data[idx]=30;imgData.data[idx+1]=35;imgData.data[idx+2]=45;imgData.data[idx+3]=180;}
+    else if(p>0.5){const t2=(p-0.5)*2;const ii=t2*t2;imgData.data[idx]=Math.floor(20+ii*50);imgData.data[idx+1]=Math.floor(30+ii*50);imgData.data[idx+2]=Math.floor(50+ii*130);imgData.data[idx+3]=Math.floor(120+ii*100);}
+    else{const t2=(0.5-p)*2;const ii=t2*t2;imgData.data[idx]=Math.floor(50+ii*160);imgData.data[idx+1]=Math.floor(20+ii*20);imgData.data[idx+2]=Math.floor(20+ii*20);imgData.data[idx+3]=Math.floor(120+ii*100);}
+  }
+  const tmp=document.createElement('canvas');tmp.width=res;tmp.height=resY;
+  tmp.getContext('2d').putImageData(imgData,0,0);
+  ctx.drawImage(tmp,pad.l,pad.t,pw,ph);
+
+  ctx.save();ctx.beginPath();ctx.rect(pad.l,pad.t,pw,ph);ctx.clip();
+
+  // probability contours
+  if(bMag>1e-6&&Math.abs(b2)>1e-10){
+    for(const c of [{p:.1,a:.18},{p:.25,a:.22},{p:.75,a:.22},{p:.9,a:.18}]){
+      const logit=Math.log(c.p/(1-c.p));
+      const slope=-b1/b2,int2=logit/b2;
+      ctx.strokeStyle=`rgba(255,255,255,${c.a})`;ctx.lineWidth=0.8;ctx.setLineDash([4,3]);
+      ctx.beginPath();ctx.moveTo(toSx(range.min),toSy(slope*range.min+int2));ctx.lineTo(toSx(range.max),toSy(slope*range.max+int2));ctx.stroke();ctx.setLineDash([]);
+      const lx=range.max*0.7,ly=slope*lx+int2;
+      if(ly>range.min&&ly<range.max){ctx.fillStyle=`rgba(255,255,255,${c.a+.12})`;ctx.font=fTick;ctx.textAlign='left';ctx.fillText(c.p.toFixed(2),toSx(lx)+3,toSy(ly)-5);}
+    }
+  }
+
+  // true boundary
+  if(Math.abs(TRUE_B[1])>1e-10&&!separable){
+    const slope=-TRUE_B[0]/TRUE_B[1];
+    ctx.strokeStyle='rgba(63,185,80,0.4)';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+    ctx.beginPath();ctx.moveTo(toSx(range.min),toSy(slope*range.min));ctx.lineTo(toSx(range.max),toSy(slope*range.max));ctx.stroke();ctx.setLineDash([]);
+  }
+
+  // current boundary
+  if(bMag>1e-6){
+    if(Math.abs(b2)>1e-10){
+      const slope=-b1/b2;
+      ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(toSx(range.min),toSy(slope*range.min));ctx.lineTo(toSx(range.max),toSy(slope*range.max));ctx.stroke();
+    } else {
+      ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(toSx(0),pad.t);ctx.lineTo(toSx(0),pad.t+ph);ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  const gs=Math.max(1,Math.ceil((range.max-range.min)/8));
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){
+    ctx.beginPath();ctx.moveTo(toSx(v),pad.t);ctx.lineTo(toSx(v),pad.t+ph);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,toSy(0));ctx.lineTo(pad.l+pw,toSy(0));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(toSx(0),pad.t);ctx.lineTo(toSx(0),pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){if(v===0)continue;ctx.fillText(v,toSx(v),pad.t+ph+3);}
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){if(v===0)continue;ctx.fillText(v,pad.l-4,toSy(v));}
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('x\u2081',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('x\u2082',0,0);ctx.restore();
+
+  // data points
+  for(let i=0;i<n;i++){
+    const sx=toSx(X[i][0]),sy=toSy(X[i][1]);
+    ctx.beginPath();ctx.arc(sx,sy,7,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fill();
+    ctx.beginPath();ctx.arc(sx,sy,5,0,Math.PI*2);
+    ctx.fillStyle=y[i]===1?'rgba(88,166,255,0.9)':'rgba(248,81,73,0.9)';ctx.fill();
+    ctx.strokeStyle=y[i]===1?'#93c5fd':'#fca5a5';ctx.lineWidth=1.2;ctx.stroke();
+  }
+}
+
+// ======== PLOT 2: PARAMETER SPACE ========
+function paramRange(){
+  const si=parseInt(document.getElementById('start-sel').value);
+  const start=STARTS[si];
+  const allB=irlsPath.map(s=>s.beta).concat([mle,TRUE_B,start]);
+  if(document.getElementById('chk-gd').checked&&gdPath.length>0)
+    for(const s of gdPath){if(!s.diverged&&isFinite(s.beta[0])&&isFinite(s.beta[1]))allB.push(s.beta);}
+  let b1min=Infinity,b1max=-Infinity,b2min=Infinity,b2max=-Infinity;
+  for(const b of allB){if(b[0]<b1min)b1min=b[0];if(b[0]>b1max)b1max=b[0];if(b[1]<b2min)b2min=b[1];if(b[1]>b2max)b2max=b[1];}
+  // margin proportional to range so far-out starts don't get clipped
+  const mg=Math.max(0.8,0.15*Math.max(b1max-b1min,b2max-b2min));
+  return{b1min:b1min-mg,b1max:b1max+mg,b2min:b2min-mg,b2max:b2max+mg};
+}
+
+function drawLL(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall,fBold,ptR}=setupCv(document.getElementById('cv-ll'));
+  const pad={l:40,r:10,t:10,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const pr=paramRange();
+  const toSx=v=>pad.l+(v-pr.b1min)/(pr.b1max-pr.b1min)*pw;
+  const toSy=v=>pad.t+ph-(v-pr.b2min)/(pr.b2max-pr.b2min)*ph;
+
+  const gx=80,gy=60;const grid=[];let mn=Infinity,mx=-Infinity;
+  for(let j=0;j<gy;j++){grid[j]=[];for(let i=0;i<gx;i++){
+    const bx=pr.b1min+(pr.b1max-pr.b1min)*i/(gx-1),by=pr.b2min+(pr.b2max-pr.b2min)*j/(gy-1);
+    const v=loglik(X,y,[bx,by]);grid[j][i]=v;if(v<mn)mn=v;if(v>mx)mx=v;
+  }}
+  const cpw=pw/gx,cph=ph/gy;
+  for(let j=0;j<gy;j++)for(let i=0;i<gx;i++){
+    const t=(grid[j][i]-mn)/(mx-mn+1e-15);
+    ctx.fillStyle=`rgb(${Math.floor(12+t*18)},${Math.floor(16+t*30)},${Math.floor(25+t*55)})`;
+    ctx.fillRect(pad.l+i*cpw,pad.t+(gy-1-j)*cph,cpw+1,cph+1);
+  }
+  const nLev=18;const levels=[];for(let k=0;k<nLev;k++)levels.push(mn+(mx-mn)*(k+1)/(nLev+1));
+  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=0.5;
+  for(const lev of levels)for(let j=0;j<gy-1;j++)for(let i=0;i<gx-1;i++){
+    const v=[grid[j][i],grid[j][i+1],grid[j+1][i+1],grid[j+1][i]];const pts=[];
+    for(let e=0;e<4;e++){const e2=(e+1)%4;if((v[e]-lev)*(v[e2]-lev)<0){const t2=(lev-v[e])/(v[e2]-v[e]);
+      const corners=[[pad.l+i*cpw,pad.t+(gy-1-j)*cph],[pad.l+(i+1)*cpw,pad.t+(gy-1-j)*cph],[pad.l+(i+1)*cpw,pad.t+(gy-1-(j+1))*cph],[pad.l+i*cpw,pad.t+(gy-1-(j+1))*cph]];
+      pts.push([corners[e][0]+(corners[e2][0]-corners[e][0])*t2,corners[e][1]+(corners[e2][1]-corners[e][1])*t2]);}}
+    if(pts.length>=2){ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);ctx.lineTo(pts[1][0],pts[1][1]);ctx.stroke();}
+  }
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ph);ctx.lineTo(pad.l+pw,pad.t+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';
+  const s1=Math.max(1,Math.ceil((pr.b1max-pr.b1min)/6));
+  for(let v=Math.ceil(pr.b1min);v<=Math.floor(pr.b1max);v+=s1)ctx.fillText(v,toSx(v),pad.t+ph+12);
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  const s2=Math.max(1,Math.ceil((pr.b2max-pr.b2min)/6));
+  for(let v=Math.ceil(pr.b2min);v<=Math.floor(pr.b2max);v+=s2)ctx.fillText(v,pad.l-4,toSy(v));
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.fillText('\u03B2\u2081',pad.l+pw/2,pad.t+ph+22);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('\u03B2\u2082',0,0);ctx.restore();
+
+  // GD path — always show full path (all steps already computed)
+  const showGD=document.getElementById('chk-gd').checked;
+  const gdDiverged=gdPath.length>0&&gdPath[gdPath.length-1].diverged;
+  if(showGD&&gdPath.length>1){
+    ctx.save();ctx.beginPath();ctx.rect(pad.l,pad.t,pw,ph);ctx.clip();
+    ctx.strokeStyle='rgba(248,81,73,0.5)';ctx.lineWidth=1.5;ctx.beginPath();
+    ctx.moveTo(toSx(gdPath[0].beta[0]),toSy(gdPath[0].beta[1]));
+    for(let i=1;i<gdPath.length;i++){
+      const b=gdPath[i].beta;
+      if(!isFinite(b[0])||!isFinite(b[1]))break;
+      ctx.lineTo(toSx(b[0]),toSy(b[1]));
+    }
+    ctx.stroke();ctx.restore();
+    // end dot with step count
+    const lastValid=gdDiverged?gdPath[gdPath.length-2]:gdPath[gdPath.length-1];
+    if(lastValid){
+      const lsx=toSx(lastValid.beta[0]),lsy=toSy(lastValid.beta[1]);
+      ctx.beginPath();ctx.arc(lsx,lsy,4,0,Math.PI*2);
+      ctx.fillStyle='var(--red)';ctx.fill();
+      ctx.fillStyle='rgba(248,81,73,0.8)';ctx.font=fSmall;ctx.textAlign='left';
+      ctx.fillText(gdDiverged?'DIVERGED @'+(gdPath.length-2):(gdPath.length-1)+' steps',lsx+6,lsy+3);
+    }
+  }
+
+  // IRLS path
+  const ps=irlsPath.slice(0,step+1);
+  if(ps.length>1){ctx.strokeStyle='#58a6ff';ctx.lineWidth=2.5;ctx.beginPath();
+    ctx.moveTo(toSx(ps[0].beta[0]),toSy(ps[0].beta[1]));
+    for(let i=1;i<ps.length;i++)ctx.lineTo(toSx(ps[i].beta[0]),toSy(ps[i].beta[1]));ctx.stroke();}
+  for(let i=0;i<ps.length;i++){
+    const sx=toSx(ps[i].beta[0]),sy=toSy(ps[i].beta[1]);
+    ctx.beginPath();ctx.arc(sx,sy,i===step?6:3,0,Math.PI*2);
+    ctx.fillStyle=i===step?'#58a6ff':'rgba(88,166,255,0.5)';ctx.fill();
+    if(i===step){ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();}
+    ctx.fillStyle='rgba(255,255,255,0.65)';ctx.font=fBold;
+    ctx.textAlign='left';ctx.fillText(i,sx+7,sy-4);
+  }
+  // MLE
+  if(!separable){
+    ctx.beginPath();ctx.arc(toSx(mle[0]),toSy(mle[1]),6,0,Math.PI*2);
+    ctx.fillStyle='#d29922';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+  }
+  // True
+  if(!separable){
+    ctx.beginPath();ctx.arc(toSx(TRUE_B[0]),toSy(TRUE_B[1]),4,0,Math.PI*2);
+    ctx.fillStyle='rgba(63,185,80,0.7)';ctx.fill();ctx.strokeStyle='#3fb950';ctx.lineWidth=1;ctx.stroke();
+  }
+}
+
+// ======== PLOT 3: WLS WORKING RESPONSE ========
+function drawWLS(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall,fBold,ptR}=setupCv(document.getElementById('cv-wls'));
+  const pad={l:45,r:15,t:15,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const st=irlsPath[step];
+
+  // eta vs z, with point size ~ w
+  const etas=st.eta,zs=st.z,ws=st.w;
+  const allVals=etas.concat(zs);
+  let vmin=Math.min(...allVals),vmax=Math.max(...allVals);
+  const vmg=(vmax-vmin)*0.15||1;vmin-=vmg;vmax+=vmg;
+
+  const toSx=v=>pad.l+(v-vmin)/(vmax-vmin)*pw;
+  const toSy=v=>pad.t+ph-(v-vmin)/(vmax-vmin)*ph;
+
+  // background
+  ctx.fillStyle='var(--bg3)';ctx.fillRect(pad.l,pad.t,pw,ph);
+
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  const gs2=Math.max(1,Math.ceil((vmax-vmin)/6));
+  for(let v=Math.ceil(vmin);v<=Math.floor(vmax);v+=gs2){
+    ctx.beginPath();ctx.moveTo(toSx(v),pad.t);ctx.lineTo(toSx(v),pad.t+ph);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();
+  }
+
+  // identity line z = eta
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1;ctx.setLineDash([4,3]);
+  ctx.beginPath();ctx.moveTo(toSx(vmin),toSy(vmin));ctx.lineTo(toSx(vmax),toSy(vmax));ctx.stroke();ctx.setLineDash([]);
+
+  // next beta's fitted line: eta_new = X * beta_new
+  if(step<irlsPath.length-1){
+    const nextB=irlsPath[step+1].beta;
+    // fitted eta for next step vs current z
+    // WLS fit: z_i ~ eta_i(new), so plot eta_new vs z with the fit being z = eta_new
+    // actually: plot (eta_i_current, z_i) and overlay eta_new_i line
+    // better: plot fitted values eta_new against working response z
+    // the WLS regression line in (eta, z) space at convergence is the identity
+    // show it as: for the range of eta, z_fit = eta (identity at convergence)
+    ctx.strokeStyle='#d29922';ctx.lineWidth=2;
+    // compute WLS fit: z = a + b*eta_current (should approach identity)
+    // or simpler: just show the fitted line from next step
+    const nextEtas=irlsPath[step+1].eta;
+    // sort by current eta for a line
+    const pairs=etas.map((e,i)=>({eta:e,z:zs[i],etaNew:nextEtas[i]})).sort((a,b)=>a.eta-b.eta);
+    ctx.beginPath();
+    for(let i=0;i<pairs.length;i++){
+      const sx=toSx(pairs[i].eta),sy=toSy(pairs[i].etaNew);
+      // the WLS fit maps old eta to new eta; the working response z is the target
+      // plot: x-axis = eta_current (fitted), y-axis = z_i (working response), and the fit line is eta_new
+      i===0?ctx.moveTo(toSx(pairs[i].eta),toSy(pairs[i].etaNew)):ctx.lineTo(toSx(pairs[i].eta),toSy(pairs[i].etaNew));
+    }
+    ctx.stroke();
+  }
+
+  // data points: x = eta_i, y = z_i, radius ~ w_i
+  const maxW=Math.max(...ws);
+  for(let i=0;i<n;i++){
+    const sx=toSx(etas[i]),sy=toSy(zs[i]);
+    const r=Math.max(3,Math.min(14,ws[i]/maxW*14));
+    ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);
+    ctx.fillStyle=y[i]===1?'rgba(88,166,255,0.6)':'rgba(248,81,73,0.6)';ctx.fill();
+    ctx.strokeStyle=y[i]===1?'#58a6ff':'#f85149';ctx.lineWidth=1;ctx.stroke();
+  }
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ph);ctx.lineTo(pad.l+pw,pad.t+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  for(let v=Math.ceil(vmin);v<=Math.floor(vmax);v+=gs2)ctx.fillText(v.toFixed(0),toSx(v),pad.t+ph+3);
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(vmin);v<=Math.floor(vmax);v+=gs2)ctx.fillText(v.toFixed(0),pad.l-4,toSy(v));
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.fillText('\u03B7\u1d62 (linear predictor)',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('z\u1d62 (working response)',0,0);ctx.restore();
+}
+
+// ======== PLOT 4: CONVERGENCE ========
+function drawConv(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall,fBold,ptR}=setupCv(document.getElementById('cv-conv'));
+  const pad={l:48,r:15,t:15,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+
+  const refB=separable?irlsPath[irlsPath.length-1].beta:mle;
+
+  // IRLS errors
+  const irlsErr=irlsPath.map(s=>Math.sqrt((s.beta[0]-refB[0])**2+(s.beta[1]-refB[1])**2));
+  const irlsLog=irlsErr.map(e=>e>1e-20?Math.log10(e):-20);
+
+  // GD errors — filter out diverged entries
+  const showGD=document.getElementById('chk-gd').checked;
+  let gdLog=[];
+  if(showGD){
+    const gdValid=gdPath.filter(s=>!s.diverged&&isFinite(s.beta[0])&&isFinite(s.beta[1]));
+    const gdErr=gdValid.map(s=>Math.sqrt((s.beta[0]-refB[0])**2+(s.beta[1]-refB[1])**2));
+    gdLog=gdErr.map(e=>e>1e-20?Math.log10(e):-20);
+  }
+
+  // y range — always extend 2 decades below the smallest error
+  const allLog=irlsLog.concat(gdLog);
+  if(allLog.length===0)return;
+  let ymin=Math.min(...allLog),ymax=Math.max(...allLog);
+  ymin=Math.min(ymin-1.5, -16);  // always show at least down to 10^-16
+  const ymg=(ymax-ymin)*0.08||1;ymax+=ymg;
+
+  // x range: log10(t+1) so both IRLS and GD get visual spread
+  const xmaxRaw=Math.max(irlsPath.length-1,showGD?gdPath.length-1:0);
+  const xLogMax=Math.log10(xmaxRaw+1);
+  const toSx=t=>pad.l+(Math.log10(t+1)/Math.max(0.1,xLogMax))*pw;
+  const toSy=v=>pad.t+ph-(v-ymin)/(ymax-ymin)*ph;
+
+  ctx.fillStyle='var(--bg3)';ctx.fillRect(pad.l,pad.t,pw,ph);
+
+  // y grid
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  for(let v=Math.ceil(ymin);v<=Math.floor(ymax);v++){
+    ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();
+  }
+  // x grid at powers of 10: 1, 10, 100, 1000
+  for(let p=0;p<=4;p++){
+    const t=Math.pow(10,p)-1;
+    if(t>xmaxRaw)break;
+    const sx=toSx(t);
+    ctx.beginPath();ctx.moveTo(sx,pad.t);ctx.lineTo(sx,pad.t+ph);ctx.stroke();
+  }
+
+  // GD line
+  const gdDivergedConv=gdPath.length>0&&gdPath[gdPath.length-1].diverged;
+  if(showGD&&gdLog.length>1){
+    ctx.strokeStyle='rgba(248,81,73,0.5)';ctx.lineWidth=1.5;ctx.beginPath();
+    let started=false;
+    for(let i=0;i<gdLog.length;i++){
+      if(!started){ctx.moveTo(toSx(i),toSy(gdLog[i]));started=true;}
+      else ctx.lineTo(toSx(i),toSy(gdLog[i]));
+    }
+    ctx.stroke();
+    // endpoint label
+    const lastI=gdLog.length-1;
+    ctx.fillStyle='rgba(248,81,73,0.8)';ctx.font=fSmall;ctx.textAlign='right';
+    const lbl=gdDivergedConv?'DIVERGED @'+lastI:'GD @'+lastI;
+    ctx.fillText(lbl,toSx(lastI)+2,toSy(gdLog[lastI])-6);
+  }
+
+  // IRLS line
+  ctx.strokeStyle='#58a6ff';ctx.lineWidth=2.5;ctx.beginPath();
+  let started=false;
+  for(let i=0;i<=step&&i<irlsLog.length;i++){
+    
+    if(!started){ctx.moveTo(toSx(i),toSy(irlsLog[i]));started=true;}
+    else ctx.lineTo(toSx(i),toSy(irlsLog[i]));
+  }
+  ctx.stroke();
+  // dots
+  for(let i=0;i<=step&&i<irlsLog.length;i++){
+    
+    ctx.beginPath();ctx.arc(toSx(i),toSy(irlsLog[i]),i===step?5:3,0,Math.PI*2);
+    ctx.fillStyle=i===step?'#58a6ff':'rgba(88,166,255,0.5)';ctx.fill();
+  }
+  // IRLS endpoint label
+  if(step>0&&step<irlsLog.length){
+    ctx.fillStyle='rgba(88,166,255,0.7)';ctx.font=fSmall;ctx.textAlign='left';
+    ctx.fillText('IRLS @'+step,toSx(step)+4,toSy(irlsLog[step])-5);
+  }
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ph);ctx.lineTo(pad.l+pw,pad.t+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  // x tick labels at key iterations: 0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  const xTicks=[0,1,2,5,10,20,50,100,200,500,1000,2000,5000];
+  for(const t of xTicks){
+    if(t>xmaxRaw*1.1)break;
+    ctx.fillText(t,toSx(t),pad.t+ph+3);
+  }
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(ymin);v<=Math.floor(ymax);v++)ctx.fillText(v,pad.l-4,toSy(v));
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.fillText('Iteration (log scale)',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
+  ctx.fillText('log\u2081\u2080 \u2016\u03B2 \u2212 '+(separable?'\u03B2\u209B':'MLE')+'\u2016',0,0);
+  ctx.restore();
+}
+
+// ======== METRICS ========
+function updateMetrics(step){
+  const st=irlsPath[step];
+  const err=Math.sqrt((st.beta[0]-mle[0])**2+(st.beta[1]-mle[1])**2);
+  const acc=X.reduce((s,xi,i)=>{const p=sig(st.beta[0]*xi[0]+st.beta[1]*xi[1]);return s+((p>=0.5?1:0)===y[i]?1:0);},0)/n;
+  const maxW=Math.max(...st.w),minW=Math.min(...st.w);
+  document.getElementById('metrics').innerHTML=`
+    <div class="mc"><div class="mc-label">${km('\\beta_1')}</div><div class="mc-val" style="color:var(--blue)">${st.beta[0].toFixed(5)}</div></div>
+    <div class="mc"><div class="mc-label">${km('\\beta_2')}</div><div class="mc-val" style="color:var(--blue)">${st.beta[1].toFixed(5)}</div></div>
+    <div class="mc"><div class="mc-label">${km('\\ell(\\boldsymbol{\\beta})')}</div><div class="mc-val" style="color:var(--green)">${st.ll.toFixed(4)}</div></div>
+    <div class="mc"><div class="mc-label">${km('\\|\\nabla\\ell\\|')}</div><div class="mc-val" style="color:var(--amber)">${st.gradNorm.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">${separable?'||&beta;||':'||&beta;\u2212MLE||'}</div><div class="mc-val" style="color:var(--amber)">${separable?Math.sqrt(st.beta[0]**2+st.beta[1]**2).toFixed(3):err.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">Accuracy</div><div class="mc-val" style="color:var(--${acc>=0.8?'green':acc>=0.6?'amber':'red'})">${(100*acc).toFixed(0)}%</div></div>
+    <div class="mc"><div class="mc-label">min w<sub>i</sub></div><div class="mc-val" style="color:${minW<0.01?'var(--red)':'var(--tx)'}">${minW.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">cond(X<sup>T</sup>WX)</div><div class="mc-val" style="color:${st.condNum>1e6?'var(--red)':st.condNum>1e3?'var(--amber)':'var(--tx)'}">${st.condNum>1e15?'\u221E':st.condNum.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">w<sub>i</sub> thresholded</div><div class="mc-val" style="color:${st.n_thresholded>0?'var(--red)':'var(--tx)'}">${st.n_thresholded} / ${n}</div></div>
+  `;
+}
+
+// ======== FORMULAS ========
+function updateFormulas(step){
+  const st=irlsPath[step];
+  const el=document.getElementById('formulas');
+  if(step===0){
+    el.innerHTML=`<div class="formula-block">
+      <div class="math-row">${km('t=0')}: Initialize ${km(`\\boldsymbol{\\beta}^{(0)} = (${st.beta[0].toFixed(1)},\\,${st.beta[1].toFixed(1)})^\\top`)}</div>
+      <div class="math-row">${km('\\eta_i = \\mathbf{x}_i^\\top\\boldsymbol{\\beta}')}, &ensp;
+        ${km('\\mu_i = \\sigma(\\eta_i)')}, &ensp;
+        ${km('w_i = \\mu_i(1-\\mu_i)')}, &ensp;
+        ${km('z_i = \\eta_i + (y_i-\\mu_i)/w_i')}</div>
+      <div class="math-row">Score: ${km(`\\nabla\\ell = (${st.score[0].toFixed(4)},\\,${st.score[1].toFixed(4)})^\\top`)}</div>
+    </div>`;
+  } else {
+    const prev=irlsPath[step-1];const M=prev.XtWX;const invM=inv2(M);
+    el.innerHTML=`<div class="formula-block">
+      <div class="math-row" style="font-size:12px;color:var(--tx2)">Update ${km(`t=${step-1} \\to t=${step}`)}: Solve ${km('(\\mathbf{X}^\\top\\!\\mathbf{W}\\mathbf{X})\\boldsymbol{\\beta}^{(t+1)} = \\mathbf{X}^\\top\\!\\mathbf{W}\\mathbf{z}')}</div>
+      <div class="math-row">${kd(`\\mathbf{X}^\\top\\!\\mathbf{W}^{(${step-1})}\\mathbf{X} = \\begin{pmatrix} ${M[0][0].toFixed(4)} & ${M[0][1].toFixed(4)} \\\\ ${M[1][0].toFixed(4)} & ${M[1][1].toFixed(4)} \\end{pmatrix}`)}</div>
+      ${invM?`<div class="math-row">${kd(`(\\mathbf{X}^\\top\\!\\mathbf{W}\\mathbf{X})^{-1} = \\begin{pmatrix} ${invM[0][0].toFixed(5)} & ${invM[0][1].toFixed(5)} \\\\ ${invM[1][0].toFixed(5)} & ${invM[1][1].toFixed(5)} \\end{pmatrix}`)}</div>`:''}
+      <div class="math-row">${kd(`\\boldsymbol{\\beta}^{(${step})} = \\begin{pmatrix} ${st.beta[0].toFixed(6)} \\\\ ${st.beta[1].toFixed(6)} \\end{pmatrix}`)}</div>
+      <div class="math-row">${km(`\\ell = ${st.ll.toFixed(6)}`)}, &ensp;
+        ${km(`\\Delta\\ell = ${(st.ll-prev.ll).toExponential(3)}`)}, &ensp;
+        ${km(`\\|\\nabla\\ell\\| = ${st.gradNorm.toExponential(3)}`)}</div>
+    </div>`;
+  }
+}
+
+// ======== TABLES ========
+function updateObsTable(step){
+  const st=irlsPath[step];
+  const thead=document.querySelector('#obs-table thead tr');
+  const tbody=document.querySelector('#obs-table tbody');
+  thead.innerHTML=`<th>i</th><th>${km('x_{i1}')}</th><th>${km('x_{i2}')}</th><th>${km('y_i')}</th><th>${km('\\eta_i')}</th><th>${km('\\hat\\mu_i')}</th><th>${km('w_i')}</th><th>${km('z_i')}</th><th>${km('y_i-\\hat\\mu_i')}</th>`;
+  let rows='';
+  for(let i=0;i<n;i++){
+    const r=y[i]-st.mu[i];
+    const wRaw=st.w_raw[i];
+    const wThresh=wRaw<1e-12;
+    const wWarn=wRaw<0.001;
+    rows+=`<tr><td>${i+1}</td><td>${X[i][0].toFixed(3)}</td><td>${X[i][1].toFixed(3)}</td>
+      <td style="color:${y[i]===1?'var(--blue)':'var(--red)'};font-weight:600">${y[i]}</td>
+      <td>${st.eta[i].toFixed(4)}</td><td>${st.mu[i].toFixed(4)}</td>
+      <td style="color:${wWarn?'var(--red)':'var(--tx)'}">${wRaw<0.001?wRaw.toExponential(2):wRaw.toFixed(4)}${wThresh?' \u26A0':''}</td>
+      <td>${Math.abs(st.z[i])>100?st.z[i].toExponential(2):st.z[i].toFixed(4)}</td>
+      <td style="color:${r>0?'var(--blue)':'var(--red)'}">${r.toFixed(4)}</td></tr>`;
+  }
+  tbody.innerHTML=rows;
+}
+
+function updateHistTable(step){
+  const thead=document.querySelector('#hist-table thead tr');
+  const tbody=document.querySelector('#hist-table tbody');
+  thead.innerHTML=`<th>t</th><th>${km('\\beta_1')}</th><th>${km('\\beta_2')}</th><th>${km('\\ell(\\beta)')}</th><th>${km('\\|\\nabla\\ell\\|')}</th><th>${km('\\|\\boldsymbol{\\beta}\\|')}</th><th>Acc</th><th>min w</th><th>cond</th>`;
+  let rows='';
+  for(let t=0;t<irlsPath.length;t++){
+    const s=irlsPath[t];
+    const bNorm=Math.sqrt(s.beta[0]**2+s.beta[1]**2);
+    const acc=X.reduce((sum,xi,i)=>{const p=sig(s.beta[0]*xi[0]+s.beta[1]*xi[1]);return sum+((p>=0.5?1:0)===y[i]?1:0);},0)/n;
+    const minW=Math.min(...s.w);
+    const condStr=s.condNum>1e15?'\u221E':s.condNum.toExponential(1);
+    rows+=`<tr class="${t===step?'hl':''}"><td>${t}</td><td>${s.beta[0].toFixed(5)}</td><td>${s.beta[1].toFixed(5)}</td>
+      <td>${s.ll.toFixed(5)}</td><td>${s.gradNorm.toExponential(2)}</td><td>${bNorm.toFixed(3)}</td>
+      <td>${(100*acc).toFixed(0)}%</td>
+      <td style="color:${minW<0.001?'var(--red)':'var(--tx)'}">${minW<0.001?minW.toExponential(1):minW.toFixed(4)}</td>
+      <td style="color:${s.condNum>1e6?'var(--red)':s.condNum>1e3?'var(--amber)':'var(--tx)'}">${condStr}</td></tr>`;
+  }
+  tbody.innerHTML=rows;
+}
+
+function updateStability(step){
+  const st=irlsPath[step];
+  const el=document.getElementById('stability-detail');
+  const msg=document.getElementById('stability-msg');
+  const minW=Math.min(...st.w_raw);
+  const issues=[];
+  if(st.n_thresholded>0)
+    issues.push(`<span style="color:var(--red)">${st.n_thresholded} of ${n} weights</span> hit the 10<sup>\u221212</sup> floor (true w<sub>i</sub> = ${minW.toExponential(2)}). The JS silently replaces these to avoid division by zero \u2014 in Python, you would detect this via <code style="color:var(--blue)">np.linalg.cond(XtWX)</code> and switch to penalized likelihood.`);
+  if(st.condNum>1e6)
+    issues.push(`cond(X<sup>T</sup>WX) = <span style="color:var(--red)">${st.condNum>1e15?'\u221E':st.condNum.toExponential(2)}</span>. The information matrix is nearly singular \u2014 the solve step amplifies rounding errors by this factor. With <code style="color:var(--blue)">np.linalg.solve</code> and partial pivoting this is manageable up to ~10<sup>15</sup>; with explicit inversion it fails much sooner.`);
+  if(Math.sqrt(st.beta[0]**2+st.beta[1]**2)>10&&separable)
+    issues.push(`\u2016\u03B2\u2016 = ${Math.sqrt(st.beta[0]**2+st.beta[1]**2).toFixed(1)} and growing. The MLE does not exist in finite parameter space \u2014 \u03B2 diverges along the separating hyperplane normal. The likelihood approaches 0 (perfect classification) asymptotically but never reaches it.`);
+  if(issues.length>0){
+    el.style.display='block';
+    msg.innerHTML=issues.map(s=>'<div style="margin-bottom:6px;">\u26A0\uFE0F '+s+'</div>').join('');
+  } else {
+    el.style.display='none';
+  }
+}
+
+// ======== STATE ========
+let currentStep=0,playing=false,playTimer=null;
+
+function render(){
+  document.getElementById('iter-slider').value=currentStep;
+  document.getElementById('iter-label').textContent='t = '+currentStep;
+  drawData(currentStep);drawLL(currentStep);drawWLS(currentStep);drawConv(currentStep);
+  updateMetrics(currentStep);updateFormulas(currentStep);updateObsTable(currentStep);updateHistTable(currentStep);
+  updateStability(currentStep);
+}
+
+function init(){
+  genData();
+  mle=computeMLE();
+  computeAlphaCrit();
+  runIRLS();runGD();
+  currentStep=0;
+  document.getElementById('iter-slider').max=irlsPath.length-1;
+  document.getElementById('sep-warn').style.display=separable?'block':'none';
+  updateAlphaCritDisplay();
+  render();
+}
+
+function updateAlphaCritDisplay(){
+  const lr=parseInt(document.getElementById('lr-slider').value)/1000;
+  const el=document.getElementById('lr-crit');
+  const over=lr>alphaCrit;
+  el.style.color=over?'var(--red)':'var(--tx3)';
+  el.textContent='(crit: '+alphaCrit.toFixed(3)+(over?' — diverges!)':')');
+}
+
+function stopPlay(){playing=false;if(playTimer)clearInterval(playTimer);playTimer=null;document.getElementById('btn-play').innerHTML='&#x25B6; Play';}
+document.getElementById('iter-slider').addEventListener('input',e=>{currentStep=parseInt(e.target.value);render();});
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();currentStep=0;render();});
+document.getElementById('btn-back').addEventListener('click',()=>{stopPlay();currentStep=Math.max(0,currentStep-1);render();});
+document.getElementById('btn-fwd').addEventListener('click',()=>{stopPlay();currentStep=Math.min(irlsPath.length-1,currentStep+1);render();});
+document.getElementById('btn-end').addEventListener('click',()=>{stopPlay();currentStep=irlsPath.length-1;render();});
+document.getElementById('btn-play').addEventListener('click',()=>{
+  if(playing){stopPlay();return;}playing=true;
+  document.getElementById('btn-play').innerHTML='&#x23F8; Pause';
+  if(currentStep>=irlsPath.length-1)currentStep=0;
+  const spd=parseInt(document.getElementById('speed-sel').value);
+  playTimer=setInterval(()=>{if(currentStep>=irlsPath.length-1){stopPlay();return;}currentStep++;render();},spd);
+});
+document.getElementById('speed-sel').addEventListener('change',()=>{if(playing){stopPlay();document.getElementById('btn-play').click();}});
+document.getElementById('n-sel').addEventListener('change',()=>{stopPlay();init();});
+document.getElementById('start-sel').addEventListener('change',()=>{stopPlay();runIRLS();runGD();currentStep=0;document.getElementById('iter-slider').max=irlsPath.length-1;render();});
+document.getElementById('btn-regen').addEventListener('click',()=>{stopPlay();seed=Math.floor(Math.random()*100000);init();});
+document.getElementById('btn-sep').addEventListener('click',()=>{
+  separable=!separable;
+  document.getElementById('btn-sep').className=separable?'btn warn':'btn';
+  stopPlay();init();
+});
+document.getElementById('chk-gd').addEventListener('change',render);
+document.getElementById('lr-slider').addEventListener('input',e=>{
+  document.getElementById('lr-val').textContent=(parseInt(e.target.value)/1000).toFixed(3);
+  updateAlphaCritDisplay();
+  runGD();render();
+});
+document.getElementById('gd-iters').addEventListener('change',()=>{runGD();render();});
+window.addEventListener('resize',render);
+init();
+</script>
+</body>
+</html>
