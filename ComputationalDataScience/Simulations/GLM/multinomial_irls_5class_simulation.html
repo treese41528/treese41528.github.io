@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRLS for Multinomial Logistic Regression (5-class) — STAT 418</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+  :root {
+    --bg:#0d1117;--bg2:#161b22;--bg3:#1c2129;--bg4:#21262d;
+    --tx:#e6edf3;--tx2:#8b949e;--tx3:#6e7681;
+    --bd:#30363d;--bd2:#484f58;
+    --red:#f85149;--blue:#58a6ff;--green:#3fb950;--amber:#d29922;--purple:#bc8cff;
+    --teal:#39d353;--coral:#f0883e;--pink:#f778ba;
+    --blue-bg:rgba(88,166,255,.12);--red-bg:rgba(248,81,73,.12);
+    --mono:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+    --fs-base:clamp(12px,1.1vw,14px);--fs-sm:clamp(10px,0.9vw,12px);--fs-xs:clamp(9px,0.8vw,11px);
+    --fs-mono:clamp(10px,0.85vw,12px);--fs-title:clamp(16px,1.6vw,22px);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--sans);background:var(--bg);color:var(--tx);min-height:100vh;padding:clamp(8px,1vw,14px);font-size:var(--fs-base);line-height:1.5;}
+  h1{font-size:var(--fs-title);font-weight:600;margin-bottom:2px;}
+  .sub{color:var(--tx2);font-size:var(--fs-sm);margin-bottom:clamp(6px,0.8vh,12px);}
+  .controls-wrap{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);margin:0 clamp(-8px,-1vw,-14px);padding:clamp(4px,0.4vh,8px) clamp(8px,1vw,14px);margin-bottom:clamp(4px,0.6vh,10px);}
+  .controls{display:flex;align-items:center;gap:clamp(4px,0.5vw,8px);flex-wrap:wrap;}
+  .controls label{font-size:var(--fs-xs);color:var(--tx2);}
+  .sep{width:1px;height:clamp(16px,2vh,22px);background:var(--bd);margin:0 2px;}
+  .btn{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;color:var(--tx);padding:clamp(2px,0.3vw,4px) clamp(6px,0.8vw,12px);cursor:pointer;font-size:var(--fs-sm);font-family:var(--sans);transition:background .15s;}
+  .btn:hover{background:var(--bg4);border-color:var(--bd2);}
+  .btn-group{display:flex;gap:0;}
+  .btn-group .btn{border-radius:0;border-right-width:0;}
+  .btn-group .btn:first-child{border-radius:6px 0 0 6px;}
+  .btn-group .btn:last-child{border-radius:0 6px 6px 0;border-right-width:1px;}
+  select{background:var(--bg3);border:1px solid var(--bd);color:var(--tx);padding:3px 6px;border-radius:4px;font-size:var(--fs-xs);}
+  input[type="range"]{-webkit-appearance:none;background:var(--bg4);height:4px;border-radius:2px;outline:none;min-width:clamp(60px,8vw,100px);}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--blue);cursor:pointer;border:2px solid var(--bg);}
+  .iter-disp{font-family:var(--mono);font-size:var(--fs-base);font-weight:600;color:var(--blue);min-width:50px;text-align:center;}
+  .plots{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,0.6vw,10px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .panel{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(6px,0.5vw,10px);position:relative;}
+  .panel-title{font-size:var(--fs-xs);font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:clamp(3px,0.4vh,6px);}
+  canvas{display:block;width:100%;}
+  .canvas-main{aspect-ratio:4/3;max-height:38vh;}
+  .canvas-sm{aspect-ratio:2/1;max-height:25vh;}
+  .legend{display:flex;gap:clamp(6px,0.6vw,10px);font-size:var(--fs-xs);color:var(--tx2);margin-top:clamp(3px,0.3vh,5px);flex-wrap:wrap;}
+  .legend-item{display:flex;align-items:center;gap:3px;}
+  .ldot{width:7px;height:7px;border-radius:50%;}
+  .lline{width:14px;height:2px;border-radius:1px;}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(clamp(90px,8vw,120px),1fr));gap:clamp(3px,0.3vw,5px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .mc{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(5px,0.4vw,8px) clamp(6px,0.5vw,10px);}
+  .mc-label{font-size:var(--fs-xs);color:var(--tx3);margin-bottom:1px;}
+  .mc-val{font-family:var(--mono);font-size:var(--fs-base);font-weight:600;}
+  .detail{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:clamp(8px,0.8vw,12px);margin-bottom:clamp(6px,0.6vh,10px);}
+  .detail-title{font-size:var(--fs-xs);font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:clamp(4px,0.5vh,8px);}
+  .math-row{margin:clamp(3px,0.3vh,5px) 0;font-size:var(--fs-base);line-height:1.8;}
+  .formula-block{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:clamp(6px,0.6vw,10px) clamp(8px,0.8vw,14px);margin:clamp(4px,0.5vh,8px) 0;}
+  .table-wrap{overflow-x:auto;max-height:clamp(180px,25vh,280px);overflow-y:auto;}
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-mono);font-family:var(--mono);}
+  th{position:sticky;top:0;background:var(--bg3);color:var(--tx2);padding:clamp(3px,0.3vw,5px) clamp(4px,0.4vw,8px);text-align:right;border-bottom:1px solid var(--bd);font-weight:500;font-size:var(--fs-xs);z-index:1;}
+  th:first-child{text-align:center;}
+  td{padding:clamp(2px,0.2vw,4px) clamp(4px,0.4vw,8px);text-align:right;border-bottom:1px solid var(--bd);color:var(--tx);}
+  td:first-child{text-align:center;color:var(--tx2);}
+  tr.hl td{background:var(--blue-bg);color:var(--blue);font-weight:600;}
+  @media(max-width:700px){.plots{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<h1>IRLS for Multinomial Logistic Regression &mdash; 5 Classes</h1>
+<div class="sub">Softmax link, no intercept, K=5 classes (class 5 = reference). Parameters: (K&minus;1)&times;p = 4&times;2 = 8. Fisher information is 8&times;8 block matrix.</div>
+
+<div class="controls-wrap">
+<div class="controls">
+  <div class="btn-group">
+    <button class="btn" id="btn-reset">&#x23EE;</button>
+    <button class="btn" id="btn-back">&#x25C0;</button>
+    <button class="btn" id="btn-play">&#x25B6; Play</button>
+    <button class="btn" id="btn-fwd">&#x25B6;</button>
+    <button class="btn" id="btn-end">&#x23ED;</button>
+  </div>
+  <input type="range" id="iter-slider" min="0" max="10" value="0">
+  <div class="iter-disp" id="iter-label">t = 0</div>
+  <div class="sep"></div>
+  <select id="speed-sel"><option value="1500">Slow</option><option value="800" selected>Med</option><option value="350">Fast</option></select>
+  <div class="sep"></div>
+  <label>n</label>
+  <select id="n-sel"><option value="30">30</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option></select>
+  <div class="sep"></div>
+  <button class="btn" id="btn-regen">&#x21BB;</button>
+  <div class="sep"></div>
+  <input type="checkbox" id="chk-gd" checked style="margin:0 2px;">
+  <label>GD</label>
+  <label>&alpha;</label>
+  <input type="range" id="lr-slider" min="1" max="200" value="20" style="min-width:60px;">
+  <span id="lr-val" style="font-family:var(--mono);font-size:var(--fs-xs);color:var(--amber);min-width:32px;">0.020</span>
+  <label>steps</label>
+  <select id="gd-iters"><option value="100">100</option><option value="300" selected>300</option><option value="1000">1000</option></select>
+</div>
+</div>
+
+<div class="plots">
+  <div class="panel">
+    <div class="panel-title">Data &amp; decision regions</div>
+    <canvas id="cv-data" class="canvas-main"></canvas>
+    <div class="legend" id="class-legend"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Parameter traces (&beta;<sub>k</sub> over iterations)</div>
+    <canvas id="cv-params" class="canvas-main"></canvas>
+    <div class="legend">
+      <div class="legend-item" style="color:var(--tx3)">Solid = &beta;<sub>k1</sub>, dashed = &beta;<sub>k2</sub></div>
+      <div class="legend-item" style="color:var(--tx3)">Thin lines = true values</div>
+    </div>
+  </div>
+</div>
+
+<div class="plots">
+  <div class="panel">
+    <div class="panel-title">Per-observation predicted probabilities</div>
+    <canvas id="cv-probs" class="canvas-sm"></canvas>
+    <div class="legend"><div class="legend-item" style="color:var(--tx3)">Stacked bars = P(Y=k|x) at current &beta;. Black tick = true class.</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Convergence (log-log)</div>
+    <canvas id="cv-conv" class="canvas-sm"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="lline" style="background:var(--blue)"></div>IRLS</div>
+      <div class="legend-item"><div class="lline" style="background:var(--red)"></div>GD</div>
+    </div>
+  </div>
+</div>
+
+<div class="metrics" id="metrics"></div>
+
+<div class="detail">
+  <div class="detail-title">IRLS computation at current iteration</div>
+  <div id="formulas"></div>
+</div>
+
+<div class="detail">
+  <div class="detail-title">Convergence history</div>
+  <div class="table-wrap"><table id="hist-table"><thead><tr></tr></thead><tbody></tbody></table></div>
+</div>
+
+<script>
+const K_fn=(s,d)=>katex.renderToString(s,{displayMode:!!d,throwOnError:false});
+const km=s=>K_fn(s,false);
+const kd=s=>K_fn(s,true);
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function randn(rng){let u,v;do{u=rng();}while(u===0);v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+// === CONSTANTS ===
+const nK=5;  // number of classes
+const nRef=4; // reference class (0-indexed)
+const p=2;   // features
+const nP=(nK-1)*p; // 8 parameters
+
+// class colors (hex for canvas)
+const CLS_COLORS=['#58a6ff','#3fb950','#f85149','#d29922','#8b949e'];
+const CLS_COLORS_A=['rgba(88,166,255,','rgba(63,185,80,','rgba(248,81,73,','rgba(210,153,34,','rgba(139,148,158,'];
+const CLS_NAMES=['Class 1','Class 2','Class 3','Class 4','Class 5 (ref)'];
+
+// True parameters: 4 non-ref classes x 2 features
+const TRUE_BETA=[
+  [2.0, 0.5],   // class 0
+  [-0.5, 2.0],  // class 1
+  [-2.0, -0.5], // class 2
+  [0.5, -2.0],  // class 3
+  // class 4 is reference (implicit 0,0)
+];
+
+let seed=418;
+let X=[],y=[],n=50;
+
+// === SOFTMAX ===
+function softmax(etas){
+  // etas: array of K-1 values, returns K probabilities
+  const maxE=Math.max(0,...etas);
+  const exps=etas.map(e=>Math.exp(e-maxE));
+  const expRef=Math.exp(-maxE);
+  const sum=exps.reduce((s,v)=>s+v,0)+expRef;
+  const probs=exps.map(e=>e/sum);
+  probs.push(expRef/sum);
+  return probs;
+}
+
+function computeEtas(x,beta){
+  // beta: array of (K-1) arrays of length p
+  const etas=[];
+  for(let k=0;k<nK-1;k++){
+    let e=0;
+    for(let j=0;j<p;j++) e+=x[j]*beta[k][j];
+    etas.push(e);
+  }
+  return etas;
+}
+
+function loglikMulti(X,y,beta){
+  let ll=0;
+  for(let i=0;i<X.length;i++){
+    const probs=softmax(computeEtas(X[i],beta));
+    ll+=Math.log(Math.max(probs[y[i]],1e-15));
+  }
+  return ll;
+}
+
+// === MATRIX HELPERS (for 8x8 system) ===
+function solveLinear(A,b){
+  // Gaussian elimination with partial pivoting, n x n
+  const nn=b.length;
+  const M=A.map(r=>r.slice());
+  const x=b.slice();
+  for(let col=0;col<nn;col++){
+    let maxR=col,maxV=Math.abs(M[col][col]);
+    for(let r=col+1;r<nn;r++){if(Math.abs(M[r][col])>maxV){maxV=Math.abs(M[r][col]);maxR=r;}}
+    if(maxV<1e-20)return null;
+    if(maxR!==col){[M[col],M[maxR]]=[M[maxR],M[col]];[x[col],x[maxR]]=[x[maxR],x[col]];}
+    for(let r=col+1;r<nn;r++){
+      const f=M[r][col]/M[col][col];
+      for(let c=col;c<nn;c++)M[r][c]-=f*M[col][c];
+      x[r]-=f*x[col];
+    }
+  }
+  const result=new Array(nn);
+  for(let r=nn-1;r>=0;r--){
+    let s=x[r];
+    for(let c=r+1;c<nn;c++)s-=M[r][c]*result[c];
+    result[r]=s/M[r][r];
+  }
+  return result;
+}
+
+// === DATA GENERATION ===
+function genData(){
+  const rng=mulberry32(seed);
+  n=parseInt(document.getElementById('n-sel').value);
+  X=[];y=[];
+  for(let i=0;i<n;i++){
+    const x1=randn(rng)*1.8,x2=randn(rng)*1.8;
+    X.push([x1,x2]);
+    const probs=softmax(computeEtas([x1,x2],TRUE_BETA));
+    // sample from categorical
+    let u=rng(),cum=0,cls=nK-1;
+    for(let k=0;k<nK;k++){cum+=probs[k];if(u<cum){cls=k;break;}}
+    y.push(cls);
+  }
+}
+
+// === FLATTEN/UNFLATTEN BETA ===
+function flattenBeta(beta){
+  const v=[];
+  for(let k=0;k<nK-1;k++)for(let j=0;j<p;j++)v.push(beta[k][j]);
+  return v;
+}
+function unflattenBeta(v){
+  const beta=[];
+  for(let k=0;k<nK-1;k++){
+    beta.push([]);
+    for(let j=0;j<p;j++)beta[k].push(v[k*p+j]);
+  }
+  return beta;
+}
+
+// === IRLS ===
+let irlsPath=[];
+
+function runIRLS(){
+  let beta=Array.from({length:nK-1},()=>Array(p).fill(0));
+  irlsPath=[];
+  for(let t=0;t<30;t++){
+    // compute probabilities
+    const allMu=X.map(xi=>softmax(computeEtas(xi,beta)));
+    const ll=loglikMulti(X,y,beta);
+
+    // score: (K-1)*p vector
+    const score=new Array(nP).fill(0);
+    for(let i=0;i<n;i++){
+      for(let k=0;k<nK-1;k++){
+        const r=(y[i]===k?1:0)-allMu[i][k];
+        for(let j=0;j<p;j++) score[k*p+j]+=X[i][j]*r;
+      }
+    }
+    const gradNorm=Math.sqrt(score.reduce((s,v)=>s+v*v,0));
+
+    // Fisher information: nP x nP block matrix
+    // Block (k,l) at rows [k*p..(k+1)*p), cols [l*p..(l+1)*p)
+    // = sum_i (delta_{kl}*mu_ik - mu_ik*mu_il) * x_i x_i^T
+    const F=Array.from({length:nP},()=>new Array(nP).fill(0));
+    for(let i=0;i<n;i++){
+      const mu_i=allMu[i];
+      for(let k=0;k<nK-1;k++){
+        for(let l=0;l<nK-1;l++){
+          const w=(k===l?mu_i[k]:0)-mu_i[k]*mu_i[l];
+          for(let j1=0;j1<p;j1++)
+            for(let j2=0;j2<p;j2++)
+              F[k*p+j1][l*p+j2]+=X[i][j1]*X[i][j2]*w;
+        }
+      }
+    }
+
+    irlsPath.push({
+      beta:beta.map(r=>r.slice()),
+      betaFlat:flattenBeta(beta),
+      ll,allMu:allMu.map(r=>r.slice()),
+      score:score.slice(),
+      gradNorm,
+      fisher:F
+    });
+
+    if(t>0&&gradNorm<1e-10)break;
+
+    // solve F * delta = score
+    const delta=solveLinear(F,score);
+    if(!delta)break;
+
+    // update
+    beta=beta.map((bk,k)=>bk.map((v,j)=>v+delta[k*p+j]));
+  }
+}
+
+// === GRADIENT DESCENT ===
+let gdPath=[];
+
+function runGD(){
+  let beta=Array.from({length:nK-1},()=>Array(p).fill(0));
+  const lr=parseInt(document.getElementById('lr-slider').value)/1000;
+  const maxIt=parseInt(document.getElementById('gd-iters').value);
+  gdPath=[{betaFlat:flattenBeta(beta),ll:loglikMulti(X,y,beta)}];
+  for(let t=0;t<maxIt;t++){
+    const allMu=X.map(xi=>softmax(computeEtas(xi,beta)));
+    const score=new Array(nP).fill(0);
+    for(let i=0;i<n;i++){
+      for(let k=0;k<nK-1;k++){
+        const r=(y[i]===k?1:0)-allMu[i][k];
+        for(let j=0;j<p;j++) score[k*p+j]+=X[i][j]*r;
+      }
+    }
+    beta=beta.map((bk,k)=>bk.map((v,j)=>v+lr*score[k*p+j]));
+    // divergence check
+    const bNorm=Math.sqrt(flattenBeta(beta).reduce((s,v)=>s+v*v,0));
+    if(!isFinite(bNorm)||bNorm>100){gdPath.push({betaFlat:flattenBeta(beta),ll:-Infinity,diverged:true});break;}
+    gdPath.push({betaFlat:flattenBeta(beta),ll:loglikMulti(X,y,beta)});
+  }
+}
+
+// === MLE ===
+let mle=[];let mleFlat=[];
+function computeMLE(){
+  let beta=Array.from({length:nK-1},()=>Array(p).fill(0));
+  for(let t=0;t<200;t++){
+    const allMu=X.map(xi=>softmax(computeEtas(xi,beta)));
+    const score=new Array(nP).fill(0);
+    for(let i=0;i<n;i++){for(let k=0;k<nK-1;k++){const r=(y[i]===k?1:0)-allMu[i][k];for(let j=0;j<p;j++)score[k*p+j]+=X[i][j]*r;}}
+    const F=Array.from({length:nP},()=>new Array(nP).fill(0));
+    for(let i=0;i<n;i++){const mu_i=allMu[i];for(let k=0;k<nK-1;k++)for(let l=0;l<nK-1;l++){const w=(k===l?mu_i[k]:0)-mu_i[k]*mu_i[l];for(let j1=0;j1<p;j1++)for(let j2=0;j2<p;j2++)F[k*p+j1][l*p+j2]+=X[i][j1]*X[i][j2]*w;}}
+    const delta=solveLinear(F,score);
+    if(!delta)break;
+    let stepMag=0;for(let d=0;d<nP;d++)stepMag+=delta[d]*delta[d];
+    if(Math.sqrt(stepMag)<1e-12)break;
+    beta=beta.map((bk,k)=>bk.map((v,j)=>v+delta[k*p+j]));
+  }
+  mle=beta;mleFlat=flattenBeta(beta);
+}
+
+// === CANVAS ===
+function setupCv(cv){
+  const rect=cv.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  cv.width=rect.width*dpr;cv.height=rect.height*dpr;
+  const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  const s=Math.max(0.7,Math.min(1.2,rect.width/400));
+  const ff=getComputedStyle(document.body).fontFamily;
+  return{ctx,w:rect.width,h:rect.height,s,
+    fTick:Math.round(10*s)+'px '+ff,fLabel:Math.round(11*s)+'px '+ff,
+    fSmall:Math.round(9*s)+'px '+ff,fBold:'bold '+Math.round(9*s)+'px '+ff};
+}
+
+function dataRange(){
+  const all=X.flat();const mx=Math.max(...all.map(Math.abs));
+  return{min:-Math.max(mx*1.35,2.5),max:Math.max(mx*1.35,2.5)};
+}
+
+// === PLOT 1: DATA + DECISION REGIONS ===
+function drawData(step){
+  const{ctx,w,h,s,fTick,fLabel}=setupCv(document.getElementById('cv-data'));
+  const pad={l:36,r:10,t:10,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const range=dataRange();
+  const toSx=v=>pad.l+(v-range.min)/(range.max-range.min)*pw;
+  const toSy=v=>pad.t+ph-(v-range.min)/(range.max-range.min)*ph;
+  const st=irlsPath[step];
+
+  // region heatmap
+  const res=Math.ceil(pw/3),resY=Math.ceil(ph/3);
+  const imgData=ctx.createImageData(res,resY);
+  for(let py=0;py<resY;py++)for(let px=0;px<res;px++){
+    const x1=range.min+(px/res)*(range.max-range.min);
+    const x2=range.max-(py/resY)*(range.max-range.min);
+    const probs=softmax(computeEtas([x1,x2],st.beta));
+    let maxP=0,maxK=nRef;
+    for(let k=0;k<nK;k++){if(probs[k]>maxP){maxP=probs[k];maxK=k;}}
+    const idx=(py*res+px)*4;
+    const c=CLS_COLORS[maxK];
+    const r2=parseInt(c.slice(1,3),16),g2=parseInt(c.slice(3,5),16),b2=parseInt(c.slice(5,7),16);
+    const alpha=0.15+maxP*0.45;
+    imgData.data[idx]=r2;imgData.data[idx+1]=g2;imgData.data[idx+2]=b2;imgData.data[idx+3]=Math.floor(alpha*255);
+  }
+  const tmp=document.createElement('canvas');tmp.width=res;tmp.height=resY;
+  tmp.getContext('2d').putImageData(imgData,0,0);
+  ctx.drawImage(tmp,pad.l,pad.t,pw,ph);
+
+  // decision boundaries: where argmax changes — draw pairwise
+  ctx.save();ctx.beginPath();ctx.rect(pad.l,pad.t,pw,ph);ctx.clip();
+  ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=1;
+  for(let k=0;k<nK-1;k++){
+    for(let l=k+1;l<nK;l++){
+      // boundary between class k and l: (beta_k - beta_l)^T x = 0
+      const bk=k<nK-1?st.beta[k]:[0,0];
+      const bl=l<nK-1?st.beta[l]:[0,0];
+      const d0=bk[0]-bl[0],d1=bk[1]-bl[1];
+      if(Math.abs(d1)>1e-10){
+        const slope=-d0/d1;
+        ctx.beginPath();
+        ctx.moveTo(toSx(range.min),toSy(slope*range.min));
+        ctx.lineTo(toSx(range.max),toSy(slope*range.max));
+        ctx.stroke();
+      } else if(Math.abs(d0)>1e-10){
+        ctx.beginPath();ctx.moveTo(toSx(0),pad.t);ctx.lineTo(toSx(0),pad.t+ph);ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  const gs=Math.max(1,Math.ceil((range.max-range.min)/8));
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){
+    ctx.beginPath();ctx.moveTo(toSx(v),pad.t);ctx.lineTo(toSx(v),pad.t+ph);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,toSy(0));ctx.lineTo(pad.l+pw,toSy(0));ctx.stroke();
+  ctx.beginPath();ctx.moveTo(toSx(0),pad.t);ctx.lineTo(toSx(0),pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){if(v===0)continue;ctx.fillText(v,toSx(v),pad.t+ph+3);}
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(range.min);v<=Math.floor(range.max);v+=gs){if(v===0)continue;ctx.fillText(v,pad.l-4,toSy(v));}
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('x\u2081',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText('x\u2082',0,0);ctx.restore();
+
+  // data points with labels
+  for(let i=0;i<n;i++){
+    const sx=toSx(X[i][0]),sy=toSy(X[i][1]);
+    ctx.beginPath();ctx.arc(sx,sy,7,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.4)';ctx.fill();
+    ctx.beginPath();ctx.arc(sx,sy,Math.round(5*s),0,Math.PI*2);
+    ctx.fillStyle=CLS_COLORS_A[y[i]]+'0.9)';ctx.fill();
+    ctx.strokeStyle=CLS_COLORS[y[i]];ctx.lineWidth=1.2;ctx.stroke();
+    // observation number
+    if(n<=60){
+      ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font='bold '+Math.round(8*s)+'px '+getComputedStyle(document.body).fontFamily;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(i+1,sx,sy+Math.round(12*s));
+    }
+  }
+}
+
+// === PLOT 2: PARAMETER TRACES ===
+function drawParams(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall}=setupCv(document.getElementById('cv-params'));
+  const pad={l:40,r:10,t:10,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+
+  const trueFlat=flattenBeta(TRUE_BETA);
+  const allVals=irlsPath.flatMap(s=>s.betaFlat).concat(trueFlat).concat(mleFlat);
+  let ymin=Math.min(...allVals),ymax=Math.max(...allVals);
+  const ymg=Math.max(0.3,(ymax-ymin)*0.1);ymin-=ymg;ymax+=ymg;
+  const xmax=irlsPath.length-1;
+
+  const toSx=t=>pad.l+(t/Math.max(1,xmax))*pw;
+  const toSy=v=>pad.t+ph-(v-ymin)/(ymax-ymin)*ph;
+
+  ctx.fillStyle='var(--bg3)';ctx.fillRect(pad.l,pad.t,pw,ph);
+
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  const ys=Math.max(0.5,Math.ceil((ymax-ymin)/6*2)/2);
+  for(let v=Math.ceil(ymin/ys)*ys;v<=ymax;v+=ys){
+    ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();
+  }
+
+  // true values as thin horizontal lines
+  for(let k=0;k<nK-1;k++){
+    for(let j=0;j<p;j++){
+      ctx.strokeStyle=CLS_COLORS_A[k]+'0.3)';ctx.lineWidth=0.8;
+      ctx.setLineDash([3,3]);
+      const yv=toSy(TRUE_BETA[k][j]);
+      ctx.beginPath();ctx.moveTo(pad.l,yv);ctx.lineTo(pad.l+pw,yv);ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // parameter traces
+  for(let k=0;k<nK-1;k++){
+    for(let j=0;j<p;j++){
+      ctx.strokeStyle=CLS_COLORS_A[k]+'0.8)';
+      ctx.lineWidth=j===0?2:1.5;
+      ctx.setLineDash(j===0?[]:[5,3]);
+      ctx.beginPath();
+      for(let t=0;t<=step&&t<irlsPath.length;t++){
+        const v=irlsPath[t].beta[k][j];
+        t===0?ctx.moveTo(toSx(t),toSy(v)):ctx.lineTo(toSx(t),toSy(v));
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // current step dots
+  if(step<irlsPath.length){
+    for(let k=0;k<nK-1;k++){
+      for(let j=0;j<p;j++){
+        const v=irlsPath[step].beta[k][j];
+        ctx.beginPath();ctx.arc(toSx(step),toSy(v),3,0,Math.PI*2);
+        ctx.fillStyle=CLS_COLORS[k];ctx.fill();
+      }
+    }
+  }
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ph);ctx.lineTo(pad.l+pw,pad.t+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='center';ctx.textBaseline='top';
+  for(let t=0;t<=xmax;t++){ctx.fillText(t,toSx(t),pad.t+ph+3);}
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(ymin/ys)*ys;v<=ymax;v+=ys){ctx.fillText(v.toFixed(1),pad.l-4,toSy(v));}
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;
+  ctx.textAlign='center';ctx.fillText('IRLS iteration',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('Parameter value',0,0);ctx.restore();
+}
+
+// === PLOT 3: PER-OBSERVATION PROBABILITIES ===
+function drawProbs(step){
+  const{ctx,w,h,s,fTick,fSmall}=setupCv(document.getElementById('cv-probs'));
+  const pad={l:30,r:10,t:10,b:35};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+  const st=irlsPath[step];
+
+  ctx.fillStyle='var(--bg3)';ctx.fillRect(pad.l,pad.t,pw,ph);
+
+  const barW=Math.max(2,Math.min(12,pw/n-1));
+  const gap=Math.max(1,(pw-barW*n)/(n+1));
+
+  // figure out label spacing: show every k-th label so they don't overlap
+  const labelCharW=Math.round(7*s);
+  const maxLabelW=String(n).length*labelCharW+4;
+  const labelEvery=Math.max(1,Math.ceil(maxLabelW/(barW+gap)));
+
+  for(let i=0;i<n;i++){
+    const x0=pad.l+gap+(barW+gap)*i;
+    const xc=x0+barW/2;
+    let cumY=0;
+    for(let k=0;k<nK;k++){
+      const h2=st.allMu[i][k]*ph;
+      ctx.fillStyle=CLS_COLORS_A[k]+'0.7)';
+      ctx.fillRect(x0,pad.t+ph-cumY-h2,barW,h2);
+      cumY+=h2;
+    }
+    // true class tick
+    const trueK=y[i];
+    let cumBelow=0;
+    for(let k=0;k<trueK;k++)cumBelow+=st.allMu[i][k];
+    const tickY=pad.t+ph-cumBelow*ph;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(x0-1,tickY-1,barW+2,2);
+
+    // observation label below bar
+    if(i%labelEvery===0||(i===n-1)){
+      ctx.fillStyle='rgba(255,255,255,0.55)';
+      ctx.font=Math.round(7*s)+'px '+getComputedStyle(document.body).fontFamily;
+      ctx.textAlign='center';ctx.textBaseline='top';
+      ctx.fillText(i+1,xc,pad.t+ph+3);
+    }
+  }
+
+  // y-axis
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=0;v<=1;v+=0.25){ctx.fillText(v.toFixed(2),pad.l-4,pad.t+ph-v*ph);}
+}
+
+// === PLOT 4: CONVERGENCE ===
+function drawConv(step){
+  const{ctx,w,h,s,fTick,fLabel,fSmall}=setupCv(document.getElementById('cv-conv'));
+  const pad={l:48,r:15,t:15,b:30};
+  const pw=w-pad.l-pad.r,ph=h-pad.t-pad.b;
+
+  const irlsErr=irlsPath.map(s=>{let e=0;for(let d=0;d<nP;d++)e+=(s.betaFlat[d]-mleFlat[d])**2;return Math.sqrt(e);});
+  const irlsLog=irlsErr.map(e=>e>1e-20?Math.log10(e):-20);
+
+  const showGD=document.getElementById('chk-gd').checked;
+  let gdLog=[];
+  if(showGD){
+    const gdValid=gdPath.filter(s=>!s.diverged);
+    const gdErr=gdValid.map(s=>{let e=0;for(let d=0;d<nP;d++)e+=(s.betaFlat[d]-mleFlat[d])**2;return Math.sqrt(e);});
+    gdLog=gdErr.map(e=>e>1e-20?Math.log10(e):-20);
+  }
+
+  const allLog=irlsLog.concat(gdLog);
+  if(allLog.length===0)return;
+  let ymin=Math.min(...allLog),ymax=Math.max(...allLog);
+  ymin=Math.min(ymin-1.5,-16);
+  const ymg=(ymax-ymin)*0.08||1;ymax+=ymg;
+
+  const xmaxRaw=Math.max(irlsPath.length-1,showGD?gdLog.length-1:0);
+  const xLogMax=Math.log10(Math.max(2,xmaxRaw+1));
+  const toSx=t=>pad.l+(Math.log10(t+1)/xLogMax)*pw;
+  const toSy=v=>pad.t+ph-(v-ymin)/(ymax-ymin)*ph;
+
+  ctx.fillStyle='var(--bg3)';ctx.fillRect(pad.l,pad.t,pw,ph);
+
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;
+  for(let v=Math.ceil(ymin);v<=Math.floor(ymax);v++){ctx.beginPath();ctx.moveTo(pad.l,toSy(v));ctx.lineTo(pad.l+pw,toSy(v));ctx.stroke();}
+
+  // GD
+  if(showGD&&gdLog.length>1){
+    ctx.strokeStyle='rgba(248,81,73,0.5)';ctx.lineWidth=1.5;ctx.beginPath();
+    ctx.moveTo(toSx(0),toSy(gdLog[0]));
+    for(let i=1;i<gdLog.length;i++)ctx.lineTo(toSx(i),toSy(gdLog[i]));
+    ctx.stroke();
+    const li=gdLog.length-1;
+    ctx.fillStyle='rgba(248,81,73,0.8)';ctx.font=fSmall;ctx.textAlign='right';
+    ctx.fillText('GD @'+li,toSx(li)+2,toSy(gdLog[li])-6);
+  }
+
+  // IRLS
+  ctx.strokeStyle='#58a6ff';ctx.lineWidth=2.5;ctx.beginPath();
+  for(let i=0;i<=step&&i<irlsLog.length;i++){
+    i===0?ctx.moveTo(toSx(i),toSy(irlsLog[i])):ctx.lineTo(toSx(i),toSy(irlsLog[i]));
+  }
+  ctx.stroke();
+  for(let i=0;i<=step&&i<irlsLog.length;i++){
+    ctx.beginPath();ctx.arc(toSx(i),toSy(irlsLog[i]),i===step?5:3,0,Math.PI*2);
+    ctx.fillStyle=i===step?'#58a6ff':'rgba(88,166,255,0.5)';ctx.fill();
+  }
+  if(step>0&&step<irlsLog.length){
+    ctx.fillStyle='rgba(88,166,255,0.7)';ctx.font=fSmall;ctx.textAlign='left';
+    ctx.fillText('IRLS @'+step,toSx(step)+4,toSy(irlsLog[step])-5);
+  }
+
+  // axes
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t+ph);ctx.lineTo(pad.l+pw,pad.t+ph);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+ph);ctx.stroke();
+  ctx.fillStyle='#6e7681';ctx.font=fTick;ctx.textAlign='center';ctx.textBaseline='top';
+  for(const t of [0,1,2,5,10,20,50,100,200,500,1000]){if(t>xmaxRaw*1.1)break;ctx.fillText(t,toSx(t),pad.t+ph+3);}
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let v=Math.ceil(ymin);v<=Math.floor(ymax);v++)ctx.fillText(v,pad.l-4,toSy(v));
+  ctx.fillStyle='#8b949e';ctx.font=fLabel;ctx.textAlign='center';
+  ctx.fillText('Iteration (log)',pad.l+pw/2,pad.t+ph+16);
+  ctx.save();ctx.translate(11,pad.t+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
+  ctx.fillText('log\u2081\u2080 \u2016\u03B2 \u2212 MLE\u2016',0,0);ctx.restore();
+}
+
+// === METRICS ===
+function updateMetrics(step){
+  const st=irlsPath[step];
+  const err=Math.sqrt(st.betaFlat.reduce((s,v,i)=>s+(v-mleFlat[i])**2,0));
+  const pred=X.map((xi,i)=>{const pr=st.allMu[i];let mx=0,mk=0;for(let k=0;k<nK;k++){if(pr[k]>mx){mx=pr[k];mk=k;}}return mk;});
+  const acc=pred.reduce((s,p,i)=>s+(p===y[i]?1:0),0)/n;
+  document.getElementById('metrics').innerHTML=`
+    <div class="mc"><div class="mc-label">${km('\\ell(\\boldsymbol{\\beta})')}</div><div class="mc-val" style="color:var(--green)">${st.ll.toFixed(4)}</div></div>
+    <div class="mc"><div class="mc-label">${km('\\|\\nabla\\ell\\|')}</div><div class="mc-val" style="color:var(--amber)">${st.gradNorm.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">${km('\\|\\hat\\beta - MLE\\|')}</div><div class="mc-val" style="color:var(--amber)">${err.toExponential(2)}</div></div>
+    <div class="mc"><div class="mc-label">Accuracy</div><div class="mc-val" style="color:var(--${acc>=0.7?'green':acc>=0.4?'amber':'red'})">${(100*acc).toFixed(0)}%</div></div>
+    <div class="mc"><div class="mc-label">Parameters</div><div class="mc-val" style="color:var(--tx)">${nP} = (${nK-1})&times;${p}</div></div>
+    <div class="mc"><div class="mc-label">Fisher dim</div><div class="mc-val" style="color:var(--tx)">${nP}&times;${nP}</div></div>
+  `;
+}
+
+// === FORMULAS ===
+function updateFormulas(step){
+  const st=irlsPath[step];
+  const el=document.getElementById('formulas');
+  const betaStr=st.beta.map((bk,k)=>km(`\\beta_{${k+1}} = (${bk[0].toFixed(4)},\\,${bk[1].toFixed(4)})`)).join(', &ensp;');
+  if(step===0){
+    el.innerHTML=`<div class="formula-block">
+      <div class="math-row">${km('t=0')}: All ${km('\\beta_k = (0,0)')} &mdash; uniform predictions ${km(`P(Y=k) = 1/${nK} = ${(1/nK).toFixed(3)}`)}</div>
+      <div class="math-row">${km(`\\|\\nabla\\ell\\| = ${st.gradNorm.toFixed(4)}`)}, &ensp; ${km(`\\ell = ${st.ll.toFixed(4)}`)}</div>
+    </div>`;
+  } else {
+    const prev=irlsPath[step-1];
+    el.innerHTML=`<div class="formula-block">
+      <div class="math-row" style="font-size:var(--fs-sm);color:var(--tx2)">Update ${km(`t=${step-1} \\to t=${step}`)}: Solve ${km('\\mathcal{I}(\\boldsymbol{\\beta})\\,\\Delta\\boldsymbol{\\beta} = \\nabla\\ell')} &mdash; ${nP}&times;${nP} block system</div>
+      <div class="math-row" style="font-size:var(--fs-sm)">${betaStr}</div>
+      <div class="math-row">${km(`\\ell = ${st.ll.toFixed(6)}`)}, &ensp;
+        ${km(`\\Delta\\ell = ${(st.ll-prev.ll).toExponential(3)}`)}, &ensp;
+        ${km(`\\|\\nabla\\ell\\| = ${st.gradNorm.toExponential(3)}`)}</div>
+    </div>`;
+  }
+}
+
+// === HISTORY TABLE ===
+function updateHistTable(step){
+  const thead=document.querySelector('#hist-table thead tr');
+  const tbody=document.querySelector('#hist-table tbody');
+  let hdr='<th>t</th>';
+  for(let k=0;k<nK-1;k++)for(let j=0;j<p;j++)hdr+=`<th style="color:${CLS_COLORS[k]}">${km(`\\beta_{${k+1}${j+1}}`)}</th>`;
+  hdr+=`<th>${km('\\ell')}</th><th>${km('\\|\\nabla\\ell\\|')}</th><th>Acc</th>`;
+  thead.innerHTML=hdr;
+  let rows='';
+  for(let t=0;t<irlsPath.length;t++){
+    const s=irlsPath[t];
+    const pred=X.map((xi,i)=>{const pr=s.allMu[i];let mx=0,mk=0;for(let k=0;k<nK;k++){if(pr[k]>mx){mx=pr[k];mk=k;}}return mk;});
+    const acc=pred.reduce((sum,p2,i)=>sum+(p2===y[i]?1:0),0)/n;
+    let row=`<tr class="${t===step?'hl':''}"><td>${t}</td>`;
+    for(let k=0;k<nK-1;k++)for(let j=0;j<p;j++)row+=`<td>${s.beta[k][j].toFixed(4)}</td>`;
+    row+=`<td>${s.ll.toFixed(4)}</td><td>${s.gradNorm.toExponential(2)}</td><td>${(100*acc).toFixed(0)}%</td></tr>`;
+    rows+=row;
+  }
+  tbody.innerHTML=rows;
+}
+
+// === LEGEND ===
+function buildLegend(){
+  const el=document.getElementById('class-legend');
+  el.innerHTML=CLS_NAMES.map((name,k)=>`<div class="legend-item"><div class="ldot" style="background:${CLS_COLORS[k]}"></div>${name}</div>`).join('');
+}
+
+// === STATE ===
+let currentStep=0,playing=false,playTimer=null;
+
+function render(){
+  document.getElementById('iter-slider').value=currentStep;
+  document.getElementById('iter-label').textContent='t = '+currentStep;
+  drawData(currentStep);drawParams(currentStep);drawProbs(currentStep);drawConv(currentStep);
+  updateMetrics(currentStep);updateFormulas(currentStep);updateHistTable(currentStep);
+}
+
+function init(){
+  genData();computeMLE();runIRLS();runGD();currentStep=0;
+  document.getElementById('iter-slider').max=irlsPath.length-1;
+  buildLegend();render();
+}
+
+function stopPlay(){playing=false;if(playTimer)clearInterval(playTimer);playTimer=null;document.getElementById('btn-play').innerHTML='&#x25B6; Play';}
+document.getElementById('iter-slider').addEventListener('input',e=>{currentStep=parseInt(e.target.value);render();});
+document.getElementById('btn-reset').addEventListener('click',()=>{stopPlay();currentStep=0;render();});
+document.getElementById('btn-back').addEventListener('click',()=>{stopPlay();currentStep=Math.max(0,currentStep-1);render();});
+document.getElementById('btn-fwd').addEventListener('click',()=>{stopPlay();currentStep=Math.min(irlsPath.length-1,currentStep+1);render();});
+document.getElementById('btn-end').addEventListener('click',()=>{stopPlay();currentStep=irlsPath.length-1;render();});
+document.getElementById('btn-play').addEventListener('click',()=>{
+  if(playing){stopPlay();return;}playing=true;
+  document.getElementById('btn-play').innerHTML='&#x23F8; Pause';
+  if(currentStep>=irlsPath.length-1)currentStep=0;
+  const spd=parseInt(document.getElementById('speed-sel').value);
+  playTimer=setInterval(()=>{if(currentStep>=irlsPath.length-1){stopPlay();return;}currentStep++;render();},spd);
+});
+document.getElementById('speed-sel').addEventListener('change',()=>{if(playing){stopPlay();document.getElementById('btn-play').click();}});
+document.getElementById('n-sel').addEventListener('change',()=>{stopPlay();init();});
+document.getElementById('btn-regen').addEventListener('click',()=>{stopPlay();seed=Math.floor(Math.random()*100000);init();});
+document.getElementById('chk-gd').addEventListener('change',render);
+document.getElementById('lr-slider').addEventListener('input',e=>{
+  document.getElementById('lr-val').textContent=(parseInt(e.target.value)/1000).toFixed(3);
+  runGD();render();
+});
+document.getElementById('gd-iters').addEventListener('change',()=>{runGD();render();});
+window.addEventListener('resize',render);
+init();
+</script>
+</body>
+</html>
