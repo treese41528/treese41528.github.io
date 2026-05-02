@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCMC Explorer — STAT 418</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#080c18;color:#e2e8f0;font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px}
+  .hdr{padding:12px 20px 8px;border-bottom:1px solid #1e293b;display:flex;align-items:baseline;gap:14px}
+  .hdr h1{font-family:'Source Serif 4',Georgia,serif;font-size:21px;font-weight:700;color:#f1f5f9;letter-spacing:-.02em}
+  .hdr .sub{font-size:11px;color:#64748b}
+  .ctrl{padding:8px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #1e293b;background:#0b1020}
+  .cg{display:flex;align-items:center;gap:5px}
+  .cl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+  select,.btn{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:11px;font-family:inherit;cursor:pointer}
+  .btn-go{background:#16a34a;color:#fff;border:none;font-weight:600;padding:4px 14px}
+  .btn-go.on{background:#dc2626}
+  .btn:disabled{opacity:.3;cursor:not-allowed}
+  input[type=range]{width:110px;accent-color:#60a5fa}
+  .main{display:flex;padding:12px 16px;gap:14px;height:calc(100vh - 90px)}
+  .left{flex-shrink:0;display:flex;flex-direction:column;gap:8px;width:540px}
+  .pw{position:relative;width:520px;height:520px;border-radius:6px;overflow:hidden;border:1px solid #1e293b}
+  .pw canvas{position:absolute;top:0;left:0;width:520px;height:520px}
+  #hmC{image-rendering:auto;z-index:1}#pC{z-index:2}
+  .fbox{padding:10px 14px;background:#10172a;border:1px solid #1e293b;border-radius:5px}
+  .fbox .fl{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .fbox .fm{min-height:28px;overflow-x:auto}
+  .fbox .fm .katex{font-size:16px!important}
+  .tip{padding:7px 10px;background:#0f1628;border:1px solid #1e293b;border-radius:5px;font-size:10px;color:#94a3b8;line-height:1.55}
+  .rp{flex:1;display:flex;flex-direction:column;gap:8px;min-width:300px;overflow-y:auto}
+  .status{border-radius:5px;padding:8px 12px;display:flex;align-items:center;gap:10px;border:1px solid}
+  .status .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .status .slbl{font-size:13px;font-weight:600}
+  .status .sdesc{font-size:10px;opacity:.8;margin-top:1px}
+  .pb{background:#10172a;border-radius:5px;padding:7px 10px;border:1px solid #1e293b}
+  .pl{font-size:9px;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center}
+  .tc{width:100%;height:110px;display:block;border-radius:3px}
+  .tc2{width:100%;height:95px;display:block;border-radius:3px}
+  .fn{font-size:12px;color:#94a3b8;margin-top:5px;line-height:1.5;overflow-x:auto}
+  .fn .katex{font-size:12px!important}
+  .dg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .dc{background:#080c18;border-radius:5px;padding:7px 6px;text-align:center}
+  .dc .lb{font-size:8px;color:#64748b;margin-bottom:2px}
+  .dc .vl{font-size:17px;font-weight:600}
+  .dc .ht{font-size:7px;color:#475569;margin-top:1px}
+  .dc .sv{font-size:9px;color:#64748b;margin-top:3px;line-height:1.5}
+  .gg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .gc{background:#080c18;border-radius:4px;padding:7px;font-size:10px;line-height:1.45}
+  .gc .t{font-weight:600;margin-bottom:2px}
+  .gc .b{color:#94a3b8}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>MCMC Explorer</h1>
+  <span class="sub">Interactive Markov chain Monte Carlo &mdash; STAT 418</span>
+</div>
+
+<div class="ctrl">
+  <div class="cg"><span class="cl">Target</span>
+    <select id="tSel"><option value="correlated">Correlated Normal (&rho;=0.9)</option><option value="bimodal">Bimodal Mixture</option><option value="banana">Banana (Rosenbrock)</option><option value="donut">Donut</option></select></div>
+  <div class="cg"><span class="cl">Method</span>
+    <select id="mSel"><option value="rwmh">Random-Walk Metropolis-Hastings</option><option value="hmc">Hamiltonian Monte Carlo</option></select></div>
+  <div class="cg" id="sigGrp"><span class="cl" id="sigLbl">Proposal &sigma;: 0.35</span><input type="range" id="sigR" min="0.01" max="3" step="0.01" value="0.35"></div>
+  <div class="cg hidden" id="epsGrp"><span class="cl" id="epsLbl">Step &epsilon;: 0.15</span><input type="range" id="epsR" min="0.005" max="0.5" step="0.005" value="0.15"></div>
+  <div class="cg hidden" id="lGrp"><span class="cl">Leapfrog L</span><select id="lSel"><option value="5">5</option><option value="10">10</option><option value="20" selected>20</option><option value="40">40</option><option value="80">80</option></select></div>
+  <div class="cg"><span class="cl">Chains</span><select id="cSel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></div>
+  <div class="cg"><span class="cl">Speed</span><select id="sSel"><option value="1">1&times;</option><option value="5">5&times;</option><option value="10" selected>10&times;</option><option value="50">50&times;</option><option value="100">100&times;</option></select></div>
+  <div class="cg">
+    <button class="btn btn-go" id="goBtn">&#9654; Run</button>
+    <button class="btn" id="stBtn">Step</button>
+    <button class="btn" id="rsBtn">&#8634; Reset</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="left">
+    <div class="pw"><canvas id="hmC" width="300" height="300"></canvas><canvas id="pC"></canvas></div>
+    <div class="fbox">
+      <div class="fl">Unnormalized Posterior</div>
+      <div class="fm" id="fEl"></div>
+    </div>
+    <div class="tip" id="tipBox"></div>
+  </div>
+
+  <div class="rp">
+    <div class="status" id="statusBox" style="background:#0f172a;border-color:#1e293b">
+      <div class="dot" id="statusDot" style="background:#94a3b8"></div>
+      <div><div class="slbl" id="statusLbl">Ready</div><div class="sdesc" id="statusDesc">Press Run or Step to begin sampling.</div></div>
+    </div>
+
+    <div class="pb"><div class="pl"><span id="tl1">Trace: &theta;&sub1;</span><span id="tS1" style="color:#475569">S = 0</span></div><canvas class="tc" id="tr1"></canvas></div>
+    <div class="pb"><div class="pl"><span id="tl2">Trace: &theta;&sub2;</span><span id="tS2" style="color:#475569">S = 0</span></div><canvas class="tc" id="tr2"></canvas></div>
+
+    <div class="pb">
+      <div class="pl"><span>Autocorrelation Function (chain 1, post warm-up)</span><span id="acfLag" style="color:#475569"></span></div>
+      <canvas class="tc2" id="acfC"></canvas>
+      <div class="fn" id="acfFormula"></div>
+    </div>
+
+    <div class="pb">
+      <div class="pl"><span>Gelman-Rubin Convergence</span><span id="rhatN" style="color:#475569"></span></div>
+      <canvas class="tc2" id="rhatC"></canvas>
+      <div class="fn" id="rhatFormula"></div>
+    </div>
+
+    <div class="pb">
+      <div class="pl"><span>Diagnostics</span><span id="dIter" style="color:#94a3b8">Iteration: 0</span></div>
+      <div class="dg">
+        <div class="dc"><div class="lb">Accept Rate</div><div class="vl" id="dA">0%</div><div class="ht" id="dAHint">target: 23–44%</div></div>
+        <div class="dc"><div class="lb">Effective Sample Size</div><div class="vl" id="dE">0</div><div class="ht">target: &gt;400</div><div class="sv" id="essD"></div></div>
+        <div class="dc"><div class="lb">R&#770; (split)</div><div class="vl" id="dR">&mdash;</div><div class="ht">target: &lt;1.01</div><div class="sv" id="bwD"></div></div>
+      </div>
+      <div class="fn" id="diagF"></div>
+    </div>
+
+    <div class="pb" style="flex-shrink:0">
+      <div class="pl"><span>Diagnostic Guide</span></div>
+      <div class="gg">
+        <div class="gc"><div class="t" style="color:#4ade80">&#10003; Good mixing</div><div class="b">All chains overlap in traces. Autocorrelation decays within ~20 lags. R&#770; &lt; 1.01. Effective sample size &gt; 400. Accept 23–44% (random walk) or 60–90% (Hamiltonian Monte Carlo).</div></div>
+        <div class="gc"><div class="t" style="color:#fbbf24">&#9888; Slow mixing (&sigma; too small)</div><div class="b">Accept &gt; 90%. Chain takes tiny steps &mdash; traces drift. Autocorrelation stays high for many lags. Effective sample size much less than S. Fix: increase &sigma;.</div></div>
+        <div class="gc"><div class="t" style="color:#f87171">&#10007; Stuck (&sigma; too large)</div><div class="b">Accept &lt; 5%. Chain frozen with rare jumps &mdash; traces flat. Autocorrelation near 1 at all lags. Fix: decrease &sigma;.</div></div>
+        <div class="gc"><div class="t" style="color:#f87171">&#10007; Trapped (bimodal)</div><div class="b">Chains stay in different modes. R&#770; &gt;&gt; 1 because between-chain variance B dominates within-chain variance W. Fix: reparameterise or tempering.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script>
+// === HELPERS ===
+function randn(){return Math.sqrt(-2*Math.log(Math.random()))*Math.cos(2*Math.PI*Math.random())}
+function lse(a,b){const m=Math.max(a,b);return m+Math.log(Math.exp(a-m)+Math.exp(b-m))}
+function cl(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+const CC=['#60a5fa','#fb923c','#4ade80','#f87171'];
+const $=id=>document.getElementById(id);
+function kR(tex,el,d){try{katex.render(tex,el,{throwOnError:false,displayMode:!!d})}catch(e){el.textContent=tex}}
+
+// === COLORMAP ===
+function cmap(t){
+  t=Math.pow(cl(t,0,1),0.38);
+  const S=[[0,[2,1,10]],[.1,[18,4,48]],[.22,[65,8,90]],[.36,[130,20,72]],[.50,[190,45,28]],[.64,[230,105,8]],[.78,[248,185,40]],[.92,[253,235,130]],[1,[255,252,220]]];
+  for(let i=0;i<S.length-1;i++){if(t<=S[i+1][0]){const f=(t-S[i][0])/(S[i+1][0]-S[i][0]);return S[i][1].map((c,j)=>Math.round(c+f*(S[i+1][1][j]-c)))}}
+  return S[S.length-1][1];
+}
+
+// === DISTRIBUTIONS ===
+const T={
+  correlated:{name:'Correlated Normal',xR:[-4,4],yR:[-4,4],starts:[[-3,3],[3,-3],[-3,-3],[3,3]],
+    logD(x,y){const r=.9;return-.5/(1-r*r)*(x*x-2*r*x*y+y*y)},
+    grad(x,y){const r=.9,d=1-r*r;return[-(x-r*y)/d,-(y-r*x)/d]},
+    defSig:.35,defEps:.15,defL:20,
+    formula:'\\pi(\\theta_1,\\theta_2) \\propto \\exp\\!\\left(-\\frac{\\theta_1^2 - 2(0.9)\\,\\theta_1\\theta_2 + \\theta_2^2}{2(1-0.9^2)}\\right)',
+    tip:'Try \u03C3 = 0.02 (too narrow, ~99% accept), 0.35 (good, ~35%), 2.0 (too wide, ~5%). Isotropic proposals waste time perpendicular to the ridge. Switch to Hamiltonian Monte Carlo to see the difference.',
+    pN:['\u03B8\u2081','\u03B8\u2082']},
+  bimodal:{name:'Bimodal Mixture',xR:[-7,7],yR:[-5,5],starts:[[-5,-3],[5,3],[-5,3],[5,-3]],
+    logD(x,y){return lse(-.5*((x+3)**2+y*y),-.5*((x-3)**2+y*y))-Math.log(2)},
+    grad(x,y){const l1=-.5*((x+3)**2+y*y),l2=-.5*((x-3)**2+y*y),m=Math.max(l1,l2),w1=Math.exp(l1-m),w2=Math.exp(l2-m),s=w1+w2;return[-(w1*(x+3)+w2*(x-3))/s,-y]},
+    defSig:.8,defEps:.12,defL:30,
+    formula:'\\pi(\\boldsymbol{\\theta}) \\propto \\tfrac{1}{2}\\mathcal{N}\\!\\left(\\boldsymbol{\\theta};\\!\\begin{pmatrix}\\!-3\\\\0\\end{pmatrix}\\!,\\mathbf{I}\\right) + \\tfrac{1}{2}\\mathcal{N}\\!\\left(\\boldsymbol{\\theta};\\!\\begin{pmatrix}3\\\\0\\end{pmatrix}\\!,\\mathbf{I}\\right)',
+    tip:'Watch chains get trapped. Try large \u03C3 to jump \u2014 acceptance drops. Hamiltonian Monte Carlo also struggles: gradient pulls toward nearest mode.',
+    pN:['\u03B8\u2081','\u03B8\u2082']},
+  banana:{name:'Banana',xR:[-3,3],yR:[-2,8],starts:[[-2,1],[2,6],[-2,6],[2,1]],
+    logD(x,y){return-.5*x*x-(y-x*x)**2},
+    grad(x,y){return[-x+4*x*(y-x*x),-2*(y-x*x)]},
+    defSig:.4,defEps:.08,defL:25,
+    formula:'\\pi(x,y) \\propto \\exp\\!\\left(-\\frac{x^2}{2} - (y - x^2)^2\\right)',
+    tip:'High-density region curves along a parabola. Random walk cannot follow curvature. Switch to Hamiltonian Monte Carlo \u2014 gradient-guided proposals follow the banana.',
+    pN:['x','y']},
+  donut:{name:'Donut',xR:[-5,5],yR:[-5,5],starts:[[3,0],[-3,0],[0,3],[0,-3]],
+    logD(x,y){const r=Math.sqrt(x*x+y*y);return-.5*((r-3)**2)/.16},
+    grad(x,y){const r=Math.sqrt(x*x+y*y);if(r<1e-10)return[0,0];const f=-(r-3)/(.16*r);return[f*x,f*y]},
+    defSig:.35,defEps:.06,defL:40,
+    formula:'\\pi(x,y) \\propto \\exp\\!\\left(-\\frac{\\left(\\sqrt{x^2+y^2}-3\\right)^2}{2 \\times 0.16}\\right)',
+    tip:'Ring at radius 3. Random walk crawls around the ring. Hamiltonian Monte Carlo follows the tangent via gradient \u2014 dramatically faster.',
+    pN:['x','y']},
+};
+
+// === STATE ===
+let tK='correlated',method='rwmh',sigma=.35,eps=.15,lfL=20,nC=4,spd=10,wu=200;
+let go=false,animId=null,iter=0;
+let chains=[],acc=[],rhatHist=[],lastTraj=null;
+let lastB=NaN,lastW=NaN,lastRhat=NaN,lastESS=0,lastAcc=0,lastTau=0;
+
+const hmC=$('hmC'),pC=$('pC'),tr1=$('tr1'),tr2=$('tr2'),acfC=$('acfC'),rhatCV=$('rhatC');
+const hmX=hmC.getContext('2d');
+let pX=pC.getContext('2d'),t1X=tr1.getContext('2d'),t2X=tr2.getContext('2d');
+let acfX=acfC.getContext('2d'),rhX=rhatCV.getContext('2d');
+
+// === HI-DPI + ADAPTIVE SIZING ===
+const DPR=window.devicePixelRatio||1;
+const PW=520,PH=520;
+let TW=400,TH=110,AW=400,AH=95,RW=400,RH=95;
+
+function hiDPI(c,ctx,w,h){c.width=Math.round(w*DPR);c.height=Math.round(h*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);return ctx}
+
+function resizeCanvases(){
+  hiDPI(pC,pX,PW,PH);
+  let r=tr1.getBoundingClientRect();
+  if(r.width>50){TW=Math.round(r.width);TH=Math.round(r.height)}
+  hiDPI(tr1,t1X,TW,TH);hiDPI(tr2,t2X,TW,TH);
+  r=acfC.getBoundingClientRect();
+  if(r.width>50){AW=Math.round(r.width);AH=Math.round(r.height)}
+  hiDPI(acfC,acfX,AW,AH);
+  r=rhatCV.getBoundingClientRect();
+  if(r.width>50){RW=Math.round(r.width);RH=Math.round(r.height)}
+  hiDPI(rhatCV,rhX,RW,RH);
+  drawAll();
+}
+let resizeTimer;
+window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(resizeCanvases,150)});
+
+// === HEATMAP ===
+function buildHM(){
+  const d=T[tK],res=300;hmC.width=res;hmC.height=res;
+  const img=hmX.createImageData(res,res);let mx=-Infinity;const g=new Float64Array(res*res);
+  for(let r=0;r<res;r++){const y=d.yR[1]-(d.yR[1]-d.yR[0])*r/(res-1);for(let c=0;c<res;c++){const x=d.xR[0]+(d.xR[1]-d.xR[0])*c/(res-1);const v=d.logD(x,y);g[r*res+c]=v;if(v>mx)mx=v}}
+  for(let i=0;i<res*res;i++){const t=cl(Math.exp(g[i]-mx),0,1);const[rv,gv,b]=cmap(t);img.data[i*4]=rv;img.data[i*4+1]=gv;img.data[i*4+2]=b;img.data[i*4+3]=255}
+  hmX.putImageData(img,0,0);
+}
+
+// === MCMC ===
+function mhStep(st,logD,sig){const p=[st[0]+randn()*sig,st[1]+randn()*sig];const la=logD(p[0],p[1])-logD(st[0],st[1]);return Math.log(Math.random())<la?{s:p,a:true}:{s:[st[0],st[1]],a:false}}
+
+function hmcStep(st,logD,grad,ep,L){
+  let q=[st[0],st[1]],p=[randn(),randn()];const traj=[[q[0],q[1]]];
+  const H0=-logD(q[0],q[1])+.5*(p[0]*p[0]+p[1]*p[1]);
+  let g=grad(q[0],q[1]);p[0]+=ep/2*g[0];p[1]+=ep/2*g[1];
+  for(let i=0;i<L;i++){q[0]+=ep*p[0];q[1]+=ep*p[1];traj.push([q[0],q[1]]);g=grad(q[0],q[1]);if(i<L-1){p[0]+=ep*g[0];p[1]+=ep*g[1]}}
+  p[0]+=ep/2*g[0];p[1]+=ep/2*g[1];
+  const H1=-logD(q[0],q[1])+.5*(p[0]*p[0]+p[1]*p[1]);
+  lastTraj=traj;return Math.log(Math.random())<H0-H1?{s:[q[0],q[1]],a:true}:{s:[st[0],st[1]],a:false};
+}
+
+function initChains(){const d=T[tK];chains=[];acc=[];rhatHist=[];lastTraj=null;iter=0;lastB=NaN;lastW=NaN;lastRhat=NaN;lastESS=0;lastAcc=0;lastTau=0;for(let i=0;i<nC;i++){chains.push([d.starts[i%d.starts.length].slice()]);acc.push([true])}updateDiag()}
+function runSteps(n){const d=T[tK];for(let s=0;s<n;s++){for(let ci=0;ci<chains.length;ci++){const last=chains[ci][chains[ci].length-1];let res;if(method==='hmc')res=hmcStep(last,d.logD,d.grad,eps,lfL);else res=mhStep(last,d.logD,sigma);chains[ci].push(res.s);acc[ci].push(res.a)}iter++}}
+
+// === DIAGNOSTICS ===
+function calcESSandTau(v){
+  const n=v.length;if(n<20)return{ess:n,tau:0};
+  const mu=v.reduce((a,b)=>a+b,0)/n;let v0=0;for(let i=0;i<n;i++)v0+=(v[i]-mu)**2;v0/=n;
+  if(v0<1e-15)return{ess:n,tau:0};
+  let tau=0;const mk=Math.min(n-1,300);
+  for(let k=1;k<mk-1;k+=2){let c1=0,c2=0;for(let i=0;i<n-k;i++)c1+=(v[i]-mu)*(v[i+k]-mu);if(k+1<n)for(let i=0;i<n-k-1;i++)c2+=(v[i]-mu)*(v[i+k+1]-mu);const pair=c1/(n*v0)+c2/(n*v0);if(pair<0)break;tau+=pair}
+  return{ess:Math.max(1,Math.round(n/(1+2*tau))),tau:1+2*tau};
+}
+function calcACF(v,maxK){const n=v.length;if(n<4)return[];const mu=v.reduce((a,b)=>a+b,0)/n;let v0=0;for(let i=0;i<n;i++)v0+=(v[i]-mu)**2;v0/=n;if(v0<1e-15)return Array(maxK+1).fill(0);const a=[];for(let k=0;k<=Math.min(maxK,n-1);k++){let s=0;for(let i=0;i<n-k;i++)s+=(v[i]-mu)*(v[i+k]-mu);a.push(s/(n*v0))}return a}
+function calcRhatBW(cv){const m=cv.length;if(m<2)return{rh:NaN,B:NaN,W:NaN};const sp=[];for(const c of cv){const h=Math.floor(c.length/2);if(h<4)return{rh:NaN,B:NaN,W:NaN};sp.push(c.slice(0,h));sp.push(c.slice(h))}const ns=sp.length,n=sp[0].length;const cms=sp.map(s=>s.reduce((a,b)=>a+b,0)/s.length);const gm=cms.reduce((a,b)=>a+b,0)/ns;let B=0;for(const cm of cms)B+=(cm-gm)**2;B*=n/(ns-1);let W=0;for(let i=0;i<ns;i++){let s2=0;for(const v of sp[i])s2+=(v-cms[i])**2;W+=s2/(n-1)}W/=ns;if(W<1e-15)return{rh:1,B,W};const vH=((n-1)/n)*W+B/n;return{rh:Math.sqrt(vH/W),B,W}}
+
+function getStatus(){
+  if(iter<20)return{lbl:'Ready',desc:'Press Run or Step to begin sampling.',col:'#94a3b8',bg:'#0f172a',bdr:'#1e293b'};
+  if(iter<wu)return{lbl:'Warm-up phase',desc:'Iteration '+iter+' of '+wu+'. Samples in this phase are discarded \u2014 the chain is adapting to the posterior.',col:'#94a3b8',bg:'#0f172a',bdr:'#334155'};
+  const ar=lastAcc,ess=lastESS,rh=lastRhat,pwDraws=Math.max(0,(iter-wu)*nC);
+  const optLo=method==='hmc'?.55:.15,optHi=method==='hmc'?.95:.50;
+  if(ar<.03&&iter>wu+100)return{lbl:'Stuck \u2014 proposal too wide',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Nearly all proposals land in low-density regions and are rejected. The chain stays frozen. Decrease \u03C3'+(method==='hmc'?' or \u03B5':'')+' to make smaller, more cautious proposals.',col:'#f87171',bg:'#1a0a0a',bdr:'#7f1d1d'};
+  if(ar>.95&&method==='rwmh'&&iter>wu+100)return{lbl:'Slow mixing \u2014 proposal too narrow',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Almost every proposal is accepted because steps are tiny. The chain explores by diffusion \u2014 very slow. Increase \u03C3 to take bolder steps.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
+  if(!isNaN(rh)&&rh>1.2&&iter>wu+200)return{lbl:'Not converged \u2014 chains disagree',desc:'R\u0302 = '+(rh.toFixed(3))+'. Between-chain variance B = '+(lastB.toFixed(2))+' dominates within-chain W = '+(lastW.toFixed(2))+'. Chains are exploring different regions \u2014 likely trapped in separate modes.',col:'#f87171',bg:'#1a0a0a',bdr:'#7f1d1d'};
+  if(!isNaN(rh)&&rh>1.01&&iter>wu+200)return{lbl:'Converging \u2014 run longer',desc:'R\u0302 = '+(rh.toFixed(3))+'. Chains are approaching agreement (B shrinking relative to W) but have not fully mixed yet.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
+  if(ess<100&&iter>wu+500)return{lbl:'Poor mixing \u2014 high autocorrelation',desc:'Effective sample size = '+ess+' from '+pwDraws.toLocaleString()+' post-warmup draws (inflation factor = '+lastTau.toFixed(1)+'). Each sample is highly correlated with its neighbours.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
+  if(ess>=400&&(isNaN(rh)||rh<1.01)&&ar>optLo&&ar<optHi)return{lbl:'Good mixing \u2014 all diagnostics pass',desc:'Effective sample size = '+ess+' (inflation '+lastTau.toFixed(1)+'\u00D7). R\u0302 = '+(isNaN(rh)?'\u2014':rh.toFixed(4))+'. Accept = '+((ar*100).toFixed(1))+'%. Posterior summaries are reliable.',col:'#4ade80',bg:'#0a1a10',bdr:'#166534'};
+  if(ess>=100)return{lbl:'Adequate \u2014 consider running longer',desc:'Effective sample size = '+ess+' from '+pwDraws.toLocaleString()+' draws. Increase draws for more precise estimates.',col:'#60a5fa',bg:'#0a1020',bdr:'#1e40af'};
+  return{lbl:'Sampling\u2026',desc:'Iteration '+iter+'. Accumulating draws.',col:'#94a3b8',bg:'#0f172a',bdr:'#1e293b'};
+}
+
+function updateDiag(){
+  const totalS=chains.length>0?chains[0].length-1:0;
+  const pwDraws=Math.max(0,(totalS-wu)*nC);
+  $('dIter').textContent='Iter: '+iter.toLocaleString()+' | Post-warmup draws: '+pwDraws.toLocaleString();
+  $('tS1').textContent='S = '+totalS.toLocaleString();$('tS2').textContent='S = '+totalS.toLocaleString();
+
+  const tAcc=acc.reduce((s,a)=>s+a.filter(Boolean).length,0),tLen=acc.reduce((s,a)=>s+a.length,0);
+  lastAcc=tLen>0?tAcc/tLen:0;
+  const aE=$('dA');aE.textContent=(lastAcc*100).toFixed(1)+'%';
+  const optLo=method==='hmc'?.55:.15,optHi=method==='hmc'?.95:.50;
+  aE.style.color=(lastAcc>optLo&&lastAcc<optHi)?'#4ade80':(lastAcc>.03&&lastAcc<.95)?'#fbbf24':'#f87171';
+  $('dAHint').textContent=method==='hmc'?'target: 60–90%':'target: 23–44%';
+
+  const pw=chains.map(c=>c.slice(Math.min(wu,c.length)));
+  const v1=pw.filter(c=>c.length>10).map(c=>c.map(s=>s[0]));
+  const all1=v1.flat();
+  const{ess,tau}=all1.length>20?calcESSandTau(all1):{ess:0,tau:0};
+  lastESS=ess;lastTau=tau;
+  const eE=$('dE');eE.textContent=ess;
+  eE.style.color=ess>400?'#4ade80':ess>100?'#fbbf24':'#f87171';
+  $('essD').innerHTML=all1.length>20?'from '+all1.length.toLocaleString()+' draws<br>inflation: '+tau.toFixed(1)+'\u00D7 (1+2\u03A3\u03C1\u0302<sub>k</sub>)':'';
+
+  const{rh,B,W}=v1.length>=2&&v1[0]&&v1[0].length>10?calcRhatBW(v1):{rh:NaN,B:NaN,W:NaN};
+  lastRhat=rh;lastB=B;lastW=W;
+  const rE=$('dR');rE.textContent=isNaN(rh)?'\u2014':rh.toFixed(4);
+  rE.style.color=isNaN(rh)?'#9ca3af':rh<1.01?'#4ade80':rh<1.1?'#fbbf24':'#f87171';
+  $('bwD').innerHTML=!isNaN(B)?'B (between) = '+B.toFixed(3)+'<br>W (within) = '+W.toFixed(3)+'<br>\u0056\u0302 = '+((((v1[0].length-1)/v1[0].length)*W+B/v1[0].length).toFixed(3)):nC<2?'need \u22652 chains':'not enough draws';
+
+  if(!isNaN(rh))rhatHist.push({it:iter,rh});
+  const st=getStatus();
+  $('statusBox').style.background=st.bg;$('statusBox').style.borderColor=st.bdr;
+  $('statusDot').style.background=st.col;$('statusLbl').style.color=st.col;
+  $('statusLbl').textContent=st.lbl;$('statusDesc').textContent=st.desc;
+}
+
+// === DRAWING ===
+function drawPaths(){
+  const d=T[tK],W=PW,H=PH;pX.clearRect(0,0,W,H);
+  const tx=x=>(x-d.xR[0])/(d.xR[1]-d.xR[0])*W,ty=y=>(1-(y-d.yR[0])/(d.yR[1]-d.yR[0]))*H;
+  if(lastTraj&&method==='hmc'&&lastTraj.length>1){
+    pX.strokeStyle='rgba(255,255,100,0.5)';pX.lineWidth=1.5;pX.setLineDash([4,3]);
+    pX.beginPath();pX.moveTo(tx(lastTraj[0][0]),ty(lastTraj[0][1]));
+    for(let i=1;i<lastTraj.length;i++)pX.lineTo(tx(lastTraj[i][0]),ty(lastTraj[i][1]));
+    pX.stroke();pX.setLineDash([]);
+    const end=lastTraj[lastTraj.length-1];pX.fillStyle='rgba(255,255,100,.7)';
+    pX.beginPath();pX.arc(tx(end[0]),ty(end[1]),3,0,Math.PI*2);pX.fill();
+  }
+  for(let ci=0;ci<chains.length;ci++){
+    const ch=chains[ci];if(ch.length<2)continue;
+    const maxD=6000,start=Math.max(0,ch.length-maxD);
+    pX.strokeStyle=CC[ci%4];pX.lineWidth=1;pX.globalAlpha=.6;
+    pX.beginPath();pX.moveTo(tx(ch[start][0]),ty(ch[start][1]));
+    for(let i=start+1;i<ch.length;i++)pX.lineTo(tx(ch[i][0]),ty(ch[i][1]));
+    pX.stroke();
+    const last=ch[ch.length-1];pX.globalAlpha=1;pX.fillStyle=CC[ci%4];
+    pX.beginPath();pX.arc(tx(last[0]),ty(last[1]),5,0,Math.PI*2);pX.fill();
+    pX.strokeStyle='#fff';pX.lineWidth=1.5;pX.stroke();
+  }
+  pX.globalAlpha=1;
+  pX.fillStyle='rgba(180,200,220,.45)';pX.font='11px JetBrains Mono,monospace';
+  pX.textAlign='left';pX.fillText(T[tK].xR[0],3,PH-3);pX.fillText(T[tK].yR[1],3,13);
+  pX.textAlign='right';pX.fillText(T[tK].xR[1],PW-3,PH-3);
+  pX.textAlign='left';pX.fillText(T[tK].yR[0],3,PH-15);
+}
+
+function drawTraces(){
+  for(let p=0;p<2;p++){
+    const ctx=p===0?t1X:t2X,tw=TW,th=TH;
+    ctx.fillStyle='#0c1225';ctx.fillRect(0,0,tw,th);
+    if(!chains.length||chains[0].length<2)continue;
+    const tl=chains[0].length,wf=Math.min(wu/Math.max(tl,1),1);
+    ctx.fillStyle='rgba(120,90,40,.12)';ctx.fillRect(0,0,wf*tw,th);
+    if(wf<1){ctx.strokeStyle='rgba(200,160,60,.25)';ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(wf*tw,0);ctx.lineTo(wf*tw,th);ctx.stroke();ctx.setLineDash([])}
+    let yMn=Infinity,yMx=-Infinity;
+    for(let ci=0;ci<chains.length;ci++)for(let i=0;i<chains[ci].length;i++){const v=chains[ci][i][p];if(v<yMn)yMn=v;if(v>yMx)yMx=v}
+    const yP=(yMx-yMn)*.08||1;yMn-=yP;yMx+=yP;
+    for(let ci=0;ci<chains.length;ci++){
+      const ch=chains[ci];ctx.strokeStyle=CC[ci%4];ctx.lineWidth=.8;ctx.globalAlpha=.8;
+      ctx.beginPath();const step=Math.max(1,Math.floor(ch.length/tw));
+      for(let i=0;i<ch.length;i+=step){const x=(i/(ch.length-1))*tw,y=(1-(ch[i][p]-yMn)/(yMx-yMn))*th;i===0?ctx.moveTo(x,cl(y,0,th)):ctx.lineTo(x,cl(y,0,th))}
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;ctx.fillStyle='rgba(150,170,190,.45)';ctx.font='10px JetBrains Mono,monospace';
+    ctx.textAlign='left';ctx.fillText(yMx.toFixed(1),2,11);ctx.fillText(yMn.toFixed(1),2,th-3);
+    ctx.textAlign='center';const totalS=chains[0].length-1;
+    for(let t=1;t<=5;t++){const f=t/5,sV=Math.round(f*totalS),xP=f*tw;
+      ctx.fillStyle='rgba(100,120,140,.2)';ctx.fillRect(xP,0,1,th);
+      ctx.fillStyle='rgba(150,170,190,.4)';ctx.fillText(sV.toLocaleString(),xP,th-3)}
+  }
+}
+
+function drawACF(){
+  const tw=AW,th=AH;acfX.fillStyle='#0c1225';acfX.fillRect(0,0,tw,th);
+  if(!chains.length||chains[0].length<wu+20)return;
+  const v1=chains[0].slice(wu).map(s=>s[0]);
+  const maxLag=Math.min(60,v1.length-1);const acf=calcACF(v1,maxLag);if(!acf.length)return;
+  const ci95=1.96/Math.sqrt(v1.length);const baseY=th*.52,scaleY=th*.42;
+  const ciPx=baseY-ci95*scaleY,ciNPx=baseY+ci95*scaleY;
+  acfX.fillStyle='rgba(96,165,250,.06)';acfX.fillRect(0,ciPx,tw,ciNPx-ciPx);
+  acfX.strokeStyle='rgba(96,165,250,.3)';acfX.lineWidth=1;acfX.setLineDash([3,3]);
+  acfX.beginPath();acfX.moveTo(0,ciPx);acfX.lineTo(tw,ciPx);acfX.stroke();
+  acfX.beginPath();acfX.moveTo(0,ciNPx);acfX.lineTo(tw,ciNPx);acfX.stroke();acfX.setLineDash([]);
+  acfX.strokeStyle='rgba(150,170,190,.2)';acfX.beginPath();acfX.moveTo(0,baseY);acfX.lineTo(tw,baseY);acfX.stroke();
+  const bw=Math.max(3,tw/(maxLag+1)*.65);
+  for(let k=0;k<=maxLag;k++){const x=(k+.5)/(maxLag+1)*tw,barH=acf[k]*scaleY;acfX.fillStyle=Math.abs(acf[k])>ci95?'#60a5fa':'rgba(96,165,250,.3)';acfX.fillRect(x-bw/2,baseY-Math.max(0,barH),bw,Math.abs(barH))}
+  acfX.fillStyle='rgba(150,170,190,.45)';acfX.font='10px JetBrains Mono,monospace';
+  acfX.textAlign='left';acfX.fillText('1.0',2,th*.1);acfX.fillText('0',2,baseY-2);
+  acfX.textAlign='center';
+  for(let k=0;k<=maxLag;k+=10){acfX.fillText(String(k),(k+.5)/(maxLag+1)*tw,th-2)}
+  acfX.textAlign='right';acfX.fillText('Lag',tw-4,th-2);
+  let fb=maxLag;for(let k=1;k<=maxLag;k++){if(Math.abs(acf[k])<ci95){fb=k;break}}
+  $('acfLag').textContent='|ACF| < CI at lag '+fb+' | 95% CI = \u00B1'+(ci95).toFixed(3);
+}
+
+function drawRhat(){
+  const tw=RW,th=RH;rhX.fillStyle='#0c1225';rhX.fillRect(0,0,tw,th);
+  if(rhatHist.length<2)return;
+  const maxIt=rhatHist[rhatHist.length-1].it,minIt=rhatHist[0].it;
+  let yMax=Math.min(Math.max(1.05,...rhatHist.map(r=>r.rh)),1.3),yMin=.99;
+  const toX=it=>(it-minIt)/(maxIt-minIt||1)*(tw-10)+5,toY=rh=>th-10-(cl(rh,yMin,yMax)-yMin)/(yMax-yMin)*(th-20);
+  const threshY=toY(1.01);rhX.fillStyle='rgba(248,113,113,.06)';rhX.fillRect(0,0,tw,threshY);
+  rhX.strokeStyle='rgba(248,113,113,.4)';rhX.lineWidth=1;rhX.setLineDash([4,3]);
+  rhX.beginPath();rhX.moveTo(0,threshY);rhX.lineTo(tw,threshY);rhX.stroke();rhX.setLineDash([]);
+  const oneY=toY(1.0);rhX.strokeStyle='rgba(150,170,190,.2)';rhX.setLineDash([2,4]);
+  rhX.beginPath();rhX.moveTo(0,oneY);rhX.lineTo(tw,oneY);rhX.stroke();rhX.setLineDash([]);
+  rhX.strokeStyle='#a78bfa';rhX.lineWidth=1.5;rhX.beginPath();
+  for(let i=0;i<rhatHist.length;i++){const x=toX(rhatHist[i].it),y=toY(rhatHist[i].rh);i===0?rhX.moveTo(x,y):rhX.lineTo(x,y)}rhX.stroke();
+  rhX.fillStyle='rgba(150,170,190,.45)';rhX.font='10px JetBrains Mono,monospace';
+  rhX.textAlign='left';rhX.fillText('R\u0302=1.01',2,threshY-3);rhX.fillText('R\u0302=1.00',2,oneY-3);
+  rhX.textAlign='center';rhX.fillText('Iteration: '+maxIt.toLocaleString(),tw/2,th-1);
+  $('rhatN').textContent=nC>=2?nC+' chains, split-R\u0302':'\u22652 chains needed';
+}
+
+function drawAll(){drawPaths();drawTraces();drawACF();drawRhat()}
+
+// === FORMULAS ===
+function renderFormulas(){
+  kR(T[tK].formula,$('fEl'),true);
+  kR('\\hat{\\rho}_k = \\dfrac{\\displaystyle\\sum_{s=1}^{S-k}(\\theta^{(s)}-\\bar{\\theta})(\\theta^{(s+k)}-\\bar{\\theta})}{\\displaystyle\\sum_{s=1}^{S}(\\theta^{(s)}-\\bar{\\theta})^2} \\qquad \\text{Bright bars: } |\\hat{\\rho}_k| > 1.96\\,/\\,\\sqrt{S}',$('acfFormula'),false);
+  kR('\\hat{R} = \\sqrt{\\frac{\\hat{V}}{W}}, \\quad \\hat{V} = \\frac{S-1}{S}\\,W + \\frac{1}{S}\\,B \\qquad B = \\frac{n}{m-1}\\sum_{j}(\\bar{\\theta}_j - \\bar{\\theta})^2 \\qquad W = \\frac{1}{m}\\sum_j s_j^2',$('rhatFormula'),false);
+  kR('\\text{ESS} = \\dfrac{S}{1+2\\displaystyle\\sum_{k=1}^{K}\\hat{\\rho}_k} \\qquad \\text{MCSE} = \\dfrac{\\hat{\\sigma}}{\\sqrt{\\text{ESS}}}',$('diagF'),false);
+}
+
+// === ANIMATION ===
+function animate(){if(!go)return;runSteps(spd);drawAll();if(iter%50<spd)updateDiag();animId=requestAnimationFrame(animate)}
+function start(){go=true;$('goBtn').textContent='\u23F8 Pause';$('goBtn').classList.add('on');$('stBtn').disabled=true;animId=requestAnimationFrame(animate)}
+function stop(){go=false;$('goBtn').textContent='\u25B6 Run';$('goBtn').classList.remove('on');$('stBtn').disabled=false;if(animId)cancelAnimationFrame(animId)}
+
+// === EVENTS ===
+$('tSel').addEventListener('change',function(){tK=this.value;const d=T[tK];sigma=d.defSig;$('sigR').value=sigma;$('sigLbl').textContent='Proposal \u03C3: '+sigma.toFixed(2);eps=d.defEps;$('epsR').value=eps;$('epsLbl').textContent='Step \u03B5: '+eps.toFixed(3);lfL=d.defL;$('lSel').value=lfL;$('tipBox').textContent=d.tip;$('tl1').textContent='Trace: '+d.pN[0];$('tl2').textContent='Trace: '+d.pN[1];stop();buildHM();initChains();renderFormulas();drawAll()});
+$('mSel').addEventListener('change',function(){method=this.value;$('sigGrp').classList.toggle('hidden',method==='hmc');$('epsGrp').classList.toggle('hidden',method!=='hmc');$('lGrp').classList.toggle('hidden',method!=='hmc');stop();initChains();drawAll()});
+$('sigR').addEventListener('input',function(){sigma=parseFloat(this.value);$('sigLbl').textContent='Proposal \u03C3: '+sigma.toFixed(2)});
+$('epsR').addEventListener('input',function(){eps=parseFloat(this.value);$('epsLbl').textContent='Step \u03B5: '+eps.toFixed(3)});
+$('lSel').addEventListener('change',function(){lfL=parseInt(this.value)});
+$('cSel').addEventListener('change',function(){nC=parseInt(this.value);stop();initChains();drawAll()});
+$('sSel').addEventListener('change',function(){spd=parseInt(this.value)});
+$('goBtn').addEventListener('click',function(){go?stop():start()});
+$('stBtn').addEventListener('click',function(){runSteps(1);drawAll();updateDiag()});
+$('rsBtn').addEventListener('click',function(){stop();initChains();drawAll()});
+
+// === INIT ===
+(function(){const d=T[tK];$('tipBox').textContent=d.tip;$('tl1').textContent='Trace: '+d.pN[0];$('tl2').textContent='Trace: '+d.pN[1];buildHM();initChains();
+  // Defer canvas setup to after layout
+  requestAnimationFrame(function(){resizeCanvases();renderFormulas()});
+})();
+</script>
+</body>
+</html>
