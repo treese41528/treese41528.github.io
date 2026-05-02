@@ -14,7 +14,7 @@
   .hdr .sub{font-size:11px;color:#64748b}
   .ctrl{padding:8px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #1e293b;background:#0b1020}
   .cg{display:flex;align-items:center;gap:5px}
-  .cl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+  .cl{font-size:9px;color:#94a3b8;letter-spacing:.06em;white-space:nowrap}
   select,.btn{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:11px;font-family:inherit;cursor:pointer}
   .btn-go{background:#16a34a;color:#fff;border:none;font-weight:600;padding:4px 14px}
   .btn-go.on{background:#dc2626}
@@ -62,15 +62,12 @@
 </div>
 
 <div class="ctrl">
-  <div class="cg"><span class="cl">Target</span>
-    <select id="tSel"><option value="correlated">Correlated Normal (&rho;=0.9)</option><option value="bimodal">Bimodal Mixture</option><option value="banana">Banana (Rosenbrock)</option><option value="donut">Donut</option></select></div>
-  <div class="cg"><span class="cl">Method</span>
-    <select id="mSel"><option value="rwmh">Random-Walk Metropolis-Hastings</option><option value="hmc">Hamiltonian Monte Carlo</option></select></div>
-  <div class="cg" id="sigGrp"><span class="cl" id="sigLbl">Proposal &sigma;: 0.35</span><input type="range" id="sigR" min="0.01" max="3" step="0.01" value="0.35"></div>
-  <div class="cg hidden" id="epsGrp"><span class="cl" id="epsLbl">Step &epsilon;: 0.15</span><input type="range" id="epsR" min="0.005" max="0.5" step="0.005" value="0.15"></div>
-  <div class="cg hidden" id="lGrp"><span class="cl">Leapfrog L</span><select id="lSel"><option value="5">5</option><option value="10">10</option><option value="20" selected>20</option><option value="40">40</option><option value="80">80</option></select></div>
-  <div class="cg"><span class="cl">Chains</span><select id="cSel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></div>
-  <div class="cg"><span class="cl">Speed</span><select id="sSel"><option value="1">1&times;</option><option value="5">5&times;</option><option value="10" selected>10&times;</option><option value="50">50&times;</option><option value="100">100&times;</option></select></div>
+  <div class="cg"><span class="cl">TARGET</span>
+    <select id="tSel"><option value="normal">Normal Inference (&mu;, log &sigma;)</option><option value="logistic">Logistic Regression (&beta;&#8320;, &beta;&#8321;)</option><option value="mixture">Mixture Model (&mu;&#8321;, &mu;&#8322;)</option><option value="signal">Signal Location (&theta;&#8321;, &theta;&#8322;)</option></select></div>
+  <div class="cg" id="sigGrp"><span class="cl" id="sigLbl">Proposal &sigma;: 0.30</span><input type="range" id="sigR" min="0.01" max="3" step="0.01" value="0.30"></div>
+  <div class="cg"><span class="cl">CHAINS</span><select id="cSel"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></div>
+  <div class="cg"><span class="cl">BURN-IN</span><select id="wuSel"><option value="0">0</option><option value="100">100</option><option value="200" selected>200</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option></select></div>
+  <div class="cg"><span class="cl">SPEED</span><select id="sSel"><option value="1">1&times;</option><option value="5">5&times;</option><option value="10" selected>10&times;</option><option value="50">50&times;</option><option value="100">100&times;</option></select></div>
   <div class="cg">
     <button class="btn btn-go" id="goBtn">&#9654; Run</button>
     <button class="btn" id="stBtn">Step</button>
@@ -82,8 +79,12 @@
   <div class="left">
     <div class="pw"><canvas id="hmC" width="300" height="300"></canvas><canvas id="pC"></canvas></div>
     <div class="fbox">
-      <div class="fl">Unnormalized Posterior</div>
+      <div class="fl">Posterior (likelihood &times; prior, conditioned on observed data)</div>
       <div class="fm" id="fEl"></div>
+      <div style="border-top:1px solid #1e293b;margin-top:8px;padding-top:8px">
+        <div class="fl" id="propLabel">Proposal Distribution</div>
+        <div class="fm" id="propEl" style="min-height:22px"></div>
+      </div>
     </div>
     <div class="tip" id="tipBox"></div>
   </div>
@@ -122,7 +123,7 @@
     <div class="pb" style="flex-shrink:0">
       <div class="pl"><span>Diagnostic Guide</span></div>
       <div class="gg">
-        <div class="gc"><div class="t" style="color:#4ade80">&#10003; Good mixing</div><div class="b">All chains overlap in traces. Autocorrelation decays within ~20 lags. R&#770; &lt; 1.01. Effective sample size &gt; 400. Accept 23–44% (random walk) or 60–90% (Hamiltonian Monte Carlo).</div></div>
+        <div class="gc"><div class="t" style="color:#4ade80">&#10003; Good mixing</div><div class="b">All chains overlap in traces. Autocorrelation decays within ~20 lags. R&#770; &lt; 1.01. Effective sample size &gt; 400. Accept rate 23&ndash;44%.</div></div>
         <div class="gc"><div class="t" style="color:#fbbf24">&#9888; Slow mixing (&sigma; too small)</div><div class="b">Accept &gt; 90%. Chain takes tiny steps &mdash; traces drift. Autocorrelation stays high for many lags. Effective sample size much less than S. Fix: increase &sigma;.</div></div>
         <div class="gc"><div class="t" style="color:#f87171">&#10007; Stuck (&sigma; too large)</div><div class="b">Accept &lt; 5%. Chain frozen with rare jumps &mdash; traces flat. Autocorrelation near 1 at all lags. Fix: decrease &sigma;.</div></div>
         <div class="gc"><div class="t" style="color:#f87171">&#10007; Trapped (bimodal)</div><div class="b">Chains stay in different modes. R&#770; &gt;&gt; 1 because between-chain variance B dominates within-chain variance W. Fix: reparameterise or tempering.</div></div>
@@ -149,42 +150,85 @@ function cmap(t){
   return S[S.length-1][1];
 }
 
-// === DISTRIBUTIONS ===
+// === DATA FOR MODELS ===
+const DATA_NORMAL = [-1.2,4.8,0.3,5.6,-0.8,3.1,6.3,1.5,2.9,-1.7]; // n=10, wider spread, true mu~2, sigma~2.5
+const DATA_LOGISTIC_X = [-1.8,-1.3,-0.9,-0.5,-0.2,0.1,0.3,0.7,0.9,1.1,1.4,1.7,-1.5,-1.0,-0.4,0.2,0.5,0.8,1.2,1.6];
+const DATA_LOGISTIC_Y = [0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1]; // n=20, true beta0~-0.5, beta1~2.5
+const DATA_MIXTURE = [-0.3,0.5,-1.0,0.2,1.2,1.8,0.8,2.1]; // n=8, groups near 0 and 1.5, close enough for occasional crossing
+const DATA_SIGNAL = [2.8,3.1,2.9,3.3,2.7,3.0,3.2,2.6,3.1,2.9]; // n=10 noisy distance obs, true r~3
+
+// === DISTRIBUTIONS (all are real posteriors conditioned on observed data) ===
 const T={
-  correlated:{name:'Correlated Normal',xR:[-4,4],yR:[-4,4],starts:[[-3,3],[3,-3],[-3,-3],[3,3]],
-    logD(x,y){const r=.9;return-.5/(1-r*r)*(x*x-2*r*x*y+y*y)},
-    grad(x,y){const r=.9,d=1-r*r;return[-(x-r*y)/d,-(y-r*x)/d]},
-    defSig:.35,defEps:.15,defL:20,
-    formula:'\\pi(\\theta_1,\\theta_2) \\propto \\exp\\!\\left(-\\frac{\\theta_1^2 - 2(0.9)\\,\\theta_1\\theta_2 + \\theta_2^2}{2(1-0.9^2)}\\right)',
-    tip:'Try \u03C3 = 0.02 (too narrow, ~99% accept), 0.35 (good, ~35%), 2.0 (too wide, ~5%). Isotropic proposals waste time perpendicular to the ridge. Switch to Hamiltonian Monte Carlo to see the difference.',
+  normal:{
+    name:'Normal Inference',
+    xR:[-4,9],yR:[-1.5,2.5],
+    starts:[[-2,0],[7,2],[-2,2],[7,0]],
+    logD(t1,t2){
+      // t1=mu, t2=log(sigma). Posterior: p(mu,log_sig|y) propto prod N(yi;mu,exp(2*t2)) * N(mu;0,100) * N(t2;0,4)
+      const s2=Math.exp(2*t2),n=DATA_NORMAL.length;
+      let ss=0;for(let i=0;i<n;i++)ss+=(DATA_NORMAL[i]-t1)**2;
+      return -n*t2 - ss/(2*s2) - t1*t1/200 - t2*t2/8;
+    },
+    defSig:.3,
+    formula:'p(\\theta_1,\\theta_2 \\mid \\mathbf{y}) \\propto \\underbrace{\\prod_{i=1}^{10} \\mathcal{N}(y_i;\\, \\theta_1,\\, e^{2\\theta_2})}_{\\text{likelihood}} \\times \\underbrace{\\mathcal{N}(\\theta_1;\\,0,\\,10^2)\\;\\mathcal{N}(\\theta_2;\\,0,\\,2^2)}_{\\text{prior}}',
+    tip:'Normal model: 10 observations with wide spread (range -1.7 to 6.3), inferring mean (\u03B8\u2081 = \u03BC) and log standard deviation (\u03B8\u2082 = log \u03C3). With few observations and high variability, the posterior is broad and the correlation between \u03BC and log \u03C3 is visible \u2014 when \u03C3 is larger, the mean is less constrained. Try \u03C3 = 0.02 (too narrow), 0.3 (good), 1.5 (too wide).',
+    pN:['\u03B8\u2081 (\u03BC)','\u03B8\u2082 (log \u03C3)']},
+
+  logistic:{
+    name:'Logistic Regression',
+    xR:[-5,4],yR:[-2,8],
+    starts:[[-3,0],[2,6],[-3,6],[2,0]],
+    logD(t1,t2){
+      // t1=beta0, t2=beta1. Posterior: p(beta|x,y) propto prod Bernoulli(yi;sigmoid(t1+t2*xi)) * N(t1;0,25) * N(t2;0,25)
+      let ll=0;const n=DATA_LOGISTIC_X.length;
+      for(let i=0;i<n;i++){const eta=t1+t2*DATA_LOGISTIC_X[i];const lse=eta>20?eta:eta<-20?0:Math.log(1+Math.exp(eta));ll+=DATA_LOGISTIC_Y[i]*eta-lse}
+      return ll - (t1*t1+t2*t2)/50;
+    },
+    defSig:.35,
+    formula:'p(\\theta_1,\\theta_2 \\mid \\mathbf{x},\\mathbf{y}) \\propto \\underbrace{\\prod_{i=1}^{20} \\text{Bernoulli}\\!\\left(y_i;\\, \\text{sigmoid}(\\theta_1 + \\theta_2 x_i)\\right)}_{\\text{likelihood}} \\times \\underbrace{\\mathcal{N}(\\theta_1;\\,0,\\,5^2)\\;\\mathcal{N}(\\theta_2;\\,0,\\,5^2)}_{\\text{prior}}',
+    tip:'Logistic regression: 20 binary outcomes with a covariate. No conjugate posterior exists \u2014 we MUST use MCMC. The posterior is curved because the sigmoid link creates nonlinear dependence between intercept (\u03B8\u2081 = \u03B2\u2080) and slope (\u03B8\u2082 = \u03B2\u2081). The isotropic proposal wastes effort moving perpendicular to the curved ridge.',
+    pN:['\u03B8\u2081 (\u03B2\u2080)','\u03B8\u2082 (\u03B2\u2081)']},
+
+  mixture:{
+    name:'Mixture Model',
+    xR:[-4,4],yR:[-4,4],
+    starts:[[-3,3],[3,-3],[-3,-3],[3,3]],
+    logD(t1,t2){
+      // t1=mu1, t2=mu2. Known sigma=2.5, equal weights. n=8 obs, groups near 0 and 1.5.
+      let ll=0;const n=DATA_MIXTURE.length,v2=6.25; // sigma^2=6.25
+      for(let i=0;i<n;i++){
+        const l1=-.5*(DATA_MIXTURE[i]-t1)**2/v2;
+        const l2=-.5*(DATA_MIXTURE[i]-t2)**2/v2;
+        ll+=lse(l1,l2)-Math.log(2);
+      }
+      return ll - (t1*t1+t2*t2)/200;
+    },
+    defSig:.8,
+    formula:'p(\\theta_1,\\theta_2 \\mid \\mathbf{y}) \\propto \\underbrace{\\prod_{i=1}^{8} \\left[\\tfrac{1}{2}\\mathcal{N}(y_i;\\,\\theta_1,\\,2.5^2) + \\tfrac{1}{2}\\mathcal{N}(y_i;\\,\\theta_2,\\,2.5^2)\\right]}_{\\text{likelihood}} \\times \\underbrace{\\mathcal{N}(\\theta_1;\\,0,\\,10^2)\\;\\mathcal{N}(\\theta_2;\\,0,\\,10^2)}_{\\text{prior}}',
+    tip:'Mixture model: 8 observations from two overlapping groups (near 0 and 1.5) with unknown means (\u03B8\u2081 = \u03BC\u2081, \u03B8\u2082 = \u03BC\u2082), known \u03C3 = 2.5. Label switching creates two posterior modes \u2014 swapping which group is "1" vs "2" gives identical likelihood. With few observations and wide components, the valley between modes is shallow enough that the chain occasionally crosses. Watch the chains: do they find both modes?',
+    pN:['\u03B8\u2081 (\u03BC\u2081)','\u03B8\u2082 (\u03BC\u2082)']},
+
+  signal:{
+    name:'Signal Location',
+    xR:[-5,5],yR:[-5,5],
+    starts:[[3,0],[-3,0],[0,3],[0,-3]],
+    logD(t1,t2){
+      // Observe noisy distances from a source at (t1,t2). Likelihood: di ~ N(sqrt(t1^2+t2^2), 0.4^2)
+      const r=Math.sqrt(t1*t1+t2*t2);
+      let ll=0;const n=DATA_SIGNAL.length,prec=1/.16;
+      for(let i=0;i<n;i++)ll-=.5*prec*(DATA_SIGNAL[i]-r)**2;
+      return ll - (t1*t1+t2*t2)/50;
+    },
+    defSig:.35,
+    formula:'p(\\theta_1,\\theta_2 \\mid \\mathbf{d}) \\propto \\underbrace{\\prod_{i=1}^{10} \\mathcal{N}\\!\\left(d_i;\\, \\sqrt{\\theta_1^2+\\theta_2^2},\\, 0.4^2\\right)}_{\\text{likelihood}} \\times \\underbrace{\\mathcal{N}(\\theta_1;\\,0,\\,5^2)\\;\\mathcal{N}(\\theta_2;\\,0,\\,5^2)}_{\\text{prior}}',
+    tip:'Signal location: 10 noisy distance measurements from a source at unknown coordinates (\u03B8\u2081, \u03B8\u2082). We observe how far away the source is (\u2248 3 units) but not the direction. The posterior is a ring \u2014 all locations at radius \u2248 3 are equally plausible. Random walk must crawl around the entire ring to be representative.',
     pN:['\u03B8\u2081','\u03B8\u2082']},
-  bimodal:{name:'Bimodal Mixture',xR:[-7,7],yR:[-5,5],starts:[[-5,-3],[5,3],[-5,3],[5,-3]],
-    logD(x,y){return lse(-.5*((x+3)**2+y*y),-.5*((x-3)**2+y*y))-Math.log(2)},
-    grad(x,y){const l1=-.5*((x+3)**2+y*y),l2=-.5*((x-3)**2+y*y),m=Math.max(l1,l2),w1=Math.exp(l1-m),w2=Math.exp(l2-m),s=w1+w2;return[-(w1*(x+3)+w2*(x-3))/s,-y]},
-    defSig:.8,defEps:.12,defL:30,
-    formula:'\\pi(\\boldsymbol{\\theta}) \\propto \\tfrac{1}{2}\\mathcal{N}\\!\\left(\\boldsymbol{\\theta};\\!\\begin{pmatrix}\\!-3\\\\0\\end{pmatrix}\\!,\\mathbf{I}\\right) + \\tfrac{1}{2}\\mathcal{N}\\!\\left(\\boldsymbol{\\theta};\\!\\begin{pmatrix}3\\\\0\\end{pmatrix}\\!,\\mathbf{I}\\right)',
-    tip:'Watch chains get trapped. Try large \u03C3 to jump \u2014 acceptance drops. Hamiltonian Monte Carlo also struggles: gradient pulls toward nearest mode.',
-    pN:['\u03B8\u2081','\u03B8\u2082']},
-  banana:{name:'Banana',xR:[-3,3],yR:[-2,8],starts:[[-2,1],[2,6],[-2,6],[2,1]],
-    logD(x,y){return-.5*x*x-(y-x*x)**2},
-    grad(x,y){return[-x+4*x*(y-x*x),-2*(y-x*x)]},
-    defSig:.4,defEps:.08,defL:25,
-    formula:'\\pi(x,y) \\propto \\exp\\!\\left(-\\frac{x^2}{2} - (y - x^2)^2\\right)',
-    tip:'High-density region curves along a parabola. Random walk cannot follow curvature. Switch to Hamiltonian Monte Carlo \u2014 gradient-guided proposals follow the banana.',
-    pN:['x','y']},
-  donut:{name:'Donut',xR:[-5,5],yR:[-5,5],starts:[[3,0],[-3,0],[0,3],[0,-3]],
-    logD(x,y){const r=Math.sqrt(x*x+y*y);return-.5*((r-3)**2)/.16},
-    grad(x,y){const r=Math.sqrt(x*x+y*y);if(r<1e-10)return[0,0];const f=-(r-3)/(.16*r);return[f*x,f*y]},
-    defSig:.35,defEps:.06,defL:40,
-    formula:'\\pi(x,y) \\propto \\exp\\!\\left(-\\frac{\\left(\\sqrt{x^2+y^2}-3\\right)^2}{2 \\times 0.16}\\right)',
-    tip:'Ring at radius 3. Random walk crawls around the ring. Hamiltonian Monte Carlo follows the tangent via gradient \u2014 dramatically faster.',
-    pN:['x','y']},
 };
 
 // === STATE ===
-let tK='correlated',method='rwmh',sigma=.35,eps=.15,lfL=20,nC=4,spd=10,wu=200;
+let tK='normal',sigma=.3,nC=4,spd=10,wu=200;
 let go=false,animId=null,iter=0;
-let chains=[],acc=[],rhatHist=[],lastTraj=null;
+let chains=[],acc=[],rhatHist=[];
 let lastB=NaN,lastW=NaN,lastRhat=NaN,lastESS=0,lastAcc=0,lastTau=0;
 
 const hmC=$('hmC'),pC=$('pC'),tr1=$('tr1'),tr2=$('tr2'),acfC=$('acfC'),rhatCV=$('rhatC');
@@ -227,18 +271,8 @@ function buildHM(){
 // === MCMC ===
 function mhStep(st,logD,sig){const p=[st[0]+randn()*sig,st[1]+randn()*sig];const la=logD(p[0],p[1])-logD(st[0],st[1]);return Math.log(Math.random())<la?{s:p,a:true}:{s:[st[0],st[1]],a:false}}
 
-function hmcStep(st,logD,grad,ep,L){
-  let q=[st[0],st[1]],p=[randn(),randn()];const traj=[[q[0],q[1]]];
-  const H0=-logD(q[0],q[1])+.5*(p[0]*p[0]+p[1]*p[1]);
-  let g=grad(q[0],q[1]);p[0]+=ep/2*g[0];p[1]+=ep/2*g[1];
-  for(let i=0;i<L;i++){q[0]+=ep*p[0];q[1]+=ep*p[1];traj.push([q[0],q[1]]);g=grad(q[0],q[1]);if(i<L-1){p[0]+=ep*g[0];p[1]+=ep*g[1]}}
-  p[0]+=ep/2*g[0];p[1]+=ep/2*g[1];
-  const H1=-logD(q[0],q[1])+.5*(p[0]*p[0]+p[1]*p[1]);
-  lastTraj=traj;return Math.log(Math.random())<H0-H1?{s:[q[0],q[1]],a:true}:{s:[st[0],st[1]],a:false};
-}
-
-function initChains(){const d=T[tK];chains=[];acc=[];rhatHist=[];lastTraj=null;iter=0;lastB=NaN;lastW=NaN;lastRhat=NaN;lastESS=0;lastAcc=0;lastTau=0;for(let i=0;i<nC;i++){chains.push([d.starts[i%d.starts.length].slice()]);acc.push([true])}updateDiag()}
-function runSteps(n){const d=T[tK];for(let s=0;s<n;s++){for(let ci=0;ci<chains.length;ci++){const last=chains[ci][chains[ci].length-1];let res;if(method==='hmc')res=hmcStep(last,d.logD,d.grad,eps,lfL);else res=mhStep(last,d.logD,sigma);chains[ci].push(res.s);acc[ci].push(res.a)}iter++}}
+function initChains(){const d=T[tK];chains=[];acc=[];rhatHist=[];iter=0;lastB=NaN;lastW=NaN;lastRhat=NaN;lastESS=0;lastAcc=0;lastTau=0;for(let i=0;i<nC;i++){chains.push([d.starts[i%d.starts.length].slice()]);acc.push([true])}updateDiag()}
+function runSteps(n){const d=T[tK];for(let s=0;s<n;s++){for(let ci=0;ci<chains.length;ci++){const last=chains[ci][chains[ci].length-1];const res=mhStep(last,d.logD,sigma);chains[ci].push(res.s);acc[ci].push(res.a)}iter++}}
 
 // === DIAGNOSTICS ===
 function calcESSandTau(v){
@@ -256,13 +290,12 @@ function getStatus(){
   if(iter<20)return{lbl:'Ready',desc:'Press Run or Step to begin sampling.',col:'#94a3b8',bg:'#0f172a',bdr:'#1e293b'};
   if(iter<wu)return{lbl:'Warm-up phase',desc:'Iteration '+iter+' of '+wu+'. Samples in this phase are discarded \u2014 the chain is adapting to the posterior.',col:'#94a3b8',bg:'#0f172a',bdr:'#334155'};
   const ar=lastAcc,ess=lastESS,rh=lastRhat,pwDraws=Math.max(0,(iter-wu)*nC);
-  const optLo=method==='hmc'?.55:.15,optHi=method==='hmc'?.95:.50;
-  if(ar<.03&&iter>wu+100)return{lbl:'Stuck \u2014 proposal too wide',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Nearly all proposals land in low-density regions and are rejected. The chain stays frozen. Decrease \u03C3'+(method==='hmc'?' or \u03B5':'')+' to make smaller, more cautious proposals.',col:'#f87171',bg:'#1a0a0a',bdr:'#7f1d1d'};
-  if(ar>.95&&method==='rwmh'&&iter>wu+100)return{lbl:'Slow mixing \u2014 proposal too narrow',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Almost every proposal is accepted because steps are tiny. The chain explores by diffusion \u2014 very slow. Increase \u03C3 to take bolder steps.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
+  if(ar<.03&&iter>wu+100)return{lbl:'Stuck \u2014 proposal too wide',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Nearly all proposals land in low-density regions and are rejected. The chain stays frozen. Decrease \u03C3 to make smaller, more cautious proposals.',col:'#f87171',bg:'#1a0a0a',bdr:'#7f1d1d'};
+  if(ar>.95&&iter>wu+100)return{lbl:'Slow mixing \u2014 proposal too narrow',desc:'Accept rate '+((ar*100).toFixed(1))+'%. Almost every proposal is accepted because steps are tiny. The chain explores by diffusion \u2014 very slow. Increase \u03C3 to take bolder steps.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
   if(!isNaN(rh)&&rh>1.2&&iter>wu+200)return{lbl:'Not converged \u2014 chains disagree',desc:'R\u0302 = '+(rh.toFixed(3))+'. Between-chain variance B = '+(lastB.toFixed(2))+' dominates within-chain W = '+(lastW.toFixed(2))+'. Chains are exploring different regions \u2014 likely trapped in separate modes.',col:'#f87171',bg:'#1a0a0a',bdr:'#7f1d1d'};
   if(!isNaN(rh)&&rh>1.01&&iter>wu+200)return{lbl:'Converging \u2014 run longer',desc:'R\u0302 = '+(rh.toFixed(3))+'. Chains are approaching agreement (B shrinking relative to W) but have not fully mixed yet.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
   if(ess<100&&iter>wu+500)return{lbl:'Poor mixing \u2014 high autocorrelation',desc:'Effective sample size = '+ess+' from '+pwDraws.toLocaleString()+' post-warmup draws (inflation factor = '+lastTau.toFixed(1)+'). Each sample is highly correlated with its neighbours.',col:'#fbbf24',bg:'#1a1505',bdr:'#854d0e'};
-  if(ess>=400&&(isNaN(rh)||rh<1.01)&&ar>optLo&&ar<optHi)return{lbl:'Good mixing \u2014 all diagnostics pass',desc:'Effective sample size = '+ess+' (inflation '+lastTau.toFixed(1)+'\u00D7). R\u0302 = '+(isNaN(rh)?'\u2014':rh.toFixed(4))+'. Accept = '+((ar*100).toFixed(1))+'%. Posterior summaries are reliable.',col:'#4ade80',bg:'#0a1a10',bdr:'#166534'};
+  if(ess>=400&&(isNaN(rh)||rh<1.01)&&ar>.15&&ar<.50)return{lbl:'Good mixing \u2014 all diagnostics pass',desc:'Effective sample size = '+ess+' (inflation '+lastTau.toFixed(1)+'\u00D7). R\u0302 = '+(isNaN(rh)?'\u2014':rh.toFixed(4))+'. Accept = '+((ar*100).toFixed(1))+'%. Posterior summaries are reliable.',col:'#4ade80',bg:'#0a1a10',bdr:'#166534'};
   if(ess>=100)return{lbl:'Adequate \u2014 consider running longer',desc:'Effective sample size = '+ess+' from '+pwDraws.toLocaleString()+' draws. Increase draws for more precise estimates.',col:'#60a5fa',bg:'#0a1020',bdr:'#1e40af'};
   return{lbl:'Sampling\u2026',desc:'Iteration '+iter+'. Accumulating draws.',col:'#94a3b8',bg:'#0f172a',bdr:'#1e293b'};
 }
@@ -276,9 +309,9 @@ function updateDiag(){
   const tAcc=acc.reduce((s,a)=>s+a.filter(Boolean).length,0),tLen=acc.reduce((s,a)=>s+a.length,0);
   lastAcc=tLen>0?tAcc/tLen:0;
   const aE=$('dA');aE.textContent=(lastAcc*100).toFixed(1)+'%';
-  const optLo=method==='hmc'?.55:.15,optHi=method==='hmc'?.95:.50;
+  const optLo=.15,optHi=.50;
   aE.style.color=(lastAcc>optLo&&lastAcc<optHi)?'#4ade80':(lastAcc>.03&&lastAcc<.95)?'#fbbf24':'#f87171';
-  $('dAHint').textContent=method==='hmc'?'target: 60–90%':'target: 23–44%';
+  $('dAHint').textContent='target: 23–44%';
 
   const pw=chains.map(c=>c.slice(Math.min(wu,c.length)));
   const v1=pw.filter(c=>c.length>10).map(c=>c.map(s=>s[0]));
@@ -306,14 +339,6 @@ function updateDiag(){
 function drawPaths(){
   const d=T[tK],W=PW,H=PH;pX.clearRect(0,0,W,H);
   const tx=x=>(x-d.xR[0])/(d.xR[1]-d.xR[0])*W,ty=y=>(1-(y-d.yR[0])/(d.yR[1]-d.yR[0]))*H;
-  if(lastTraj&&method==='hmc'&&lastTraj.length>1){
-    pX.strokeStyle='rgba(255,255,100,0.5)';pX.lineWidth=1.5;pX.setLineDash([4,3]);
-    pX.beginPath();pX.moveTo(tx(lastTraj[0][0]),ty(lastTraj[0][1]));
-    for(let i=1;i<lastTraj.length;i++)pX.lineTo(tx(lastTraj[i][0]),ty(lastTraj[i][1]));
-    pX.stroke();pX.setLineDash([]);
-    const end=lastTraj[lastTraj.length-1];pX.fillStyle='rgba(255,255,100,.7)';
-    pX.beginPath();pX.arc(tx(end[0]),ty(end[1]),3,0,Math.PI*2);pX.fill();
-  }
   for(let ci=0;ci<chains.length;ci++){
     const ch=chains[ci];if(ch.length<2)continue;
     const maxD=6000,start=Math.max(0,ch.length-maxD);
@@ -324,12 +349,32 @@ function drawPaths(){
     const last=ch[ch.length-1];pX.globalAlpha=1;pX.fillStyle=CC[ci%4];
     pX.beginPath();pX.arc(tx(last[0]),ty(last[1]),5,0,Math.PI*2);pX.fill();
     pX.strokeStyle='#fff';pX.lineWidth=1.5;pX.stroke();
+    // Proposal distribution ellipse
+    const rx1=sigma/(d.xR[1]-d.xR[0])*W;
+    const ry1=sigma/(d.yR[1]-d.yR[0])*H;
+    const cx=tx(last[0]),cy=ty(last[1]);
+    // 2-sigma fill (86% of proposals land inside)
+    pX.fillStyle=CC[ci%4];pX.globalAlpha=.07;
+    pX.beginPath();pX.ellipse(cx,cy,rx1*2,ry1*2,0,0,Math.PI*2);pX.fill();
+    // 1-sigma fill
+    pX.globalAlpha=.1;
+    pX.beginPath();pX.ellipse(cx,cy,rx1,ry1,0,0,Math.PI*2);pX.fill();
+    // 1-sigma contour (solid)
+    pX.strokeStyle=CC[ci%4];pX.lineWidth=1.5;pX.globalAlpha=.7;
+    pX.beginPath();pX.ellipse(cx,cy,rx1,ry1,0,0,Math.PI*2);pX.stroke();
+    // 2-sigma contour (dashed)
+    pX.lineWidth=1.2;pX.globalAlpha=.4;pX.setLineDash([5,4]);
+    pX.beginPath();pX.ellipse(cx,cy,rx1*2,ry1*2,0,0,Math.PI*2);pX.stroke();
+    pX.setLineDash([]);
   }
   pX.globalAlpha=1;
   pX.fillStyle='rgba(180,200,220,.45)';pX.font='11px JetBrains Mono,monospace';
   pX.textAlign='left';pX.fillText(T[tK].xR[0],3,PH-3);pX.fillText(T[tK].yR[1],3,13);
   pX.textAlign='right';pX.fillText(T[tK].xR[1],PW-3,PH-3);
   pX.textAlign='left';pX.fillText(T[tK].yR[0],3,PH-15);
+  pX.textAlign='right';
+  pX.fillStyle='rgba(180,200,220,.35)';pX.font='9px JetBrains Mono,monospace';
+  pX.fillText('solid = 1\u03C3  dashed = 2\u03C3 proposal',PW-4,PH-15);
 }
 
 function drawTraces(){
@@ -405,6 +450,8 @@ function drawAll(){drawPaths();drawTraces();drawACF();drawRhat()}
 // === FORMULAS ===
 function renderFormulas(){
   kR(T[tK].formula,$('fEl'),true);
+  $('propLabel').textContent='Proposal Distribution (Random-Walk Metropolis-Hastings)';
+  kR("\\boldsymbol{\\theta}' = \\boldsymbol{\\theta}^{(s)} + \\boldsymbol{\\varepsilon}, \\quad \\boldsymbol{\\varepsilon} \\sim \\mathcal{N}(\\mathbf{0},\\,\\sigma^2 \\mathbf{I}_2) \\qquad \\alpha = \\min\\!\\left(1,\\; \\frac{p(\\mathbf{y}\\mid\\boldsymbol{\\theta}')\\,p(\\boldsymbol{\\theta}')}{p(\\mathbf{y}\\mid\\boldsymbol{\\theta}^{(s)})\\,p(\\boldsymbol{\\theta}^{(s)})}\\right)",$('propEl'),true);
   kR('\\hat{\\rho}_k = \\dfrac{\\displaystyle\\sum_{s=1}^{S-k}(\\theta^{(s)}-\\bar{\\theta})(\\theta^{(s+k)}-\\bar{\\theta})}{\\displaystyle\\sum_{s=1}^{S}(\\theta^{(s)}-\\bar{\\theta})^2} \\qquad \\text{Bright bars: } |\\hat{\\rho}_k| > 1.96\\,/\\,\\sqrt{S}',$('acfFormula'),false);
   kR('\\hat{R} = \\sqrt{\\frac{\\hat{V}}{W}}, \\quad \\hat{V} = \\frac{S-1}{S}\\,W + \\frac{1}{S}\\,B \\qquad B = \\frac{n}{m-1}\\sum_{j}(\\bar{\\theta}_j - \\bar{\\theta})^2 \\qquad W = \\frac{1}{m}\\sum_j s_j^2',$('rhatFormula'),false);
   kR('\\text{ESS} = \\dfrac{S}{1+2\\displaystyle\\sum_{k=1}^{K}\\hat{\\rho}_k} \\qquad \\text{MCSE} = \\dfrac{\\hat{\\sigma}}{\\sqrt{\\text{ESS}}}',$('diagF'),false);
@@ -416,12 +463,10 @@ function start(){go=true;$('goBtn').textContent='\u23F8 Pause';$('goBtn').classL
 function stop(){go=false;$('goBtn').textContent='\u25B6 Run';$('goBtn').classList.remove('on');$('stBtn').disabled=false;if(animId)cancelAnimationFrame(animId)}
 
 // === EVENTS ===
-$('tSel').addEventListener('change',function(){tK=this.value;const d=T[tK];sigma=d.defSig;$('sigR').value=sigma;$('sigLbl').textContent='Proposal \u03C3: '+sigma.toFixed(2);eps=d.defEps;$('epsR').value=eps;$('epsLbl').textContent='Step \u03B5: '+eps.toFixed(3);lfL=d.defL;$('lSel').value=lfL;$('tipBox').textContent=d.tip;$('tl1').textContent='Trace: '+d.pN[0];$('tl2').textContent='Trace: '+d.pN[1];stop();buildHM();initChains();renderFormulas();drawAll()});
-$('mSel').addEventListener('change',function(){method=this.value;$('sigGrp').classList.toggle('hidden',method==='hmc');$('epsGrp').classList.toggle('hidden',method!=='hmc');$('lGrp').classList.toggle('hidden',method!=='hmc');stop();initChains();drawAll()});
+$('tSel').addEventListener('change',function(){tK=this.value;const d=T[tK];sigma=d.defSig;$('sigR').value=sigma;$('sigLbl').textContent='Proposal \u03C3: '+sigma.toFixed(2);$('tipBox').textContent=d.tip;$('tl1').textContent='Trace: '+d.pN[0];$('tl2').textContent='Trace: '+d.pN[1];stop();buildHM();initChains();renderFormulas();drawAll()});
 $('sigR').addEventListener('input',function(){sigma=parseFloat(this.value);$('sigLbl').textContent='Proposal \u03C3: '+sigma.toFixed(2)});
-$('epsR').addEventListener('input',function(){eps=parseFloat(this.value);$('epsLbl').textContent='Step \u03B5: '+eps.toFixed(3)});
-$('lSel').addEventListener('change',function(){lfL=parseInt(this.value)});
 $('cSel').addEventListener('change',function(){nC=parseInt(this.value);stop();initChains();drawAll()});
+$('wuSel').addEventListener('change',function(){wu=parseInt(this.value);updateDiag();drawAll()});
 $('sSel').addEventListener('change',function(){spd=parseInt(this.value)});
 $('goBtn').addEventListener('click',function(){go?stop():start()});
 $('stBtn').addEventListener('click',function(){runSteps(1);drawAll();updateDiag()});
