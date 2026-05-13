@@ -12,23 +12,39 @@ document.addEventListener('DOMContentLoaded', function() {
         (currentMonth === 11 && currentDay >= 15) || // December 15-31
         (currentMonth === 0 && currentDay <= 8)     // January 1-8
     );
-    
+    // Summer session runs May 11 through August 7
+    const isSummerSession = (
+        (currentMonth === 4 && currentDay >= 11) ||  // May 11-31
+        (currentMonth === 5) ||                       // All of June
+        (currentMonth === 6) ||                       // All of July
+        (currentMonth === 7 && currentDay <= 7)      // August 1-7
+    );
+
+
     if (isWinterSession) {
-        // Redirect home button to winter session page
         const homeLink = document.querySelector('.icon-home');
         if (homeLink) {
             homeLink.href = 'https://treese41528.github.io/STAT350/Website/winter.html';
             homeLink.setAttribute('aria-label', 'Go to Winter Session home page');
         }
-        
-        // Update any other index.html links to winter.html
-        const navLinks = document.querySelectorAll('a[href*="index.html"]');
-        navLinks.forEach(link => {
+        document.querySelectorAll('a[href*="index.html"]').forEach(link => {
             if (link.href.includes('STAT350/Website/index.html')) {
                 link.href = link.href.replace('index.html', 'winter.html');
             }
         });
+    } else if (isSummerSession) {
+        const homeLink = document.querySelector('.icon-home');
+        if (homeLink) {
+            homeLink.href = 'https://treese41528.github.io/STAT350/Website/summer.html';
+            homeLink.setAttribute('aria-label', 'Go to Summer Session home page');
+        }
+        document.querySelectorAll('a[href*="index.html"]').forEach(link => {
+            if (link.href.includes('STAT350/Website/index.html')) {
+                link.href = link.href.replace('index.html', 'summer.html');
+            }
+        });
     }
+    
     // 1. Fix ARIA issues in RTD search
     const searchInput = document.querySelector('.wy-side-nav-search input[type="text"]');
     if (searchInput) {
