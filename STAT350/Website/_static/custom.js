@@ -21,16 +21,27 @@ document.addEventListener('DOMContentLoaded', function() {
     );
 
 
-    if (isWinterSession) {
+   if (isWinterSession) {
         const homeLink = document.querySelector('.icon-home');
         if (homeLink) {
             homeLink.href = 'https://treese41528.github.io/STAT350/Website/winter.html';
             homeLink.setAttribute('aria-label', 'Go to Winter Session home page');
         }
-        document.querySelectorAll('a[href*="index.html"]').forEach(link => {
-            if (link.href.includes('STAT350/Website/index.html')) {
-                link.href = link.href.replace('index.html', 'winter.html');
+
+        document.querySelectorAll('a[href]').forEach(link => {
+            let href = link.getAttribute('href');
+            if (!href) return;
+
+            if (href.includes('STAT350/Website/index.html')) {
+                link.href = href.replace('index.html', 'winter.html');
+                return;
             }
+
+            href = href
+                .replace(/exams_index\.html/, 'exams_index-winter.html')
+                .replace(/exam_materials\/exam1\.html/, 'exam_materials/exam1-winter.html')
+                .replace(/exam_materials\/final_exam\.html/, 'exam_materials/final_exam-winter.html');
+            link.setAttribute('href', href);
         });
     } else if (isSummerSession) {
         const homeLink = document.querySelector('.icon-home');
@@ -38,10 +49,25 @@ document.addEventListener('DOMContentLoaded', function() {
             homeLink.href = 'https://treese41528.github.io/STAT350/Website/summer.html';
             homeLink.setAttribute('aria-label', 'Go to Summer Session home page');
         }
-        document.querySelectorAll('a[href*="index.html"]').forEach(link => {
-            if (link.href.includes('STAT350/Website/index.html')) {
-                link.href = link.href.replace('index.html', 'summer.html');
+
+        // Rewrite all internal navigation links to point to summer versions
+        document.querySelectorAll('a[href]').forEach(link => {
+            let href = link.getAttribute('href');
+            if (!href) return;
+
+            // Landing page
+            if (href.includes('STAT350/Website/index.html')) {
+                link.href = href.replace('index.html', 'summer.html');
+                return;
             }
+
+            // Exam pages (relative or absolute)
+            href = href
+                .replace(/exams_index\.html/, 'exams_index-summer.html')
+                .replace(/exam_materials\/exam1\.html/, 'exam_materials/exam1-summer.html')
+                .replace(/exam_materials\/exam2\.html/, 'exam_materials/exam2-summer.html')
+                .replace(/exam_materials\/final_exam\.html/, 'exam_materials/final_exam-summer.html');
+            link.setAttribute('href', href);
         });
     }
     
