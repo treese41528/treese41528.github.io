@@ -27,11 +27,28 @@ from genai_studio import GenAIStudio
 
 RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
 
-# Simulated LLM-vs-human labels for 50 reviews (book example): 42/50 agree.
-HUMAN_LABELS = ["pos"] * 20 + ["neg"] * 15 + ["neu"] * 15
-LLM_LABELS = (["pos"] * 18 + ["neg"] * 2 +
-              ["neg"] * 12 + ["pos"] * 1 + ["neu"] * 2 +
-              ["neu"] * 12 + ["pos"] * 1 + ["neg"] * 2)
+# Real LLM-vs-gold labels: gemma3:12b sentiment annotations of 90 real reviews from
+# the shared Chapter 6 corpus, compared to the gold label derived from each review's
+# star rating. The annotations are frozen to a committed fixture so kappa reproduces
+# EXACTLY (the LLM call itself is stochastic; re-generate with _data/build_reviews.py's
+# sibling annotator if you want a fresh draw). Rows where the model didn't answer with
+# a single clean label are dropped here and surfaced as a quality-control statistic.
+_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_data",
+                        "fixtures", "annotation_gemma3-12b.jsonl")
+
+
+def load_fixture(path: str = _FIXTURE):
+    """Return (gold_labels, llm_labels, n_total) from the frozen annotation fixture."""
+    import json
+    gold, llm, n_total = [], [], 0
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            row = json.loads(line)
+            n_total += 1
+            if row.get("llm"):
+                gold.append(row["gold"])
+                llm.append(row["llm"])
+    return gold, llm, n_total
 
 CONSENSUS_PROMPT = ("Classify the sentiment as ONLY one word - positive, negative, "
                     "or neutral.\n\nReview: {text}\nLabel:")
@@ -57,7 +74,7 @@ def bootstrap_kappa(human_labels, llm_labels, n_bootstrap=1000, seed=42) -> dict
         h = [human_labels[i] for i in idx]
         l = [llm_labels[i] for i in idx]
         try:
-            kappas.append(cohen_kappa_score(h, l))
+            kappas.append(cohen_kappa_score(h, l, labels=["pos", "neu", "neg"]))
         except ValueError:
             continue
     return {
@@ -82,9 +99,13 @@ def annotate_consensus(text, annotate_fn, ai, n_runs=5) -> dict:
 
 
 def main() -> None:
-    # --- Cohen's kappa vs. raw accuracy (deterministic simulated labels) ---
+    # --- Cohen's kappa vs. raw accuracy (real frozen annotations) ---
+    HUMAN_LABELS, LLM_LABELS, n_total = load_fixture()
+    n_parsed = len(LLM_LABELS)
+    print(f"Annotated {n_total} real reviews; {n_parsed} returned a clean one-word "
+          f"label ({n_total - n_parsed} needed re-prompting — a QC signal in itself).")
     acc = accuracy_score(HUMAN_LABELS, LLM_LABELS)
-    kappa = cohen_kappa_score(HUMAN_LABELS, LLM_LABELS)
+    kappa = cohen_kappa_score(HUMAN_LABELS, LLM_LABELS, labels=["pos", "neu", "neg"])
     print(f"Accuracy:      {acc:.3f}")
     print(f"Cohen's kappa: {kappa:.3f}  ({interpret_kappa(kappa)})")
     print("  (kappa < accuracy because it corrects for chance agreement)")

@@ -4,11 +4,13 @@ Script 05: Embeddings as covariates in a regression — plus bootstrap CIs.
 
 The deepest tie to the earlier course: reduce the 3072-d embedding to a few
 principal components, use them (with structured features like review length) as
-covariates in a linear model predicting the star rating, then quantify
+covariates in a linear model predicting the REAL star rating, then quantify
 coefficient uncertainty with the Chapter 4 bootstrap.
 
-NB: this is illustrative — n = 10 documents with 6 predictors leaves only 3
-residual d.f., so R^2 is inflated. A real analysis needs n >> p.
+Data: the shared Chapter 6 corpus (9,000 real Amazon reviews — see
+_data/DATA_CARD.md). We take a sample balanced across the 1-5 star ratings so the
+outcome has real spread, with n >> p (default n = 500, p = 6) — so R^2 is an
+honest fit, not the inflated value a tiny toy sample produces.
 
 Prereqs / run: see 01_generate.py. (Also needs scikit-learn.)
 """
@@ -21,21 +23,11 @@ import numpy as np
 
 from genai_studio import GenAIStudio
 
-EMBED_MODEL = "llama3.2:latest"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_data"))
+from loader import load_reviews, stratified_by_rating  # noqa: E402
 
-REVIEWS = [
-    "Absolutely love this, perfect in every way.",
-    "Good quality but shipping was slow.",
-    "Decent product for the price.",
-    "Not what I expected, somewhat disappointed.",
-    "Terrible, complete waste of money.",
-    "Great value, exceeded expectations.",
-    "It works but feels cheaply made.",
-    "Outstanding craftsmanship and design.",
-    "Mediocre at best, won't buy again.",
-    "Fantastic, my favorite purchase this year.",
-]
-RATINGS = np.array([5, 4, 3, 2, 1, 5, 3, 5, 2, 5])
+EMBED_MODEL = "llama3.2:latest"
+PER_RATING = 100          # 100 reviews per star (1-5) -> n = 500
 
 
 def make_client() -> GenAIStudio:
@@ -46,24 +38,40 @@ def make_client() -> GenAIStudio:
     return ai
 
 
+def embed_all(ai: GenAIStudio, texts: list[str], batch: int = 32) -> np.ndarray:
+    vecs: list[list[float]] = []
+    for i in range(0, len(texts), batch):
+        vecs.extend(ai.embed(texts[i:i + batch]))
+        print(f"  embedded {min(i + batch, len(texts))}/{len(texts)}", end="\r")
+    print()
+    return np.array(vecs)
+
+
 def main() -> None:
     from sklearn.decomposition import PCA
     from sklearn.linear_model import LinearRegression
 
     ai = make_client()
+    reviews = load_reviews()
+    sample = stratified_by_rating(reviews, per_rating=PER_RATING)
+    texts = [r["text"] for r in sample]
+    RATINGS = np.array([r["rating"] for r in sample])
 
     # Embed reviews, reduce to 5 PCs, add a structured feature (review length).
-    review_lengths = np.array([len(r.split()) for r in REVIEWS])
-    emb_matrix = np.array(ai.embed(REVIEWS))
+    review_lengths = np.array([len(t.split()) for t in texts])
+    print(f"Embedding {len(texts)} real reviews with {EMBED_MODEL} ...")
+    emb_matrix = embed_all(ai, texts)
     pca = PCA(n_components=5, random_state=42)
     emb_reduced = pca.fit_transform(emb_matrix)
 
-    X = np.column_stack([emb_reduced, review_lengths])
+    # Standardize features so coefficients are comparable (effect per 1 SD).
+    from sklearn.preprocessing import StandardScaler
+    X = StandardScaler().fit_transform(np.column_stack([emb_reduced, review_lengths]))
     feature_names = [f"PC{i + 1}" for i in range(5)] + ["review_length"]
 
     model = LinearRegression()
     model.fit(X, RATINGS)
-    print("Coefficients:")
+    print(f"Predicting star rating from embedding PCs (n={len(RATINGS)}, p={X.shape[1]}; standardized betas):")
     for name, coef in zip(feature_names, model.coef_):
         print(f"  {name:>15}: {coef:+.4f}")
     print(f"  {'intercept':>15}: {model.intercept_:+.4f}")
