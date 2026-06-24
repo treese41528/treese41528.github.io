@@ -17,7 +17,7 @@ This is the demo behind the §6.2 caveat box. It contrasts three things:
 
 Takeaway: relationships ARE encoded geometrically, but `+/-` assumes a clean
 parallel *translation* that contextual embeddings only approximate. See §6.2
-(the caveat box) and the §6.9 Further Reading interpretability entries for *why*
+(the caveat box) and the §6.10 Further Reading interpretability entries for *why*
 (superposition). Refs: Mikolov et al. 2013; Drozd et al. 2016; Nissim et al.
 2020; Allen & Hospedales 2019; Ethayarajh 2019.
 
@@ -190,7 +190,7 @@ def main() -> None:
     print("works); contextual embeddings only approximate it (offsets weakly parallel).")
     print("A rotation can match the additive offset, but learned maps overfit with few")
     print("pairs, and which operator wins varies by model (compare the two above) — there")
-    print("is no single 'right' operator. See §6.2 and §6.9 Further Reading (superposition).")
+    print("is no single 'right' operator. See §6.2 and §6.10 Further Reading (superposition).")
 
 
 if __name__ == "__main__":
