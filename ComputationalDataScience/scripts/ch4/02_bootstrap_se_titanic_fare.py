@@ -35,7 +35,8 @@ def bootstrap_se(x: np.ndarray, stat, B: int, seed: int) -> float:
 
 
 def main() -> None:
-    fares = np.array([float(r["Fare"]) for r in load_titanic() if r["Fare"] not in ("", "NA")])
+    fares = np.array([float(r["Fare"]) for r in load_titanic(chapter=4, filename="titanic.csv")
+                      if r["Fare"] not in ("", "NA")])
     fares = fares[fares > 0]                       # drop 15 zero fares -> n = 876
     n = len(fares)
     s = fares.std(ddof=1)

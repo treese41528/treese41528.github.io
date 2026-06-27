@@ -6,7 +6,7 @@ ECDF/plug-in arc, extending the Ch5 Normal thread:
 
   - Slide 18 (DKW band): the 95% Dvoretzky-Kiefer-Wolfowitz band around the ECDF needs
     ONLY the sample (no known true F), so real data is honest. eps_100 is exact.
-    This script regenerates  Generating Figures/Chapter4/ch4_2_fig05_dkw_confidence_band.png.
+    This script regenerates  Website/assets/Part2/Chapter4/empirical-distribution-plugin_ch4_2/ch4_2_fig05_dkw_confidence_band.png.
   - Slide 32 (bias): the plug-in variance (1/n)Sum(x-xbar)^2 has bias -sigma^2/n KNOWN
     exactly. morley makes that a real, reproducible number, and the bootstrap recovers it.
 
@@ -82,7 +82,7 @@ def make_dkw_figure(speed: np.ndarray, eps: float, out_path: str) -> None:
 
 
 def main() -> None:
-    speed = np.array([r["Speed"] for r in load_morley()], dtype=float)
+    speed = np.array([r["Speed"] for r in load_morley(chapter=4)], dtype=float)
     n = len(speed)
     print(f"morley: n={n}  mean={speed.mean():.4f}  sd={speed.std(ddof=1):.4f}")
 
@@ -98,8 +98,9 @@ def main() -> None:
     print(f"           ratio R = |analytic bias| / SE        = {abs(analytic_bias)/se_boot:.3f}  "
           f"(<0.25 -> negligible, do NOT bias-correct)")
 
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
-                       "Generating Figures", "Chapter4", "ch4_2_fig05_dkw_confidence_band.png")
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "Website",
+                       "assets", "Part2", "Chapter4", "empirical-distribution-plugin_ch4_2",
+                       "ch4_2_fig05_dkw_confidence_band.png")
     make_dkw_figure(speed, eps, os.path.normpath(out))
 
 

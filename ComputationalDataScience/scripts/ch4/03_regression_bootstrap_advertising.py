@@ -39,7 +39,7 @@ def ols(X: np.ndarray, y: np.ndarray):
 
 
 def main() -> None:
-    rows = load_bda("Advertising.csv")
+    rows = load_bda("Advertising.csv", chapter=4)   # Supabase Data/Chapter4/Advertising.csv
     TV = np.array([float(r["TV"]) for r in rows])
     radio = np.array([float(r["Radio"]) for r in rows])
     news = np.array([float(r["Newspaper"]) for r in rows])
