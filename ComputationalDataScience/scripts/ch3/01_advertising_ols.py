@@ -17,7 +17,7 @@ Confounding hook (reinforces Slide 69 "holding the others fixed"): Newspaper IS
 significant on its own (simple-regression t = 3.30) but vanishes in the full model,
 because Newspaper is correlated with Radio (corr = 0.35).
 
-Data: Advertising.csv already lives on the course Supabase under Data/Chapter4 (the
+Data: Advertising.csv lives on the course Supabase under Data/Chapter3 (the
 Ch4 bootstrap thread vendored it); we reuse that copy here, so no new upload is needed.
 
 Run:  python 01_advertising_ols.py        # needs numpy, pandas, statsmodels
@@ -35,7 +35,7 @@ from loader import load_bda  # noqa: E402
 
 
 def main() -> None:
-    rows = load_bda("Advertising.csv", chapter=4)   # Supabase Data/Chapter4/Advertising.csv
+    rows = load_bda("Advertising.csv", chapter=3)   # Supabase Data/Chapter3/Advertising.csv
     df = pd.DataFrame(rows)
     for c in ("TV", "Radio", "Newspaper", "Sales"):
         df[c] = df[c].astype(float)

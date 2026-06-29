@@ -20,7 +20,7 @@ variance, not a season estimate), and choosing a low-volume game is mild selecti
 but Curry really did go 7/7 on opening night, so the boundary case is not fabricated.
 
 Data: nba_freethrows_2023_24.csv already lives on the course Supabase under
-Data/Chapter5 (the Ch5 free-throw thread vendored it); reused here -- no new upload.
+Data/Chapter3 (Dr. Reese uploaded the Ch3 datasets there).
 
 Run:  python 03_freethrows_binomial_ci.py        # needs numpy, scipy, statsmodels
 """
@@ -58,7 +58,7 @@ def profile_lrt_interval(x: int, n: int, alpha: float = 0.05) -> tuple[float, fl
 
 
 def main() -> None:
-    games = load_freethrows("Stephen Curry")
+    games = load_freethrows("Stephen Curry", chapter=3)
     g1 = games[0]                      # opening game of 2023-24
     x, n = g1["ft"], g1["fta"]
     phat = x / n

@@ -20,7 +20,7 @@ introduces mild selection bias; the data are observational, so odds ratios are
 associational, not causal; statsmodels uses FEMALE as the reference category, so the
 sex odds ratio is reported as "female vs male".
 
-Data: titanic.csv already lives on the course Supabase under Data/Chapter4 (the Ch4
+Data: titanic.csv lives on the course Supabase under Data/Chapter3 (the Ch4
 bootstrap thread vendored it); reused here, so no new upload is needed.
 
 Run:  python 02_titanic_logistic.py        # needs numpy, pandas, statsmodels
@@ -39,7 +39,7 @@ from loader import load_titanic  # noqa: E402
 
 
 def main() -> None:
-    rows = load_titanic(chapter=4, filename="titanic.csv")   # Supabase Data/Chapter4
+    rows = load_titanic(chapter=3, filename="titanic.csv")   # Supabase Data/Chapter3
     df = pd.DataFrame(rows)
     for c in ("Survived", "Pclass", "Age", "Fare"):
         df[c] = pd.to_numeric(df[c], errors="coerce")
