@@ -91,7 +91,7 @@
             border-radius: 14px;
             padding: 18px;
         }
-        .ctrl-card h3 {
+        .ctrl-card h2 {
             font-size: 0.88em;
             font-weight: 600;
             color: #778da9;
@@ -249,6 +249,7 @@
 </head>
 <body>
 <div class="container">
+<main>
 
     <h1>ROPE &amp; HDI Decision Dashboard</h1>
     <p class="subtitle">How posterior width, effect size, and ROPE boundaries drive Bayesian decisions</p>
@@ -262,7 +263,7 @@
 
         <!-- Posterior plot -->
         <div class="canvas-wrap">
-            <canvas id="c" height="380"></canvas>
+            <canvas id="c" height="420" role="img" aria-label="Beta posterior density over the parameter theta, showing the shaded ROPE band, the highest-density interval bracket, and the posterior mean marker"></canvas>
         </div>
 
         <!-- Controls -->
@@ -270,7 +271,7 @@
 
             <!-- Posterior controls -->
             <div class="ctrl-card">
-                <h3>Posterior (Beta conjugate)</h3>
+                <h2>Posterior (Beta conjugate)</h2>
                 <div class="ctrl-row">
                     <div class="ctrl-item">
                         <div class="ctrl-label">
@@ -278,6 +279,7 @@
                             <span class="ctrl-val" id="lbl-n">20</span>
                         </div>
                         <input type="range" id="sl-n" class="slider-blue"
+                               aria-label="Sample size n"
                                min="4" max="300" step="1" value="20">
                     </div>
                     <div class="ctrl-item">
@@ -286,6 +288,7 @@
                             <span class="ctrl-val" id="lbl-p">0.750</span>
                         </div>
                         <input type="range" id="sl-p" class="slider-blue"
+                               aria-label="Observed proportion k over n"
                                min="0.10" max="0.95" step="0.01" value="0.75">
                     </div>
                     <div class="ctrl-item">
@@ -294,6 +297,7 @@
                             <span class="ctrl-val" id="lbl-a0">1</span>
                         </div>
                         <input type="range" id="sl-a0" class="slider-blue"
+                               aria-label="Prior Beta pseudo-count for each of alpha zero and beta zero"
                                min="0.5" max="15" step="0.5" value="1">
                     </div>
                 </div>
@@ -301,7 +305,7 @@
 
             <!-- ROPE controls -->
             <div class="ctrl-card">
-                <h3>ROPE</h3>
+                <h2>ROPE</h2>
                 <div class="ctrl-row">
                     <div class="ctrl-item">
                         <div class="ctrl-label">
@@ -309,6 +313,7 @@
                             <span class="ctrl-val" id="lbl-rc">0.55</span>
                         </div>
                         <input type="range" id="sl-rc" class="slider-orange"
+                               aria-label="ROPE centre theta zero"
                                min="0.10" max="0.90" step="0.01" value="0.55">
                     </div>
                     <div class="ctrl-item">
@@ -317,6 +322,7 @@
                             <span class="ctrl-val" id="lbl-rw">0.100</span>
                         </div>
                         <input type="range" id="sl-rw" class="slider-orange"
+                               aria-label="ROPE half-width epsilon"
                                min="0.01" max="0.25" step="0.005" value="0.10">
                     </div>
                 </div>
@@ -324,13 +330,14 @@
 
             <!-- HDI level -->
             <div class="ctrl-card">
-                <h3>HDI Coverage</h3>
+                <h2>HDI Coverage</h2>
                 <div class="ctrl-item">
                     <div class="ctrl-label">
                         <span>Level</span>
                         <span class="ctrl-val" id="lbl-hdi">95%</span>
                     </div>
                     <input type="range" id="sl-hdi" class="slider-green"
+                           aria-label="HDI coverage level"
                            min="0.50" max="0.99" step="0.01" value="0.95">
                 </div>
             </div>
@@ -365,6 +372,7 @@
         </div>
     </div>
 
+</main>
 </div>
 
 <script>
@@ -513,8 +521,8 @@ function draw() {
     }
 
     // ── Draw ──────────────────────────────────────────────────────────────
-    const W = cvs.offsetWidth; cvs.width = W; cvs.height = 380;
-    const H = 380, pl = 54, pr = 18, pt = 18, pb = 42;
+    const W = cvs.offsetWidth; cvs.width = W; cvs.height = 420;
+    const H = 420, pl = 54, pr = 18, pt = 18, pb = 82;
 
     // Build PDF curve
     const NX = 400;
@@ -567,7 +575,7 @@ function draw() {
     const decColor = decision === 'reject' ? GREEN : decision === 'accept' ? BLUE : ORANGE;
     const hx0 = toPixX(hdi_lo, 0, 1, pl, W, pr);
     const hx1 = toPixX(hdi_hi, 0, 1, pl, W, pr);
-    const yBrac = H - pb + 14;
+    const yBrac = H - pb + 36;
     ctx.strokeStyle = decColor; ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(hx0, yBrac); ctx.lineTo(hx1, yBrac);
@@ -581,10 +589,17 @@ function draw() {
     ctx.fillText(hdi_lo.toFixed(3), hx0, yBrac - 8);
     ctx.fillText(hdi_hi.toFixed(3), hx1, yBrac - 8);
 
-    // ROPE label
-    ctx.fillStyle = ORANGE; ctx.textAlign = 'center';
-    ctx.fillText(`ROPE [${rope_lo.toFixed(2)}, ${rope_hi.toFixed(2)}]`,
-                 (rx0 + rx1) / 2, pt + 14);
+    // ROPE label — drop to a second row if it would overlap the top-right Beta label
+    const ropeLabelTxt = `ROPE [${rope_lo.toFixed(2)}, ${rope_hi.toFixed(2)}]`;
+    const betaLabelTxt = `Beta(${aN.toFixed(1)}, ${bN.toFixed(1)})  |  k=${k}, n=${n}`;
+    ctx.fillStyle = ORANGE; ctx.textAlign = 'center'; ctx.font = '10px system-ui';
+    const ropeLabelCx = (rx0 + rx1) / 2;
+    const ropeLabelHalfW = ctx.measureText(ropeLabelTxt).width / 2;
+    ctx.font = '11px system-ui';
+    const betaLabelLeft = (W - pr) - ctx.measureText(betaLabelTxt).width;
+    const ropeLabelY = (ropeLabelCx + ropeLabelHalfW > betaLabelLeft - 8) ? pt + 30 : pt + 14;
+    ctx.font = '10px system-ui';
+    ctx.fillText(ropeLabelTxt, ropeLabelCx, ropeLabelY);
 
     // Posterior mean marker
     const mx = toPixX(postMean, 0, 1, pl, W, pr);
