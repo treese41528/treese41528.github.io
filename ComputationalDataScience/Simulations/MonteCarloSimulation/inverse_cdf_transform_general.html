@@ -114,7 +114,7 @@
         
         .canvas-subtitle {
             font-size: 0.85em;
-            color: #718096;
+            color: #5b6675;
             margin-bottom: 8px;
         }
         
@@ -141,7 +141,7 @@
             margin-bottom: 20px;
         }
         
-        .key-insight h3 {
+        .key-insight h2 {
             color: #744210;
             margin-bottom: 8px;
             font-size: 1em;
@@ -170,7 +170,7 @@
         .explain-box.cdf { border-color: #4299e1; }
         .explain-box.inv { border-color: #ed8936; }
         
-        .explain-box h4 {
+        .explain-box h3 {
             color: #2d3748;
             margin-bottom: 8px;
             font-size: 0.95em;
@@ -207,7 +207,7 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <main class="container">
         <h1>Inverse CDF Method Visualized</h1>
         <p class="subtitle">F<sup>-</sup>(u) = inf{x : F(x) &ge; u} &nbsp;&mdash;&nbsp; Works for ALL distributions!</p>
         
@@ -224,7 +224,7 @@
             </div>
             
             <div class="control-group">
-                <label for="uValue">u value: <span id="uDisplay" style="color:#e53e3e; font-weight:bold;">0.50</span></label>
+                <label for="uValue">u value: <span id="uDisplay" style="color:#c53030; font-weight:bold;">0.50</span></label>
                 <input type="range" id="uValue" min="0.0001" max="0.9999" step="0.0001" value="0.50">
             </div>
             
@@ -243,7 +243,7 @@
         </div>
         
         <div id="keyInsight" class="key-insight">
-            <h3>&#128161; Key Insight</h3>
+            <h2>&#128161; Key Insight</h2>
             <p id="insightText">For continuous distributions, the CDF is strictly increasing, so there's a unique x where F(x) = u. The steeper the CDF, the higher the density at that point.</p>
         </div>
         
@@ -251,33 +251,33 @@
             <div class="canvas-container">
                 <div class="canvas-title">PDF / PMF: f(x)</div>
                 <div class="canvas-subtitle">Probability density or mass</div>
-                <canvas id="pdfCanvas" width="400" height="320"></canvas>
+                <canvas id="pdfCanvas" width="400" height="320" role="img" aria-label="Probability density or mass function of the selected distribution, with the region up to F-inverse of u shaded to show the cumulative probability u."></canvas>
             </div>
             
             <div class="canvas-container">
                 <div class="canvas-title">CDF: F(x)</div>
                 <div class="canvas-subtitle">Cumulative probability</div>
-                <canvas id="cdfCanvas" width="400" height="320"></canvas>
+                <canvas id="cdfCanvas" width="400" height="320" role="img" aria-label="Cumulative distribution function F of x, with a horizontal line at height u meeting the curve to locate x equals F-inverse of u."></canvas>
             </div>
             
             <div class="canvas-container">
                 <div class="canvas-title">Inverse CDF: F<sup>-</sup>(u)</div>
                 <div class="canvas-subtitle">Quantile function</div>
-                <canvas id="invCanvas" width="400" height="320"></canvas>
+                <canvas id="invCanvas" width="400" height="320" role="img" aria-label="Inverse CDF, or quantile function, mapping u on the horizontal axis to x equals F-inverse of u on the vertical axis."></canvas>
             </div>
         </div>
         
         <div class="explanation">
             <div class="explain-box pdf">
-                <h4>&#128200; PDF/PMF Panel</h4>
+                <h3>&#128200; PDF/PMF Panel</h3>
                 <ul>
                     <li>Shows where probability mass lives</li>
-                    <li>Shaded area = P(X &le; F<sup>-</sup>(u)) = u</li>
+                    <li>Shaded area = P(X &le; F<sup>-</sup>(u)) = u (for continuous F; a point mass appears as a spike carrying its share of u)</li>
                     <li>Discrete: bars show P(X = k)</li>
                 </ul>
             </div>
             <div class="explain-box cdf">
-                <h4>&#128202; CDF Panel</h4>
+                <h3>&#128202; CDF Panel</h3>
                 <ul>
                     <li>Draw horizontal line at height u</li>
                     <li>Find where it hits the CDF</li>
@@ -285,7 +285,7 @@
                 </ul>
             </div>
             <div class="explain-box inv">
-                <h4>&#128203; Inverse CDF Panel</h4>
+                <h3>&#128203; Inverse CDF Panel</h3>
                 <ul>
                     <li>Direct view of u &rarr; x mapping</li>
                     <li>Discrete: plateaus (many u &rarr; same x)</li>
@@ -293,7 +293,7 @@
                 </ul>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
         // Canvas setup
@@ -611,7 +611,18 @@
             pdfCtx.fillStyle = '#48bb78';
             pdfCtx.font = 'bold 12px Arial';
             pdfCtx.textAlign = 'center';
-            pdfCtx.fillText(`Shaded area = u = ${u.toFixed(4)}`, width/2, margin - 10);
+            if (dist.hasPointMass) {
+                // Zero-inflated case: the point mass P(X=0) appears as a spike, not as
+                // area under the continuous curve, so the shaded area is u - P(X=0)
+                // (and 0 when u falls inside the point mass).
+                pdfCtx.fillText(
+                    u > mixedP0
+                        ? `Shaded area = u − P(X=0) = ${(u - mixedP0).toFixed(4)}`
+                        : `Shaded area = 0   (u ≤ P(X=0) → x = 0)`,
+                    width/2, margin - 10);
+            } else {
+                pdfCtx.fillText(`Shaded area = u = ${u.toFixed(4)}`, width/2, margin - 10);
+            }
             
             // Y-axis label
             pdfCtx.save();
@@ -810,7 +821,17 @@
                 invCtx.lineTo(scaleU(i), height - margin);
                 invCtx.stroke();
             }
-            
+
+            // Y-axis label (drawn early so the red F-inverse value label renders on top of it)
+            invCtx.save();
+            invCtx.translate(15, height/2);
+            invCtx.rotate(-Math.PI/2);
+            invCtx.fillStyle = '#4a5568';
+            invCtx.font = '11px Arial';
+            invCtx.textAlign = 'center';
+            invCtx.fillText('F⁻(u)', 0, 0);
+            invCtx.restore();
+
             // Draw inverse CDF curve
             if (dist.discrete) {
                 const startK = dist.startK || 0;
@@ -928,13 +949,6 @@
             invCtx.fillText('0', margin, height - margin + 15);
             invCtx.fillText('1', width - margin, height - margin + 15);
             invCtx.fillText('u', width/2, height - 10);
-            
-            // Y-axis label
-            invCtx.save();
-            invCtx.translate(15, height/2);
-            invCtx.rotate(-Math.PI/2);
-            invCtx.fillText('F\u207B(u)', 0, 0);
-            invCtx.restore();
         }
         
         function updateVisualization(u) {

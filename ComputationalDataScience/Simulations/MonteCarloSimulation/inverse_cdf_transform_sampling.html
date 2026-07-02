@@ -110,7 +110,7 @@
             padding: 15px;
         }
         
-        .computation-display h3 {
+        .computation-display h2 {
             font-size: 0.9em;
             color: #a0aec0;
             margin-bottom: 10px;
@@ -217,6 +217,7 @@
             font-size: 0.75em;
             font-weight: 600;
             margin-left: 8px;
+            color: #1a202c;
         }
         
         .badge-continuous {
@@ -241,13 +242,13 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <main class="container">
         <h1>Inverse CDF Sampling in Action</h1>
         <p class="subtitle">Watch uniform random numbers transform into any distribution</p>
         
         <div class="controls">
             <div class="control-group">
-                <label>Distribution</label>
+                <label for="distribution">Distribution</label>
                 <select id="distribution">
                     <optgroup label="Continuous">
                         <option value="exponential">Exponential (λ=1)</option>
@@ -265,11 +266,11 @@
                 </select>
             </div>
             <div class="control-group">
-                <label>Speed</label>
+                <label for="speed">Speed</label>
                 <input type="range" id="speed" min="0.1" max="5" value="1" step="0.1">
             </div>
             <div class="control-group">
-                <label>Samples</label>
+                <label for="samples">Samples</label>
                 <select id="samples">
                     <option value="500">500</option>
                     <option value="1000" selected>1000</option>
@@ -289,14 +290,14 @@
         <div class="main-content">
             <div class="left-panel">
                 <div class="computation-display">
-                    <h3>Current Computation</h3>
+                    <h2>Current Computation</h2>
                     <div class="formula" id="formula">Select distribution and click Start</div>
                     <div class="calculation" id="calculation">Transform steps will appear here...</div>
                 </div>
                 
                 <div class="cdf-panel">
                     <h3>CDF with Current u <span id="distTypeBadge" class="dist-type-badge badge-continuous">Continuous</span></h3>
-                    <canvas id="cdfChart"></canvas>
+                    <canvas id="cdfChart" role="img" aria-label="Cumulative distribution function of the selected distribution, with the current u mapped to its x value by the inverse CDF"></canvas>
                 </div>
             </div>
 
@@ -304,11 +305,11 @@
                 <div class="charts">
                     <div class="chart-container">
                         <h3 class="chart-title">Input: U ~ Uniform(0,1)</h3>
-                        <canvas id="uniformChart"></canvas>
+                        <canvas id="uniformChart" role="img" aria-label="Histogram of the input Uniform(0,1) samples, which should be roughly flat"></canvas>
                     </div>
                     <div class="chart-container">
                         <h3 class="chart-title" id="outputTitle">Output: Transformed X</h3>
-                        <canvas id="outputChart"></canvas>
+                        <canvas id="outputChart" role="img" aria-label="Histogram of the transformed output samples overlaid with the target distribution's density or mass function"></canvas>
                     </div>
                 </div>
 
@@ -332,7 +333,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <script>
         // Canvas setup
@@ -427,9 +428,9 @@
             // Discrete distributions
             bernoulli: {
                 name: 'Bernoulli(p=0.3)',
-                formula: 'X = 1 if U ≤ 0.3, else 0',
+                formula: 'X = 1 if U > 0.7, else 0',
                 discrete: true,
-                transform: (u) => u <= 0.3 ? 1 : 0,
+                transform: (u) => u > 0.7 ? 1 : 0,
                 pmf: (k) => k === 0 ? 0.7 : (k === 1 ? 0.3 : 0),
                 cdf: (x) => x < 0 ? 0 : (x < 1 ? 0.7 : 1),
                 support: [0, 1],
@@ -772,15 +773,21 @@
                 
                 // Draw PDF curve
                 if (showTarget && targetFunc && data.length > 50) {
+                    // First pass: determine the true maximum so the whole curve
+                    // is normalised with one consistent scale (avoids distortion
+                    // when the histogram peak undershoots the density peak).
+                    for (let i = 0; i <= 100; i++) {
+                        const x = range.min + (i / 100) * (range.max - range.min);
+                        maxValue = Math.max(maxValue, targetFunc(x));
+                    }
                     ctx.strokeStyle = '#fbd38d';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
-                    
+
                     for (let i = 0; i <= 100; i++) {
                         const x = range.min + (i / 100) * (range.max - range.min);
                         const y = targetFunc(x);
-                        maxValue = Math.max(maxValue, y);
-                        
+
                         const pixelX = padding + (i / 100) * (width - 2 * padding);
                         const pixelY = height - padding - (y / maxValue) * (height - 2 * padding) * 0.9;
                         
@@ -831,7 +838,7 @@
             if (dist.discrete) {
                 if (distName === 'bernoulli') {
                     calc.innerHTML = `U = ${u.toFixed(4)}<br>` +
-                        `U ${u <= 0.3 ? '≤' : '>'} 0.3<br>` +
+                        `U ${u > 0.7 ? '>' : '≤'} 0.7<br>` +
                         `X = ${x}`;
                 } else if (distName === 'geometric') {
                     calc.innerHTML = `U = ${u.toFixed(4)}<br>` +
@@ -897,10 +904,10 @@
             animationSpeed = parseFloat(document.getElementById('speed').value);
             frameCounter += animationSpeed;
             
-            if (frameCounter >= 1) {
-                frameCounter = 0;
+            while (frameCounter >= 1) {
+                frameCounter -= 1;
                 currentIndex = Math.min(currentIndex + 1, uniformData.length);
-                
+
                 if (currentIndex >= uniformData.length) {
                     isRunning = false;
                     return;
