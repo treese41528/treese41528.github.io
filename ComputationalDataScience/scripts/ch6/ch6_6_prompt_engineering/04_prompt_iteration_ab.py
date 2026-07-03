@@ -9,7 +9,7 @@ labeled test set and use a *paired* permutation test (Chapter 4) to ask whether 
 accuracy difference is real or noise. The test is paired because both prompts are
 scored on the same texts (the book's Exercise 6.6.5 notes this is the correct choice).
 
-Calls are spaced by RATE_LIMIT_DELAY to stay under the ~20 requests/minute limit.
+Calls are spaced by the SDK's RateLimiter to stay under the ~20 requests/minute limit.
 
 Prereqs / run: see ../ch6_1_foundations/01_first_chat.py. (numpy.)
 """
@@ -17,17 +17,22 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def chat(ai: GenAIStudio, prompt: str) -> str:
+    limiter.acquire()
     try:
         return ai.chat(prompt).strip()
     except Exception:
@@ -80,9 +85,7 @@ Sentiment:"""
 
     test_text = "The product is okay but shipping took forever"
     print("Prompt iteration (same input, four versions):")
-    for i, (label, template) in enumerate([("v1", v1), ("v2", v2), ("v3", v3), ("v4", v4)]):
-        if i:
-            time.sleep(RATE_LIMIT_DELAY)
+    for label, template in [("v1", v1), ("v2", v2), ("v3", v3), ("v4", v4)]:
         print(f"  {label}: {chat(ai, template.format(text=test_text))[:55]}")
 
     # --- A/B test two topic-classification prompts ---
@@ -102,11 +105,8 @@ Category (one word):"""
     ]
     print("\nA/B test (topic classification):")
     a_scores, b_scores = [], []
-    for i, (text, truth) in enumerate(test_cases):
-        if i:
-            time.sleep(RATE_LIMIT_DELAY)
+    for text, truth in test_cases:
         a_scores.append(int(truth in chat(ai, prompt_a.format(text=text)).lower()))
-        time.sleep(RATE_LIMIT_DELAY)
         b_scores.append(int(truth in chat(ai, prompt_b.format(text=text)).lower()))
 
     acc_a, acc_b = np.mean(a_scores), np.mean(b_scores)

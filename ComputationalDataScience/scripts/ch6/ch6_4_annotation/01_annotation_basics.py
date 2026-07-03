@@ -17,12 +17,16 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 SENTIMENT_PROMPT = """Classify the sentiment of the following customer review.
 
@@ -52,6 +56,7 @@ Review: {text}"""
 def annotate_sentiment(text: str, ai: GenAIStudio) -> str:
     """Single-label sentiment; returns 'unparseable' on a bad or dropped response."""
     try:
+        limiter.acquire()
         response = ai.chat(SENTIMENT_PROMPT.format(text=text)).strip().lower()
     except Exception:
         return "unparseable"
@@ -61,6 +66,7 @@ def annotate_sentiment(text: str, ai: GenAIStudio) -> str:
 def annotate_structured(text: str, ai: GenAIStudio) -> dict:
     """Structured (JSON) annotation: sentiment + confidence + topics."""
     try:
+        limiter.acquire()
         response = ai.chat(STRUCTURED_PROMPT.format(text=text)).strip()
     except Exception:
         return {"sentiment": "unparseable", "confidence": 0, "topics": []}
@@ -75,13 +81,12 @@ def annotate_structured(text: str, ai: GenAIStudio) -> dict:
 def annotate_batch(texts, annotate_fn, ai, batch_name="batch"):
     """Annotate a batch, tracking progress and unparseable/dropped responses.
 
-    Calls are spaced by RATE_LIMIT_DELAY to stay under GenAI Studio's ~20
-    requests/minute limit; bursting past it gets requests dropped.
+    Each annotate_fn call paces itself through the module-level RateLimiter to
+    stay under GenAI Studio's ~20 requests/minute limit; bursting past it gets
+    requests dropped.
     """
     results, errors = [], 0
     for i, text in enumerate(texts):
-        if i:
-            time.sleep(RATE_LIMIT_DELAY)
         label = annotate_fn(text, ai)
         if label == "unparseable":
             errors += 1

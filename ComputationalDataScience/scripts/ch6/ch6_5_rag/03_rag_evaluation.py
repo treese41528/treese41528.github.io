@@ -20,7 +20,7 @@ import sys
 import numpy as np
 
 from genai_studio import GenAIStudio
-from rag_core import DOCUMENTS, SimpleRAG
+from rag_core import DOCUMENTS, SimpleRAG, limiter
 
 MODEL = "llama3.2:latest"
 
@@ -58,6 +58,7 @@ Respond with ONLY one of:
 
 Verdict:"""
     try:
+        limiter.acquire()
         raw = ai.chat(prompt).strip().upper()
     except Exception as exc:
         return f"[judge call dropped: {exc}]"

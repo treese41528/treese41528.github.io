@@ -9,6 +9,14 @@ from __future__ import annotations
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter. This one limiter is
+# shared by the scripts that import this module (02, 03) so all their gateway
+# calls - here and in the scripts - are paced by a single limiter per process.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def chunk_document(text: str, chunk_size: int = 200, overlap: int = 30) -> list:
@@ -26,6 +34,7 @@ def chunk_document(text: str, chunk_size: int = 200, overlap: int = 30) -> list:
 
 def retrieve(query, chunk_matrix, all_chunks, chunk_sources, ai, top_k=3) -> list:
     """Retrieve the top-k chunks most similar to the query embedding."""
+    limiter.acquire()
     query_embedding = ai.embed(query)
     sims = [GenAIStudio.cosine_similarity(query_embedding, c) for c in chunk_matrix]
     ranked = np.argsort(sims)[::-1][:top_k]
@@ -64,6 +73,7 @@ class SimpleRAG:
         self.sources.extend([source] * len(new_chunks))
 
     def build_index(self):
+        limiter.acquire()
         self.embeddings = np.array(self.ai.embed(self.chunks))
         return self.embeddings.shape
 
@@ -74,6 +84,7 @@ class SimpleRAG:
     def query(self, question, top_k=3):
         retrieved = retrieve(question, self.embeddings, self.chunks,
                              self.sources, self.ai, top_k)
+        limiter.acquire()
         answer = self.ai.chat(build_rag_prompt(question, retrieved))
         return {"answer": answer, "sources": retrieved}
 

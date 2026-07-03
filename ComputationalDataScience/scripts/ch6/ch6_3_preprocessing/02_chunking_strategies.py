@@ -20,8 +20,14 @@ import os
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 EMBED_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def chunk_fixed_size(text: str, chunk_size: int = 500) -> list:
@@ -103,11 +109,13 @@ def main() -> None:
         return
     ai = GenAIStudio()
     ai.select_model(EMBED_MODEL)
+    limiter.acquire()
     doc_emb = ai.embed(STRUCTURED_TEXT)
     print(f"\nAvg chunk-to-document cosine similarity by strategy ({EMBED_MODEL}):")
     for name, chunks in [("fixed", chunk_fixed_size(STRUCTURED_TEXT, 40)),
                          ("overlap", chunk_with_overlap(STRUCTURED_TEXT, 40, 8)),
                          ("semantic", semantic)]:
+        limiter.acquire()
         embs = ai.embed(chunks)
         sims = [GenAIStudio.cosine_similarity(doc_emb, e) for e in embs]
         print(f"  {name:8s}: {len(chunks)} chunks, avg similarity {np.mean(sims):.4f}")

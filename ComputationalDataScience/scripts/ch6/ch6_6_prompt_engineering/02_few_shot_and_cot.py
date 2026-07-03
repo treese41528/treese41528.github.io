@@ -15,8 +15,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 FEW_SHOT = """Classify each research method as quantitative, qualitative, or mixed methods.
 
@@ -43,6 +49,7 @@ STATS_QUESTION = ("A researcher collects 50 samples from a population with unkno
 
 
 def chat(ai: GenAIStudio, prompt: str) -> str:
+    limiter.acquire()
     try:
         return ai.chat(prompt).strip()
     except Exception as exc:

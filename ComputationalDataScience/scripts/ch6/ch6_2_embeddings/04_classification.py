@@ -7,12 +7,16 @@ Once texts are embedded, any classifier from the earlier chapters applies. Here
 we embed REAL labeled product reviews (the shared Chapter 6 corpus — 9,000 real
 Amazon reviews, see _data/DATA_CARD.md), evaluate a logistic-regression sentiment
 classifier with cross-validation (Chapter 4), then predict on held-out reviews and
-read off the calibrated probabilities (Chapter 6.8).
+read off the predicted probabilities — useful raw material for deciding which
+predictions to trust and which to route to a human.
 
 We use a class-balanced sample of positive vs. negative reviews (gold sentiment
 derived from the real star rating: 4-5 = positive, 1-2 = negative). Embeddings
 are deterministic per text + model, so the cross-validated accuracy reproduces
-exactly on re-run with the same model.
+exactly on re-run with the same model. This n = 400 sample lands near 0.885 ±
+0.038; on the full corpus (n = 7,200) the same model reaches the book's 0.899 ±
+0.008 — the small sample trades a little accuracy (and a wider spread) for a
+fast run.
 
 Prereqs / run: see 01_generate.py. (Also needs scikit-learn.)
 """
@@ -24,11 +28,17 @@ import sys
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_data"))
 from loader import load_reviews, balanced_sample  # noqa: E402
 
 EMBED_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 PER_CLASS = 200          # 200 positive + 200 negative = 400 labeled reviews
 
 
@@ -44,6 +54,7 @@ def embed_all(ai: GenAIStudio, texts: list[str], batch: int = 32) -> np.ndarray:
     """Embed many texts in batches (one API call per batch)."""
     vecs: list[list[float]] = []
     for i in range(0, len(texts), batch):
+        limiter.acquire()
         vecs.extend(ai.embed(texts[i:i + batch]))
         print(f"  embedded {min(i + batch, len(texts))}/{len(texts)}", end="\r")
     print()
@@ -76,7 +87,7 @@ def main() -> None:
     clf.fit(X_train, y_train)
 
     # Held-out real reviews: a clear positive (5★), a clear negative (1★), and an
-    # ambiguous 3-star — to show a confident vs. an uncertain calibrated probability.
+    # ambiguous 3-star — to show a confident vs. an uncertain predicted probability.
     def pick(star):
         for r in reviews:
             if r["rating"] == star and r["id"] not in train_ids:

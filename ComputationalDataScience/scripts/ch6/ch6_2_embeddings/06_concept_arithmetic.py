@@ -36,9 +36,15 @@ import numpy as np
 from numpy.linalg import lstsq, norm, svd
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 EMBED_MODEL = "llama3.2:latest"                       # primary contextual model
 COMPARE_MODELS = ["llama3.2:latest", "phi4:latest"]   # to show model-dependence
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 # Classic gender analogy pairs (male -> female).
 PAIRS = [
@@ -151,6 +157,7 @@ def contextual_genai_studio() -> None:
     for model in COMPARE_MODELS:
         try:
             ai.select_model(model)
+            limiter.acquire()
             vecs = dict(zip(words, [np.array(v, float) for v in ai.embed(words)]))
         except Exception as exc:  # model may not expose embeddings
             print(f"\n  [{model}] skipped ({str(exc)[:60]})")

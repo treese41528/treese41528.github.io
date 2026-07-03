@@ -20,8 +20,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 EMBED_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def make_client() -> GenAIStudio:
@@ -34,6 +40,7 @@ def make_client() -> GenAIStudio:
 
 def single(ai: GenAIStudio) -> None:
     print("--- single embedding ---")
+    limiter.acquire()
     embedding = ai.embed(
         "Statistical significance measures the probability of observing data "
         "this extreme under the null hypothesis."
@@ -52,6 +59,7 @@ def batch(ai: GenAIStudio) -> list[str]:
         "Neural networks learn hierarchical representations.",
         "The recipe calls for two cups of flour.",
     ]
+    limiter.acquire()
     embeddings = ai.embed(texts)
     print(f"Number of embeddings: {len(embeddings)}")
     print(f"Each has {len(embeddings[0])} dimensions")
@@ -60,6 +68,7 @@ def batch(ai: GenAIStudio) -> list[str]:
 
 def with_metadata(ai: GenAIStudio, texts: list[str]) -> None:
     print("\n--- embed_complete (metadata) ---")
+    limiter.acquire()
     response = ai.embed_complete(texts)
     print(f"Model: {response.model}")
     print(f"Dimension: {response.dimension}")

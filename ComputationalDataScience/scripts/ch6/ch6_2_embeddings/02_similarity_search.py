@@ -17,8 +17,14 @@ import sys
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 EMBED_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def make_client() -> GenAIStudio:
@@ -37,12 +43,16 @@ def cosine_sim(a, b) -> float:
 
 def pairwise_examples(ai: GenAIStudio) -> None:
     print("--- cosine similarity ---")
+    limiter.acquire()
     e1 = ai.embed("The mean is sensitive to outliers.")
+    limiter.acquire()
     e2 = ai.embed("The average is affected by extreme values.")
+    limiter.acquire()
     e3 = ai.embed("The recipe calls for two cups of flour.")
     print(f"mean vs. average: {cosine_sim(e1, e2):.4f}   (manual numpy)")
     print(f"mean vs. recipe:  {cosine_sim(e1, e3):.4f}   (manual numpy)")
     print(f"mean vs. average: {GenAIStudio.cosine_similarity(e1, e2):.4f}   (SDK static method)")
+    limiter.acquire()
     sim = ai.similarity(
         "The mean is sensitive to outliers.",
         "The average is affected by extreme values.",
@@ -54,6 +64,7 @@ def similarity_matrix(ai: GenAIStudio) -> None:
     print("\n--- pairwise similarity matrix ---")
     texts = ["machine learning", "deep learning", "neural network",
              "linear regression", "banana split", "ice cream"]
+    limiter.acquire()
     embeddings = ai.embed(texts)
     n = len(texts)
     sim = np.zeros((n, n))
@@ -74,8 +85,10 @@ def nearest_neighbor(ai: GenAIStudio) -> None:
         "Photosynthesis converts sunlight into chemical energy.",
         "The permutation test shuffles labels to build a null distribution.",
     ]
+    limiter.acquire()
     corpus_embeddings = ai.embed(corpus)
     query = "How do I estimate uncertainty in my statistic?"
+    limiter.acquire()
     query_embedding = ai.embed(query)
     sims = [GenAIStudio.cosine_similarity(query_embedding, ce) for ce in corpus_embeddings]
     ranked = sorted(enumerate(sims), key=lambda x: x[1], reverse=True)

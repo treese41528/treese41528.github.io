@@ -15,8 +15,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 JUDGE_PROMPT = """You are an evaluation assistant. Score the following response
 on a scale of 1-5 based on this rubric:
@@ -41,6 +47,7 @@ Score (1-5):"""
 
 def judge_response(ai: GenAIStudio, question: str, reference: str, response: str) -> int:
     """Return an integer 1-5 score from the judge model (defaults to 3 on a parse fail)."""
+    limiter.acquire()
     try:
         score_text = ai.chat(JUDGE_PROMPT.format(
             question=question, reference=reference, response=response)).strip()

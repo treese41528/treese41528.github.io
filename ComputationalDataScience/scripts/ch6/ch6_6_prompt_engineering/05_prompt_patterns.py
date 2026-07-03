@@ -15,11 +15,18 @@ import os
 import sys
 
 from genai_studio import Conversation, GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
 
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
+
 
 def chat(ai: GenAIStudio, prompt: str) -> str:
+    limiter.acquire()
     try:
         return ai.chat(prompt).strip()
     except Exception as exc:
@@ -54,9 +61,11 @@ def main() -> None:
     conv = Conversation(system="You are a concise data science consultant.")
     conv.add_user("I have 50,000 customer reviews to categorize by topic. Approach?")
     try:
+        limiter.acquire()
         r1 = ai.chat_conversation(conv)
         print(f"  Turn 1: {r1.content[:160]}...")
         conv.add_user("How would I evaluate the categorization quality?")
+        limiter.acquire()
         r2 = ai.chat_conversation(conv)
         print(f"  Turn 2: {r2.content[:160]}...")
     except Exception as exc:

@@ -41,7 +41,7 @@ def deployment_checklist(task_description: str) -> None:
             "Evaluated on a representative test set (n >= 30)",
             "Accuracy exceeds the task-specific threshold",
             "Consistency measured via test-retest (agreement > 80%)",
-            "Calibration assessed (ECE < 0.15)",
+            "Self-consistency checked; low-agreement items flagged for review",
         ],
         "Bias": [
             "Tested for differential treatment across demographic groups",
