@@ -22,6 +22,12 @@ import sys
 
 from genai_studio import GenAIStudio
 from genai_studio.agents import tool
+from genai_studio.agents import RateLimiter
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 TOOL_MODEL = "qwen2.5:72b"  # supports native tool-calling on GenAI Studio
 
@@ -48,6 +54,7 @@ TOOLS = {"query_dataset": query_dataset}
 def run_tool_call(ai: GenAIStudio, question: str) -> None:
     """One request -> execute -> return cycle, with a validating dispatcher."""
     messages = [{"role": "user", "content": question}]
+    limiter.acquire()
     resp = ai.chat_raw(messages,
                        tools=[query_dataset.spec.to_openai()],
                        tool_choice="auto")
@@ -86,6 +93,7 @@ def run_tool_call(ai: GenAIStudio, question: str) -> None:
     # calling the tool again (offered the tool, many models just re-call it).
     messages.append(msg)
     messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+    limiter.acquire()
     final = ai.chat_raw(messages)
     print(f"  grounded answer: {final.choices[0].message.content}")
 

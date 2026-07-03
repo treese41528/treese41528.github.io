@@ -75,9 +75,9 @@ statistically equivalent — not byte-identical — corpus. The committed
   + bootstrap CIs.
 - **§6.4 Annotation** — LLM sentiment annotation vs the derived gold label;
   Cohen's κ + bootstrap CI (computed against a committed LLM-output fixture).
-- **§6.8 Reliability / §6.10 Summary** — accuracy / F1 / ECE over a frozen
+- **§6.8 Reliability / §6.10 Summary** — accuracy / F1 / consistency over a frozen
   prediction fixture; end-to-end "embed → classify → annotate → evaluate".
 
-Deterministic statistics (embeddings, cosine, κ/ECE over fixed labels) reproduce
+Deterministic statistics (embeddings, cosine, κ over fixed labels) reproduce
 exactly; any number that comes from a live LLM generation is one stochastic draw
 and is frozen to a committed fixture before being shown on a slide.

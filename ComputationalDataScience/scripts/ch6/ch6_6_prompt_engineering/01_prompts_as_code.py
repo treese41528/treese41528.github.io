@@ -16,8 +16,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 # A versioned template registry - prompts live in code, with version + notes.
 PROMPTS = {
@@ -33,6 +39,7 @@ PROMPTS = {
 
 
 def chat(ai: GenAIStudio, prompt: str) -> str:
+    limiter.acquire()
     try:
         return ai.chat(prompt).strip()
     except Exception as exc:

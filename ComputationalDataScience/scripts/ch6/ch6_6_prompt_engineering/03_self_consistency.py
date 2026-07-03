@@ -8,8 +8,8 @@ as bootstrap resamples data to gauge a statistic's variability, self-consistency
 resamples reasoning paths to gauge an answer's reliability. High agreement is like
 a narrow CI (trustworthy); low agreement is like a wide one (treat with caution).
 
-Calls are spaced by RATE_LIMIT_DELAY to stay under the ~20 requests/minute limit,
-so a 7-run pass takes about 25 seconds.
+Calls are spaced by the SDK's RateLimiter to stay under the ~20 requests/minute
+limit, so a 7-run pass takes about 20 seconds.
 
 Prereqs / run: see ../ch6_1_foundations/01_first_chat.py for setup.
 """
@@ -17,21 +17,24 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from collections import Counter
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def self_consistency(ai: GenAIStudio, prompt: str, n_runs: int = 7) -> dict | None:
     """Run prompt n_runs times, extract the text after 'ANSWER:', and majority-vote."""
     answers = []
     for i in range(n_runs):
-        if i:
-            time.sleep(RATE_LIMIT_DELAY)
+        limiter.acquire()
         try:
             response = ai.chat(prompt)
         except Exception:
@@ -60,7 +63,7 @@ def main() -> None:
               "Think step by step, then give your final answer as a fraction.\n"
               "End with: ANSWER: [fraction]")
 
-    print("Running self-consistency (7 reasoning paths, ~3.5s apart)...")
+    print("Running self-consistency (7 reasoning paths, paced ~3s apart)...")
     result = self_consistency(ai, prompt, n_runs=7)
     if result is None:
         print("  no parseable answers (backend may be rate-limited; rerun).")

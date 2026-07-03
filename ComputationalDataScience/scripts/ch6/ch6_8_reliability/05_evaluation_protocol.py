@@ -8,7 +8,7 @@ Ties the section together: build a labeled eval set, then measure accuracy and F
 check the numbers against explicit deployment thresholds. This is the discipline
 that separates "the model seems fine" from "the model meets our bar."
 
-Calls are spaced by RATE_LIMIT_DELAY and there are many of them
+Calls are paced through the SDK's RateLimiter and there are many of them
 (items x (1 + n_consistency_runs)), so expect a couple of minutes.
 
 Prereqs / run: see ../ch6_1_foundations/01_first_chat.py. (scikit-learn, numpy.)
@@ -17,16 +17,20 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from collections import Counter
 
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 CLASSIFY_PROMPT = ("Classify this text as positive, negative, or neutral.\n"
                    "Respond with ONLY one word.\n\nText: {text}\nLabel:")
@@ -35,6 +39,7 @@ DEPLOYMENT_CRITERIA = {"min_accuracy": 0.80, "min_f1": 0.75, "min_consistency": 
 
 
 def classify(ai: GenAIStudio, text: str) -> str:
+    limiter.acquire()
     try:
         label = ai.chat(CLASSIFY_PROMPT.format(text=text)).strip().lower()
     except Exception:
@@ -45,15 +50,10 @@ def classify(ai: GenAIStudio, text: str) -> str:
 def evaluate_model(ai: GenAIStudio, eval_data: list, n_consistency_runs: int = 2) -> dict:
     """Accuracy + weighted F1 (vs. ground truth) and mean consistency (stability)."""
     predictions, consistencies = [], []
-    throttle = False
     for item in eval_data:
-        if throttle:
-            time.sleep(RATE_LIMIT_DELAY)
-        throttle = True
         predictions.append(classify(ai, item["text"]))
         runs = []
         for _ in range(n_consistency_runs):
-            time.sleep(RATE_LIMIT_DELAY)
             runs.append(classify(ai, item["text"]))
         consistencies.append(Counter(runs).most_common(1)[0][1] / n_consistency_runs)
     truth = [item["label"] for item in eval_data]

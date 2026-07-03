@@ -20,6 +20,12 @@ import sys
 import time
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 CHAT_MODEL = "gemma3:12b"
 KB_NAME = "STAT418-Ch6.5-Demo"
@@ -28,13 +34,17 @@ SAMPLE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_s
 
 def get_or_create_kb(ai):
     """Reuse the demo KB if it already exists, else create it and link the file."""
+    limiter.acquire()
     for kb in ai.list_knowledge_bases():
         if kb.name == KB_NAME:
             print(f"Reusing existing knowledge base: {kb.id}")
             return kb
     print(f"Uploading {os.path.basename(SAMPLE_FILE)} ...")
+    limiter.acquire()
     file_info = ai.upload_file(SAMPLE_FILE)
+    limiter.acquire()
     kb = ai.create_knowledge_base(KB_NAME, "STAT 418 demo syllabus for Chapter 6.5")
+    limiter.acquire()
     ai.add_file_to_knowledge_base(kb.id, file_info.id)
     print(f"Created knowledge base {kb.id} and linked file {file_info.id}")
     time.sleep(3)  # give the backend a moment to index the file
@@ -42,6 +52,7 @@ def get_or_create_kb(ai):
 
 
 def ask(ai, question, **kwargs):
+    limiter.acquire()
     try:
         return ai.chat(question, **kwargs)
     except Exception as exc:

@@ -22,11 +22,17 @@ import sys
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_data"))
 from loader import load_reviews, stratified_by_rating  # noqa: E402
 
 EMBED_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 PER_RATING = 100          # 100 reviews per star (1-5) -> n = 500
 
 
@@ -41,6 +47,7 @@ def make_client() -> GenAIStudio:
 def embed_all(ai: GenAIStudio, texts: list[str], batch: int = 32) -> np.ndarray:
     vecs: list[list[float]] = []
     for i in range(0, len(texts), batch):
+        limiter.acquire()
         vecs.extend(ai.embed(texts[i:i + batch]))
         print(f"  embedded {min(i + batch, len(texts))}/{len(texts)}", end="\r")
     print()

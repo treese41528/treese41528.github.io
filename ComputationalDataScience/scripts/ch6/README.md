@@ -28,12 +28,12 @@ ergonomics — so installing it is the first step.
 > LLM outputs are **stochastic** — your wording will differ from any example in
 > the book or slides. That variability is studied formally in §6.8.
 
-> **Rate limit.** GenAI Studio allows roughly **20 requests per minute**. The
-> batch-heavy scripts (`ch6_4_annotation/01_annotation_basics.py` and
-> `03_quality_control.py`) space their calls ~3.5s apart to stay under it, so a
-> full 20-item batch takes about 70 seconds. If you run other scripts (or a
-> classmate shares your key) concurrently, you share that budget; throttled
-> calls are skipped gracefully rather than crashing.
+> **Rate limit.** GenAI Studio allows roughly **20 requests per minute** and
+> silently drops bursts. Every networked script paces its gateway calls through
+> the SDK's `RateLimiter` at 20 RPM (one call every 3 s), so a full 20-item
+> annotation batch takes about a minute. If you run other scripts (or a
+> classmate shares your key) concurrently, you share that budget; dropped
+> calls are handled gracefully rather than crashing.
 
 ## Index
 
@@ -63,12 +63,12 @@ ergonomics — so installing it is the first step.
 | 6.6 Prompting | `ch6_6_prompt_engineering/05_prompt_patterns.py` | prompt chaining, multi-turn `Conversation`, dataset description, code generation |
 | 6.7 Tool Use | `ch6_7_tool_use/01_tool_use.py` | declare a tool with `@tool`, one request→execute→return cycle (`chat_raw`), and the model skipping the tool when it isn't needed (`qwen2.5:72b`) |
 | 6.8 Reliability | `ch6_8_reliability/01_consistency.py` | test-retest reliability + paraphrase invariance (throttled) |
-| 6.8 Reliability | `ch6_8_reliability/02_calibration.py` | confidence elicitation + reliability diagram + ECE (reproduces book 0.149) |
+| 6.8 Reliability | `ch6_8_reliability/02_confidence_signals.py` | self-consistency agreement as a triage signal (stability, not correctness) |
 | 6.8 Reliability | `ch6_8_reliability/03_llm_as_judge.py` | LLM-as-judge rubric scoring (1–5) for tasks without ground truth |
 | 6.8 Reliability | `ch6_8_reliability/04_uncertainty.py` | self-consistency uncertainty + bootstrap CI on agreement (ties Ch. 4; throttled) |
 | 6.8 Reliability | `ch6_8_reliability/05_evaluation_protocol.py` | full protocol: accuracy/F1/consistency vs. deployment thresholds (throttled, ~2 min) |
 | 6.9 Responsible AI | `ch6_9_responsible_ai/01_pii_redaction.py` | PII detection + redaction, `PrivacyAuditor` (pure Python) |
-| 6.9 Responsible AI | `ch6_9_responsible_ai/02_bias_detection.py` | differential-treatment probe + response-length bias quantification (throttled) |
+| 6.9 Responsible AI | `ch6_9_responsible_ai/02_bias_detection.py` | differential-treatment probe: occupation → assumed-pronoun skew across repeated runs (throttled) |
 | 6.9 Responsible AI | `ch6_9_responsible_ai/03_disclosure_and_governance.py` | AI-use disclosure statements + deployment checklist (pure Python) |
 | 6.10 Summary | `ch6_10_summary/01_end_to_end_workflow.py` | end-to-end workflow: preprocess → embed → annotate (self-consistency) → kappa → disclose |
 

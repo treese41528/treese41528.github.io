@@ -7,7 +7,7 @@ uncertainty estimate: confident inputs converge, ambiguous ones spread out. We t
 put a Chapter-4 bootstrap confidence interval on the agreement rate itself, so the
 uncertainty estimate carries its own uncertainty.
 
-Calls are spaced by RATE_LIMIT_DELAY to stay under the ~20 requests/minute limit.
+Calls are paced through the SDK's RateLimiter to stay under the ~20 requests/minute limit.
 
 Prereqs / run: see ../ch6_1_foundations/01_first_chat.py. (numpy.)
 """
@@ -15,21 +15,26 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from collections import Counter
 
 import numpy as np
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 CLASSIFY_PROMPT = ("Classify this text as positive, negative, or neutral.\n"
                    "Respond with ONLY one word.\n\nText: {text}\nLabel:")
 
 
 def classify(ai: GenAIStudio, text: str) -> str:
+    limiter.acquire()
     try:
         return ai.chat(CLASSIFY_PROMPT.format(text=text)).strip().lower()
     except Exception:
@@ -37,11 +42,9 @@ def classify(ai: GenAIStudio, text: str) -> str:
 
 
 def uncertainty_via_consistency(ai: GenAIStudio, text: str, n_runs: int = 7) -> dict:
-    """The agreement rate across n_runs is a natural, interpretable confidence."""
+    """Agreement across n_runs is an interpretable stability signal (not a probability of being correct)."""
     answers = []
-    for i in range(n_runs):
-        if i:
-            time.sleep(RATE_LIMIT_DELAY)
+    for _ in range(n_runs):
         answers.append(classify(ai, text))
     majority, count = Counter(answers).most_common(1)[0]
     return {"answer": majority, "confidence": count / n_runs,

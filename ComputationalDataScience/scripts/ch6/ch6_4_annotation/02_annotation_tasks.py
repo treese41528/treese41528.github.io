@@ -15,8 +15,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 FINE_SENTIMENT_PROMPT = """Rate the sentiment of this review on a 1-5 scale:
 1 = Very negative, 2 = Negative, 3 = Neutral, 4 = Positive, 5 = Very positive
@@ -48,6 +54,7 @@ Category:"""
 def annotate_ner(text: str, ai: GenAIStudio) -> list:
     """Extract typed named entities as a list of {entity, type} dicts."""
     try:
+        limiter.acquire()
         response = ai.chat(NER_PROMPT.format(text=text)).strip()
     except Exception:
         return []
@@ -62,6 +69,7 @@ def annotate_ner(text: str, ai: GenAIStudio) -> list:
 def chat_label(prompt: str, ai: GenAIStudio) -> str:
     """Single-line label from a prompt; '?' on a dropped response."""
     try:
+        limiter.acquire()
         return ai.chat(prompt).strip()
     except Exception:
         return "?"

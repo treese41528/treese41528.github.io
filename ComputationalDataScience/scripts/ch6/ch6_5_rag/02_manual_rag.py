@@ -21,7 +21,8 @@ import sys
 import numpy as np
 
 from genai_studio import GenAIStudio
-from rag_core import DOCUMENTS, SimpleRAG, build_rag_prompt, chunk_document, retrieve
+from rag_core import (DOCUMENTS, SimpleRAG, build_rag_prompt, chunk_document,
+                      limiter, retrieve)
 
 MODEL = "llama3.2:latest"
 
@@ -43,6 +44,7 @@ def main():
         for ch in chunk_document(content, chunk_size=50, overlap=10):
             all_chunks.append(ch)
             chunk_sources.append(name)
+    limiter.acquire()
     chunk_matrix = np.array(ai.embed(all_chunks))
     print(f"Indexed {len(all_chunks)} chunks, matrix shape {chunk_matrix.shape}")
 
@@ -53,6 +55,7 @@ def main():
         print(f"  [{r['similarity']:.4f}] [{r['source']}] {r['chunk'][:62]}...")
 
     try:
+        limiter.acquire()
         answer = ai.chat(build_rag_prompt(query, retrieved))
         print(f"\nGrounded answer:\n  {answer[:300]}")
     except Exception as exc:

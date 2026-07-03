@@ -16,8 +16,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 CHAT_MODEL = "llama3.2:latest"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def estimate_tokens(text: str, method: str = "words") -> int:
@@ -77,10 +83,12 @@ def main() -> None:
     # here) and subtract a fixed-overhead baseline to isolate each text's tokens.
     instr = "Reply with only the word: ok\n\nText to measure: "
     try:
+        limiter.acquire()
         base = ai.chat_complete(instr).prompt_tokens
     except Exception as exc:
         sys.exit(f"Could not reach the model to calibrate token counts: {exc}")
 
+    limiter.acquire()
     demo = ai.chat_complete(instr + "The bootstrap resamples data with replacement.")
     print(f"\nchat_complete() token metadata: prompt={demo.prompt_tokens}, "
           f"completion={demo.completion_tokens}, total={demo.total_tokens}")
@@ -99,6 +107,7 @@ def main() -> None:
     print(f"\nContent-type token efficiency ({CHAT_MODEL}, fixed overhead removed):")
     for kind, text in content.items():
         try:
+            limiter.acquire()
             marginal = ai.chat_complete(instr + text).prompt_tokens - base
         except Exception:
             print(f"  {kind:8s}: [skipped - backend dropped the response; rerun to retry]")

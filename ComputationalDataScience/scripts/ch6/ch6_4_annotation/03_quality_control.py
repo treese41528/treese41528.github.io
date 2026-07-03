@@ -8,8 +8,8 @@ positive" annotator can't score well on an imbalanced set); the bootstrap
 quantifies kappa's uncertainty; and consensus (majority vote over repeated runs)
 improves reliability while flagging ambiguous items for human review.
 
-The kappa + bootstrap demo uses a fixed simulated label set (deterministic, no
-API). The consensus demo makes live calls and runs only if GENAI_STUDIO_API_KEY
+The kappa + bootstrap demo replays a frozen fixture of real gemma3:12b
+annotations (deterministic, no API). The consensus demo makes live calls and runs only if GENAI_STUDIO_API_KEY
 is set.
 
 Prereqs / run: see ../ch6_1_foundations/01_first_chat.py. (scikit-learn, numpy.)
@@ -17,15 +17,18 @@ Prereqs / run: see ../ch6_1_foundations/01_first_chat.py. (scikit-learn, numpy.)
 from __future__ import annotations
 
 import os
-import time
 from collections import Counter
 
 import numpy as np
 from sklearn.metrics import accuracy_score, cohen_kappa_score
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
-RATE_LIMIT_DELAY = 3.5  # seconds between calls -> ~17 req/min, under the ~20/min limit
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 # Real LLM-vs-gold labels: gemma3:12b sentiment annotations of 90 real reviews from
 # the shared Chapter 6 corpus, compared to the gold label derived from each review's
@@ -87,12 +90,11 @@ def bootstrap_kappa(human_labels, llm_labels, n_bootstrap=1000, seed=42) -> dict
 def annotate_consensus(text, annotate_fn, ai, n_runs=5) -> dict:
     """Run annotation n_runs times; return the majority label + agreement fraction.
 
-    Calls are spaced by RATE_LIMIT_DELAY to respect the ~20 requests/minute limit.
+    Each annotate_fn call paces itself through the module-level RateLimiter to
+    respect the ~20 requests/minute limit.
     """
     labels = []
     for r in range(n_runs):
-        if r:
-            time.sleep(RATE_LIMIT_DELAY)
         labels.append(annotate_fn(text, ai))
     label, count = Counter(labels).most_common(1)[0]
     return {"label": label, "agreement": count / n_runs, "all_labels": labels}
@@ -125,6 +127,7 @@ def main() -> None:
 
     def annotate(text, ai):
         try:
+            limiter.acquire()
             r = ai.chat(CONSENSUS_PROMPT.format(text=text)).strip().lower()
         except Exception:
             return "unparseable"

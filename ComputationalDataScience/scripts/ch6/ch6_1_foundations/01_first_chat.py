@@ -10,7 +10,7 @@ Backs the §6.1 "Setup" and "First chat" slides. Demonstrates:
 
 Prerequisites
 -------------
-    pip install "git+https://github.com/treese41528/genai-studio-sdk.git@v1.2.0"
+    pip install "git+https://github.com/treese41528/genai-studio-sdk.git@v2.0.1"
     export GENAI_STUDIO_API_KEY="sk-..."   # GenAI Studio -> Settings -> Account -> API Keys
 
 Run
@@ -25,8 +25,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio
+from genai_studio.agents import RateLimiter
 
 MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def setup_client() -> GenAIStudio:
@@ -52,6 +58,7 @@ def setup_client() -> GenAIStudio:
 def first_chat(ai: GenAIStudio) -> None:
     """ai.chat(prompt) sends a prompt and returns the response as a string."""
     print("\n--- chat() ---")
+    limiter.acquire()
     response = ai.chat("What is the Central Limit Theorem? Answer in two sentences.")
     print(response)
 
@@ -59,6 +66,7 @@ def first_chat(ai: GenAIStudio) -> None:
 def chat_with_metadata(ai: GenAIStudio) -> None:
     """ai.chat_complete(prompt) returns a response object with token counts."""
     print("\n--- chat_complete() (with token metadata) ---")
+    limiter.acquire()
     response = ai.chat_complete(
         "Explain the difference between correlation and causation in one paragraph."
     )

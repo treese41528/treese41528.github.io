@@ -20,8 +20,14 @@ import os
 import sys
 
 from genai_studio import GenAIStudio, Conversation
+from genai_studio.agents import RateLimiter
 
 DEFAULT_MODEL = "gemma3:12b"
+
+# GenAI Studio caps at ~20 requests/min and SILENTLY drops bursts (no 429s);
+# pace every gateway call through the SDK's RateLimiter.
+RPM = 20
+limiter = RateLimiter(RPM)
 
 
 def make_client() -> GenAIStudio:
@@ -35,6 +41,7 @@ def make_client() -> GenAIStudio:
 def streaming(ai: GenAIStudio) -> None:
     """chat_stream() yields chunks as the model generates them."""
     print("--- streaming ---")
+    limiter.acquire()
     for chunk in ai.chat_stream("List three assumptions of linear regression."):
         print(chunk, end="", flush=True)
     print()
@@ -46,6 +53,7 @@ def compare_models(ai: GenAIStudio) -> None:
     prompt = "What is a p-value? Explain simply in one sentence."
     for model_name in ("mistral:latest", "gemma3:12b", "llama3.2:latest"):
         ai.select_model(model_name)
+        limiter.acquire()
         resp = ai.chat_complete(prompt)
         print(f"[{model_name}] ({resp.total_tokens} tokens)")
         print(f"  {resp.content}\n")
@@ -60,6 +68,7 @@ def system_message(ai: GenAIStudio) -> None:
         "You explain concepts precisely, using mathematical notation where "
         "appropriate. Keep answers concise."
     )
+    limiter.acquire()
     response = ai.chat(
         "What is the difference between a parameter and a statistic?",
         system=system_msg,
@@ -73,10 +82,12 @@ def multi_turn(ai: GenAIStudio) -> None:
     conv = Conversation(system="You are a helpful data science tutor.")
 
     conv.add_user("What is overfitting?")
+    limiter.acquire()
     response = ai.chat_conversation(conv)
     print(f"Assistant: {response.content}\n")
 
     conv.add_user("How does cross-validation help prevent it?")
+    limiter.acquire()
     response = ai.chat_conversation(conv)
     print(f"Assistant: {response.content}")
 

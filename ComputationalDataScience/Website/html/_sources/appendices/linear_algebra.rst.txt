@@ -1,0 +1,2040 @@
+.. _appendix-linear-algebra:
+
+
+============================================
+Appendix B: Linear Algebra for Data Science
+============================================
+
+From Notation to Intuition
+----------------------------
+
+Linear algebra is the language of modern statistics and data science. Every dataset is a matrix, every model parameter is a vector, and every inference procedure — from ordinary least squares to MCMC — is a sequence of matrix operations. Yet students often arrive with linear algebra as a collection of mechanical rules (multiply rows by columns, compute determinants by cofactor expansion) without the geometric intuition that makes statistical applications natural.
+
+This appendix bridges that gap. We develop the linear algebra prerequisites for this course with emphasis on *why* each concept matters for statistical computation, not just *what* the formulas are. The goal is to build the geometric reasoning that lets you read a matrix expression like :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` and immediately see a projection — the operation that finds the closest point in a subspace to a given vector, which is precisely what least squares does.
+
+.. admonition:: Road Map 🧭
+   :class: important
+
+   **Foundations**: Vectors, matrices, and the operations that connect them — with emphasis on the properties that matter for statistics
+
+   **Structure**: Special matrix types (symmetric, positive definite, idempotent, stochastic) that arise naturally in statistical models
+
+   **Blocks**: Partitioned matrices, the Schur complement, and the Sherman-Morrison-Woodbury formula — tools for working with structured problems
+
+   **Geometry**: Column spaces, projections, and the hat matrix — the geometric engine behind least squares
+
+   **Decompositions**: Eigen, Cholesky, QR, and SVD — each revealing different structure in data and models
+
+   **Covariance**: Quadratic forms and covariance matrices — how variance propagates through linear transformations via :math:`\text{Var}(\mathbf{A}\mathbf{X}) = \mathbf{A}\text{Var}(\mathbf{X})\mathbf{A}^\top`
+
+   **Calculus**: Gradients of scalar functions of vectors and matrices — the foundation for optimization-based inference
+
+   **Computation**: Numerical considerations — condition numbers, when to avoid forming :math:`\mathbf{X}^\top\mathbf{X}`, and why decompositions beat direct inversion
+
+.. admonition:: Prerequisites Check ✓
+   :class: tip
+
+   Before proceeding, ensure you're comfortable with:
+
+   * Systems of linear equations and their solution
+   * The concept of a function and composition of functions
+   * Basic calculus (derivatives, partial derivatives)
+   * Python basics and NumPy arrays
+
+.. admonition:: Connection to Course Material 🗺️
+   :class: important
+
+   This appendix supports specific course content:
+
+   * **Chapter 2** (Monte Carlo): Cholesky decomposition for generating correlated random vectors (:ref:`ch2.4-transformation-methods`)
+   * **Chapter 3** (Parametric Inference): Hat matrix, projections, QR decomposition in linear models (:ref:`ch3_4-linear-models`); Fisher information matrices (:ref:`ch3_2-maximum-likelihood-estimation`); IRLS weight matrices (:ref:`ch3_5-generalized-linear-models`)
+   * **Chapter 4** (Resampling): Sherman-Morrison-Woodbury for LOOCV shortcuts (:ref:`ch4_8-cross-validation`); influence diagnostics via the hat matrix (:ref:`ch4_5-jackknife-methods`)
+   * **Chapter 5** (Bayesian): Transition matrices for Markov chains (:ref:`ch5_4-markov-chains`); mass matrix in Hamiltonian Monte Carlo (:ref:`ch5_5-mcmc-algorithms`)
+
+.. contents:: Contents
+   :local:
+   :depth: 2
+
+
+Vectors and Inner Products
+---------------------------
+
+A **vector** :math:`\mathbf{x} \in \mathbb{R}^n` is an ordered list of :math:`n` real numbers. Throughout this course, vectors are column vectors by default:
+
+.. math::
+
+   \mathbf{x} = \begin{pmatrix} x_1 \\ x_2 \\ \vdots \\ x_n \end{pmatrix}
+
+The **transpose** :math:`\mathbf{x}^\top = (x_1, x_2, \ldots, x_n)` gives a row vector.
+
+Inner Product and Norm
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   The **inner product** (dot product) of two vectors :math:`\mathbf{x}, \mathbf{y} \in \mathbb{R}^n` is:
+
+   .. math::
+
+      \langle \mathbf{x}, \mathbf{y} \rangle = \mathbf{x}^\top \mathbf{y} = \sum_{i=1}^n x_i y_i
+
+   The **Euclidean norm** (length) of a vector is:
+
+   .. math::
+
+      \|\mathbf{x}\| = \sqrt{\mathbf{x}^\top \mathbf{x}} = \sqrt{\sum_{i=1}^n x_i^2}
+
+The inner product measures how well two vectors align. When :math:`\mathbf{x}^\top \mathbf{y} = 0`, the vectors are **orthogonal** — they point in perpendicular directions. This geometric intuition is central to least squares: the residual vector is orthogonal to the space of fitted values.
+
+.. admonition:: Key Properties
+   :class: tip
+
+   * **Symmetry**: :math:`\mathbf{x}^\top \mathbf{y} = \mathbf{y}^\top \mathbf{x}`
+   * **Linearity**: :math:`\mathbf{x}^\top(a\mathbf{y} + b\mathbf{z}) = a\,\mathbf{x}^\top \mathbf{y} + b\,\mathbf{x}^\top \mathbf{z}`
+   * **Cauchy-Schwarz inequality**: :math:`|\mathbf{x}^\top \mathbf{y}| \leq \|\mathbf{x}\| \cdot \|\mathbf{y}\|`, with equality if and only if :math:`\mathbf{x}` and :math:`\mathbf{y}` are linearly dependent
+   * **Triangle inequality**: :math:`\|\mathbf{x} + \mathbf{y}\| \leq \|\mathbf{x}\| + \|\mathbf{y}\|`
+
+The Cauchy-Schwarz inequality appears in the derivation of the Cramér-Rao lower bound (see :ref:`ch3_2-maximum-likelihood-estimation`), where it establishes the minimum variance achievable by any unbiased estimator.
+
+.. code-block:: python
+
+   import numpy as np
+
+   x = np.array([3, 1, 4])
+   y = np.array([2, 7, 1])
+
+   # Inner product
+   dot = x @ y          # 17
+   dot_alt = np.dot(x, y)  # equivalent
+
+   # Norm
+   norm_x = np.linalg.norm(x)  # sqrt(26) ≈ 5.099
+
+   # Verify Cauchy-Schwarz
+   assert abs(x @ y) <= np.linalg.norm(x) * np.linalg.norm(y)
+
+Orthogonality
+~~~~~~~~~~~~~~
+
+Two vectors are **orthogonal** if :math:`\mathbf{x}^\top \mathbf{y} = 0`. A set of vectors :math:`\{\mathbf{q}_1, \ldots, \mathbf{q}_k\}` is **orthonormal** if:
+
+.. math::
+
+   \mathbf{q}_i^\top \mathbf{q}_j = \begin{cases} 1 & \text{if } i = j \\ 0 & \text{if } i \neq j \end{cases}
+
+Equivalently, stacking these vectors as columns of a matrix :math:`\mathbf{Q}`, orthonormality means :math:`\mathbf{Q}^\top \mathbf{Q} = \mathbf{I}`. If :math:`\mathbf{Q}` is square, this also gives :math:`\mathbf{Q}\mathbf{Q}^\top = \mathbf{I}`, so :math:`\mathbf{Q}^{-1} = \mathbf{Q}^\top` — the inverse is just the transpose. Such a matrix is called **orthogonal**.
+
+Orthogonal matrices preserve lengths and angles: :math:`\|\mathbf{Q}\mathbf{x}\| = \|\mathbf{x}\|`. This makes them numerically ideal — they never amplify errors, which is why QR decomposition is preferred over forming :math:`\mathbf{X}^\top\mathbf{X}` directly.
+
+
+Matrix Operations and Properties
+----------------------------------
+
+A **matrix** :math:`\mathbf{A} \in \mathbb{R}^{m \times n}` has :math:`m` rows and :math:`n` columns. We write :math:`A_{ij}` or :math:`a_{ij}` for the entry in row :math:`i`, column :math:`j`.
+
+Multiplication, Transpose, and Inverse
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Matrix multiplication.** If :math:`\mathbf{A}` is :math:`m \times n` and :math:`\mathbf{B}` is :math:`n \times p`, the product :math:`\mathbf{C} = \mathbf{AB}` is :math:`m \times p` with entries:
+
+.. math::
+
+   C_{ij} = \sum_{k=1}^n A_{ik} B_{kj}
+
+Key properties:
+
+* **Not commutative**: :math:`\mathbf{AB} \neq \mathbf{BA}` in general
+* **Associative**: :math:`(\mathbf{AB})\mathbf{C} = \mathbf{A}(\mathbf{BC})`
+* **Distributive**: :math:`\mathbf{A}(\mathbf{B} + \mathbf{C}) = \mathbf{AB} + \mathbf{AC}`
+* **Transpose of product**: :math:`(\mathbf{AB})^\top = \mathbf{B}^\top \mathbf{A}^\top` (order reverses)
+
+**Transpose.** :math:`(\mathbf{A}^\top)_{ij} = A_{ji}` — rows become columns. A matrix is **symmetric** if :math:`\mathbf{A} = \mathbf{A}^\top`. Covariance matrices and Fisher information matrices are always symmetric.
+
+**Inverse.** A square matrix :math:`\mathbf{A}` is **invertible** (nonsingular) if there exists :math:`\mathbf{A}^{-1}` such that :math:`\mathbf{A}\mathbf{A}^{-1} = \mathbf{A}^{-1}\mathbf{A} = \mathbf{I}`. Key properties:
+
+* :math:`(\mathbf{AB})^{-1} = \mathbf{B}^{-1}\mathbf{A}^{-1}` (order reverses)
+* :math:`(\mathbf{A}^\top)^{-1} = (\mathbf{A}^{-1})^\top`
+* :math:`(\mathbf{A}^{-1})^{-1} = \mathbf{A}`
+
+.. admonition:: Common Pitfall ⚠️
+   :class: warning
+
+   In practice, you almost never compute :math:`\mathbf{A}^{-1}` explicitly. To solve :math:`\mathbf{A}\mathbf{x} = \mathbf{b}`, use ``np.linalg.solve(A, b)`` rather than ``np.linalg.inv(A) @ b``. The solve approach is faster and more numerically stable because it uses LU factorization internally without forming the full inverse.
+
+Trace
+~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   The **trace** of a square matrix :math:`\mathbf{A} \in \mathbb{R}^{n \times n}` is the sum of its diagonal entries:
+
+   .. math::
+
+      \text{tr}(\mathbf{A}) = \sum_{i=1}^n A_{ii}
+
+The trace has remarkably useful algebraic properties:
+
+* **Linearity**: :math:`\text{tr}(\mathbf{A} + \mathbf{B}) = \text{tr}(\mathbf{A}) + \text{tr}(\mathbf{B})` and :math:`\text{tr}(c\mathbf{A}) = c \cdot \text{tr}(\mathbf{A})`
+* **Cyclic property**: :math:`\text{tr}(\mathbf{ABC}) = \text{tr}(\mathbf{CAB}) = \text{tr}(\mathbf{BCA})`
+* **Transpose invariance**: :math:`\text{tr}(\mathbf{A}^\top) = \text{tr}(\mathbf{A})`
+* **Inner product connection**: :math:`\mathbf{x}^\top \mathbf{A} \mathbf{x} = \text{tr}(\mathbf{A}\mathbf{x}\mathbf{x}^\top)`
+
+The cyclic property is especially powerful. Note that while :math:`\text{tr}(\mathbf{ABC}) = \text{tr}(\mathbf{CAB})`, the trace is *not* invariant under arbitrary permutations: :math:`\text{tr}(\mathbf{ABC}) \neq \text{tr}(\mathbf{BAC})` in general.
+
+In linear models, the trace gives the **effective degrees of freedom**: :math:`\text{tr}(\mathbf{H}) = p` for the hat matrix :math:`\mathbf{H}`, generalizing to :math:`\text{tr}(\mathbf{S}_\lambda)` for smoothers and regularized estimators (see :ref:`ch4_8-cross-validation`).
+
+Determinant
+~~~~~~~~~~~~
+
+The **determinant** :math:`\det(\mathbf{A})` is a scalar that encodes the volume-scaling factor of the linear transformation represented by :math:`\mathbf{A}`. Key properties:
+
+* :math:`\det(\mathbf{A}) \neq 0` if and only if :math:`\mathbf{A}` is invertible
+* :math:`\det(\mathbf{AB}) = \det(\mathbf{A})\det(\mathbf{B})`
+* :math:`\det(\mathbf{A}^\top) = \det(\mathbf{A})`
+* :math:`\det(c\mathbf{A}) = c^n \det(\mathbf{A})` for :math:`\mathbf{A} \in \mathbb{R}^{n \times n}`
+* :math:`\det(\mathbf{A}^{-1}) = 1/\det(\mathbf{A})`
+
+For diagonal or triangular matrices, the determinant is simply the product of diagonal entries: :math:`\det(\mathbf{A}) = \prod_i A_{ii}`.
+
+The determinant appears prominently in probability through the multivariate normal density:
+
+.. math::
+
+   f(\mathbf{x}) = \frac{1}{(2\pi)^{p/2} |\boldsymbol{\Sigma}|^{1/2}} \exp\!\left(-\frac{1}{2}(\mathbf{x} - \boldsymbol{\mu})^\top \boldsymbol{\Sigma}^{-1} (\mathbf{x} - \boldsymbol{\mu})\right)
+
+where :math:`|\boldsymbol{\Sigma}| = \det(\boldsymbol{\Sigma})`. It also appears in the Jacobian formula for change of variables (see :ref:`Jacobian and Change of Variables <jacobian-section>`) and in log-likelihoods for multivariate models.
+
+Rank
+~~~~~
+
+The **rank** of a matrix :math:`\mathbf{A} \in \mathbb{R}^{m \times n}` is the dimension of its column space — equivalently, the maximum number of linearly independent columns (or rows). A matrix has **full column rank** if :math:`\text{rank}(\mathbf{A}) = n` (all columns are linearly independent), and **full row rank** if :math:`\text{rank}(\mathbf{A}) = m`.
+
+For the design matrix :math:`\mathbf{X} \in \mathbb{R}^{n \times p}` in linear regression, the full rank assumption :math:`\text{rank}(\mathbf{X}) = p` is equivalent to requiring that :math:`\mathbf{X}^\top\mathbf{X}` is invertible. When this fails — due to perfect collinearity among predictors — the OLS estimator :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` does not exist, and regularization (ridge, LASSO) or variable selection is needed.
+
+.. code-block:: python
+
+   import numpy as np
+
+   A = np.array([[1, 2, 3],
+                  [4, 5, 6],
+                  [7, 8, 9]])
+
+   print(f"Rank: {np.linalg.matrix_rank(A)}")        # 2 (row 3 = 2*row2 - row1)
+   print(f"Determinant: {np.linalg.det(A):.6f}")      # ≈ 0 (singular)
+   print(f"Trace: {np.trace(A)}")                      # 15
+
+
+Special Matrix Structures
+--------------------------
+
+Certain matrix structures arise repeatedly in statistics. Recognizing them unlocks computational shortcuts and theoretical insights. Several of the properties below are stated in terms of **eigenvalues** — the scalars :math:`\lambda` satisfying :math:`\mathbf{A}\mathbf{v} = \lambda \mathbf{v}` for some nonzero **eigenvector** :math:`\mathbf{v}`, so that :math:`\mathbf{A}` acts on :math:`\mathbf{v}` by pure scaling. Eigenvalues are developed fully in the Spectral Theorem (see Matrix Decompositions below); for now, the defining equation is all we need.
+
+Symmetric Matrices
+~~~~~~~~~~~~~~~~~~~
+
+A matrix :math:`\mathbf{A}` is **symmetric** if :math:`\mathbf{A} = \mathbf{A}^\top`. Every covariance matrix, every Fisher information matrix, and every Hessian of a smooth function is symmetric. Symmetric matrices have three important properties:
+
+1. All eigenvalues are **real** (not complex)
+2. Eigenvectors corresponding to distinct eigenvalues are **orthogonal**
+3. Every symmetric matrix admits a **spectral decomposition** :math:`\mathbf{A} = \mathbf{Q}\boldsymbol{\Lambda}\mathbf{Q}^\top` with orthogonal :math:`\mathbf{Q}`
+
+These properties are the foundation of principal component analysis (PCA) and the spectral analysis of Markov chains.
+
+Diagonal and Identity Matrices
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A **diagonal matrix** :math:`\mathbf{D} = \text{diag}(d_1, \ldots, d_n)` has nonzero entries only on the main diagonal. Diagonal matrices are trivial to invert (:math:`\mathbf{D}^{-1} = \text{diag}(1/d_1, \ldots, 1/d_n)`) and their determinant is :math:`\prod_i d_i`.
+
+The **identity matrix** :math:`\mathbf{I}_n` is the diagonal matrix with all ones — the multiplicative identity: :math:`\mathbf{AI} = \mathbf{IA} = \mathbf{A}`.
+
+In GLM fitting, the weight matrix :math:`\mathbf{W} = \text{diag}(w_1, \ldots, w_n)` is diagonal, making the weighted least squares step :math:`(\mathbf{X}^\top\mathbf{W}\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{W}\mathbf{z}` efficient to compute (see :ref:`ch3_5-generalized-linear-models`).
+
+Idempotent Matrices
+~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   A matrix :math:`\mathbf{P}` is **idempotent** if :math:`\mathbf{P}^2 = \mathbf{P}`.
+
+Idempotency means "applying the operation twice is the same as applying it once" — the defining property of a projection. If you project a vector onto a subspace, projecting the result again changes nothing.
+
+The hat matrix :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` is idempotent, and so is the residual-maker :math:`\mathbf{M} = \mathbf{I} - \mathbf{H}`.
+
+Key properties of idempotent matrices:
+
+* Eigenvalues are either 0 or 1
+* :math:`\text{rank}(\mathbf{P}) = \text{tr}(\mathbf{P})` (the trace counts the number of eigenvalue-1 directions)
+* If :math:`\mathbf{P}` is also symmetric, it is an **orthogonal projection matrix**
+
+.. admonition:: Derivation: Eigenvalues of Idempotent Matrices
+   :class: proof
+
+   If :math:`\mathbf{P}\mathbf{v} = \lambda \mathbf{v}` for eigenvector :math:`\mathbf{v} \neq \mathbf{0}`, then:
+
+   .. math::
+
+      \mathbf{P}^2 \mathbf{v} = \mathbf{P}(\mathbf{P}\mathbf{v}) = \mathbf{P}(\lambda \mathbf{v}) = \lambda(\mathbf{P}\mathbf{v}) = \lambda^2 \mathbf{v}
+
+   But :math:`\mathbf{P}^2 = \mathbf{P}`, so :math:`\mathbf{P}^2 \mathbf{v} = \mathbf{P}\mathbf{v} = \lambda \mathbf{v}`. Therefore :math:`\lambda^2 = \lambda`, which gives :math:`\lambda = 0` or :math:`\lambda = 1`.
+
+Positive Definite and Positive Semi-Definite Matrices
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   A symmetric matrix :math:`\mathbf{A} \in \mathbb{R}^{n \times n}` is:
+
+   * **Positive definite** (PD) if :math:`\mathbf{x}^\top \mathbf{A} \mathbf{x} > 0` for all :math:`\mathbf{x} \neq \mathbf{0}`
+   * **Positive semi-definite** (PSD) if :math:`\mathbf{x}^\top \mathbf{A} \mathbf{x} \geq 0` for all :math:`\mathbf{x}`
+
+   Equivalently:
+
+   * PD :math:`\iff` all eigenvalues are strictly positive
+   * PSD :math:`\iff` all eigenvalues are non-negative
+
+Positive definiteness is the matrix analogue of a positive number — it guarantees that a quadratic form :math:`\mathbf{x}^\top\mathbf{A}\mathbf{x}` has a unique minimum at :math:`\mathbf{x} = \mathbf{0}`, which is essential for:
+
+* **Covariance matrices**: Every covariance matrix is PSD; it is PD if no variable is a deterministic linear combination of others
+* **Fisher information matrices**: PD under regularity conditions, ensuring the MLE is unique and the Cramér-Rao bound is finite
+* **Hessians at optima**: The Hessian of a log-likelihood being negative definite at :math:`\hat{\boldsymbol{\theta}}` confirms a local maximum
+* **Cholesky decomposition**: A unique Cholesky factor with strictly positive diagonal exists if and only if the matrix is PD
+
+.. code-block:: python
+
+   import numpy as np
+
+   # A positive definite matrix
+   A = np.array([[4, 2],
+                  [2, 3]])
+
+   eigenvalues = np.linalg.eigvalsh(A)
+   print(f"Eigenvalues: {eigenvalues}")  # [1.438, 5.562] — both positive → PD
+
+   # Verify: x'Ax > 0 for random x
+   rng = np.random.default_rng(42)
+   for _ in range(1000):
+       x = rng.standard_normal(2)
+       assert x @ A @ x > 0
+
+Stochastic Matrices
+~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   A square matrix :math:`\mathbf{P}` is **(row-)stochastic** if:
+
+   * All entries are non-negative: :math:`P_{ij} \geq 0`
+   * Each row sums to 1: :math:`\sum_j P_{ij} = 1`
+
+Stochastic matrices are **transition matrices** for Markov chains: :math:`P_{ij}` is the probability of moving from state :math:`i` to state :math:`j`. In Chapter 5, the :math:`k`-step transition probabilities are given by :math:`\mathbf{P}^k`, and the **stationary distribution** :math:`\boldsymbol{\pi}` satisfies :math:`\boldsymbol{\pi}^\top \mathbf{P} = \boldsymbol{\pi}^\top` — it is a left eigenvector of :math:`\mathbf{P}` with eigenvalue 1 (see :ref:`ch5_4-markov-chains`).
+
+The **Perron-Frobenius theorem** guarantees that for an irreducible, aperiodic stochastic matrix, eigenvalue 1 has multiplicity one and all other eigenvalues satisfy :math:`|\lambda| < 1`. This ensures the Markov chain converges to a unique stationary distribution regardless of starting state — the theoretical foundation for MCMC.
+
+
+Block Matrices
+---------------
+
+Many matrices in statistics have natural block structure. The design matrix might partition into :math:`\mathbf{X} = [\mathbf{X}_1 \mid \mathbf{X}_2]` separating groups of predictors. A covariance matrix for two groups of variables decomposes into within-group and between-group blocks. Working with blocks rather than individual entries simplifies both algebra and computation.
+
+Block Partitioning
+~~~~~~~~~~~~~~~~~~~
+
+A matrix can be partitioned into **blocks** (sub-matrices):
+
+.. math::
+
+   \mathbf{A} = \begin{pmatrix} \mathbf{A}_{11} & \mathbf{A}_{12} \\ \mathbf{A}_{21} & \mathbf{A}_{22} \end{pmatrix}
+
+where :math:`\mathbf{A}_{11}` is :math:`p \times p`, :math:`\mathbf{A}_{12}` is :math:`p \times q`, :math:`\mathbf{A}_{21}` is :math:`q \times p`, and :math:`\mathbf{A}_{22}` is :math:`q \times q`.
+
+Block Multiplication
+~~~~~~~~~~~~~~~~~~~~~
+
+Block matrices multiply according to the same row-times-column rule, but with sub-matrix products replacing scalar products:
+
+.. math::
+
+   \begin{pmatrix} \mathbf{A}_{11} & \mathbf{A}_{12} \\ \mathbf{A}_{21} & \mathbf{A}_{22} \end{pmatrix}
+   \begin{pmatrix} \mathbf{B}_{11} & \mathbf{B}_{12} \\ \mathbf{B}_{21} & \mathbf{B}_{22} \end{pmatrix}
+   =
+   \begin{pmatrix} \mathbf{A}_{11}\mathbf{B}_{11} + \mathbf{A}_{12}\mathbf{B}_{21} & \mathbf{A}_{11}\mathbf{B}_{12} + \mathbf{A}_{12}\mathbf{B}_{22} \\ \mathbf{A}_{21}\mathbf{B}_{11} + \mathbf{A}_{22}\mathbf{B}_{21} & \mathbf{A}_{21}\mathbf{B}_{12} + \mathbf{A}_{22}\mathbf{B}_{22} \end{pmatrix}
+
+This is valid whenever the inner dimensions of each sub-matrix product are compatible.
+
+Block Transpose and Block Diagonal
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The transpose of a block matrix transposes the arrangement *and* each block:
+
+.. math::
+
+   \begin{pmatrix} \mathbf{A}_{11} & \mathbf{A}_{12} \\ \mathbf{A}_{21} & \mathbf{A}_{22} \end{pmatrix}^\top
+   =
+   \begin{pmatrix} \mathbf{A}_{11}^\top & \mathbf{A}_{21}^\top \\ \mathbf{A}_{12}^\top & \mathbf{A}_{22}^\top \end{pmatrix}
+
+A **block diagonal** matrix has non-zero blocks only on the diagonal:
+
+.. math::
+
+   \text{diag}(\mathbf{A}_1, \ldots, \mathbf{A}_k) = \begin{pmatrix} \mathbf{A}_1 & & \\ & \ddots & \\ & & \mathbf{A}_k \end{pmatrix}
+
+Block diagonal matrices are especially convenient: their inverse is :math:`\text{diag}(\mathbf{A}_1^{-1}, \ldots, \mathbf{A}_k^{-1})`, their determinant is :math:`\prod_i \det(\mathbf{A}_i)`, and their eigenvalues are the union of each block's eigenvalues. They arise in hierarchical models where groups are conditionally independent.
+
+The Schur Complement
+~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   Given a block matrix with :math:`\mathbf{A}_{11}` invertible:
+
+   .. math::
+
+      \mathbf{A} = \begin{pmatrix} \mathbf{A}_{11} & \mathbf{A}_{12} \\ \mathbf{A}_{21} & \mathbf{A}_{22} \end{pmatrix}
+
+   the **Schur complement** of :math:`\mathbf{A}_{11}` in :math:`\mathbf{A}` is:
+
+   .. math::
+
+      \mathbf{S} = \mathbf{A}_{22} - \mathbf{A}_{21}\mathbf{A}_{11}^{-1}\mathbf{A}_{12}
+
+The Schur complement is the key to block matrix inversion and appears throughout statistics:
+
+**Block inverse.** If both :math:`\mathbf{A}_{11}` and :math:`\mathbf{S}` are invertible:
+
+.. math::
+
+   \begin{pmatrix} \mathbf{A}_{11} & \mathbf{A}_{12} \\ \mathbf{A}_{21} & \mathbf{A}_{22} \end{pmatrix}^{-1}
+   =
+   \begin{pmatrix} \mathbf{A}_{11}^{-1} + \mathbf{A}_{11}^{-1}\mathbf{A}_{12}\mathbf{S}^{-1}\mathbf{A}_{21}\mathbf{A}_{11}^{-1} & -\mathbf{A}_{11}^{-1}\mathbf{A}_{12}\mathbf{S}^{-1} \\ -\mathbf{S}^{-1}\mathbf{A}_{21}\mathbf{A}_{11}^{-1} & \mathbf{S}^{-1} \end{pmatrix}
+
+**Block determinant:**
+
+.. math::
+
+   \det(\mathbf{A}) = \det(\mathbf{A}_{11}) \cdot \det(\mathbf{S})
+
+.. admonition:: Statistical Application: Conditional Distributions
+   :class: tip
+
+   For a multivariate normal :math:`(\mathbf{X}_1, \mathbf{X}_2)^\top \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})` with:
+
+   .. math::
+
+      \boldsymbol{\Sigma} = \begin{pmatrix} \boldsymbol{\Sigma}_{11} & \boldsymbol{\Sigma}_{12} \\ \boldsymbol{\Sigma}_{21} & \boldsymbol{\Sigma}_{22} \end{pmatrix}
+
+   the conditional distribution :math:`\mathbf{X}_1 \mid \mathbf{X}_2 = \mathbf{x}_2` is normal with:
+
+   .. math::
+
+      \mathbb{E}[\mathbf{X}_1 \mid \mathbf{X}_2] &= \boldsymbol{\mu}_1 + \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}(\mathbf{x}_2 - \boldsymbol{\mu}_2) \\
+      \text{Var}(\mathbf{X}_1 \mid \mathbf{X}_2) &= \boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21}
+
+   The conditional covariance is exactly the Schur complement of :math:`\boldsymbol{\Sigma}_{22}` in :math:`\boldsymbol{\Sigma}`. This formula drives Gibbs sampling for multivariate normals in Chapter 5.
+
+Sherman-Morrison-Woodbury Formula
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Sherman-Morrison-Woodbury
+   :class: theorem
+
+   If :math:`\mathbf{A} \in \mathbb{R}^{n \times n}` and :math:`\mathbf{C} \in \mathbb{R}^{k \times k}` are invertible, :math:`\mathbf{U} \in \mathbb{R}^{n \times k}` and :math:`\mathbf{V} \in \mathbb{R}^{k \times n}`, and :math:`\mathbf{C}^{-1} + \mathbf{V}\mathbf{A}^{-1}\mathbf{U}` is also invertible:
+
+   .. math::
+
+      (\mathbf{A} + \mathbf{U}\mathbf{C}\mathbf{V})^{-1} = \mathbf{A}^{-1} - \mathbf{A}^{-1}\mathbf{U}(\mathbf{C}^{-1} + \mathbf{V}\mathbf{A}^{-1}\mathbf{U})^{-1}\mathbf{V}\mathbf{A}^{-1}
+
+   The special case with :math:`k = 1` (rank-1 update) is the **Sherman-Morrison formula**: for vectors :math:`\mathbf{u}, \mathbf{v}` with :math:`1 + \mathbf{v}^\top\mathbf{A}^{-1}\mathbf{u} \neq 0`:
+
+   .. math::
+
+      (\mathbf{A} + \mathbf{u}\mathbf{v}^\top)^{-1} = \mathbf{A}^{-1} - \frac{\mathbf{A}^{-1}\mathbf{u}\mathbf{v}^\top\mathbf{A}^{-1}}{1 + \mathbf{v}^\top\mathbf{A}^{-1}\mathbf{u}}
+
+This converts inverting an :math:`n \times n` matrix into inverting a :math:`k \times k` matrix (plus some matrix-vector products). When :math:`k \ll n`, this is a dramatic speedup.
+
+The formula is central to the **LOOCV shortcut** in :ref:`ch4_8-cross-validation`: deleting observation :math:`i` from the regression amounts to a rank-1 update of :math:`\mathbf{X}^\top\mathbf{X}`, allowing all :math:`n` leave-one-out fits to be computed from a single full-data fit. It also appears in Bayesian posterior updating when a new observation arrives.
+
+.. admonition:: Derivation: Sherman-Morrison-Woodbury from Block Inversion
+   :class: proof
+
+   The formula follows from applying the block inverse to:
+
+   .. math::
+
+      \begin{pmatrix} \mathbf{A} & \mathbf{U} \\ \mathbf{V} & -\mathbf{C}^{-1} \end{pmatrix}
+
+   The Schur complement of :math:`-\mathbf{C}^{-1}` is :math:`\mathbf{A} + \mathbf{U}\mathbf{C}\mathbf{V}`, and the block inverse formula gives the result directly. This derivation shows that SMW is not a separate identity — it is a consequence of block matrix algebra.
+
+.. code-block:: python
+
+   import numpy as np
+
+   rng = np.random.default_rng(42)
+   n, k = 100, 3
+
+   A = rng.standard_normal((n, n))
+   A = A @ A.T + np.eye(n)  # make PD
+   U = rng.standard_normal((n, k))
+   C = np.eye(k)
+   V = rng.standard_normal((k, n))
+
+   # Direct inversion
+   direct = np.linalg.inv(A + U @ C @ V)
+
+   # Sherman-Morrison-Woodbury
+   A_inv = np.linalg.inv(A)
+   inner = np.linalg.inv(np.linalg.inv(C) + V @ A_inv @ U)
+   smw = A_inv - A_inv @ U @ inner @ V @ A_inv
+
+   print(f"Max difference: {np.max(np.abs(direct - smw)):.2e}")  # ≈ 1e-11
+
+
+Column Space, Projections, and Least Squares
+----------------------------------------------
+
+This section develops the geometric backbone of linear regression. The central idea: fitting a linear model is equivalent to projecting the response vector onto the column space of the design matrix.
+
+Column Space and Null Space
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   The **column space** (range) of :math:`\mathbf{X} \in \mathbb{R}^{n \times p}` is the set of all linear combinations of its columns:
+
+   .. math::
+
+      \mathcal{C}(\mathbf{X}) = \{\mathbf{X}\boldsymbol{\beta} : \boldsymbol{\beta} \in \mathbb{R}^p\}
+
+   The **null space** (kernel) is the set of vectors mapped to zero:
+
+   .. math::
+
+      \mathcal{N}(\mathbf{X}) = \{\boldsymbol{\beta} \in \mathbb{R}^p : \mathbf{X}\boldsymbol{\beta} = \mathbf{0}\}
+
+The column space of :math:`\mathbf{X}` is a :math:`p`-dimensional subspace of :math:`\mathbb{R}^n` (assuming full column rank). It contains every possible vector of fitted values :math:`\hat{\mathbf{y}} = \mathbf{X}\boldsymbol{\beta}`. Since typically :math:`p \ll n`, this subspace is a "thin slice" of the full :math:`n`-dimensional space — and the response :math:`\mathbf{y}` almost certainly does not lie in it.
+
+Orthogonal Projection
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The best approximation to :math:`\mathbf{y}` within :math:`\mathcal{C}(\mathbf{X})` is the **orthogonal projection** — the point in the subspace closest to :math:`\mathbf{y}` in Euclidean distance.
+
+.. admonition:: Theorem: Orthogonal Projection
+   :class: theorem
+
+   The orthogonal projection of :math:`\mathbf{y}` onto :math:`\mathcal{C}(\mathbf{X})` is :math:`\hat{\mathbf{y}} = \mathbf{H}\mathbf{y}`, where:
+
+   .. math::
+
+      \mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top
+
+   The residual :math:`\mathbf{e} = \mathbf{y} - \hat{\mathbf{y}} = (\mathbf{I} - \mathbf{H})\mathbf{y}` is orthogonal to the column space: :math:`\mathbf{X}^\top \mathbf{e} = \mathbf{0}`.
+
+.. admonition:: Derivation: Projection Minimizes Squared Distance
+   :class: proof
+
+   We seek :math:`\hat{\boldsymbol{\beta}} = \arg\min_{\boldsymbol{\beta}} \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2`. Expanding:
+
+   .. math::
+
+      \|\mathbf{y} - \mathbf{X}\boldsymbol{\beta}\|^2 = \mathbf{y}^\top\mathbf{y} - 2\boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{y} + \boldsymbol{\beta}^\top\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta}
+
+   Taking the gradient with respect to :math:`\boldsymbol{\beta}` and setting it to zero:
+
+   .. math::
+
+      -2\mathbf{X}^\top\mathbf{y} + 2\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} = \mathbf{0}
+
+   gives the **normal equations** :math:`\mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{X}^\top\mathbf{y}`, so :math:`\hat{\boldsymbol{\beta}} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}` and :math:`\hat{\mathbf{y}} = \mathbf{X}\hat{\boldsymbol{\beta}} = \mathbf{H}\mathbf{y}`.
+
+   The normal equations :math:`\mathbf{X}^\top(\mathbf{y} - \mathbf{X}\hat{\boldsymbol{\beta}}) = \mathbf{0}` state precisely that the residual is orthogonal to the column space — the geometric characterization of the closest point in a subspace.
+
+The Hat Matrix
+~~~~~~~~~~~~~~~
+
+The projection matrix :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` is called the **hat matrix** because it "puts the hat on :math:`\mathbf{y}`": :math:`\hat{\mathbf{y}} = \mathbf{H}\mathbf{y}`.
+
+.. admonition:: Theorem: Hat Matrix Properties
+   :class: theorem
+
+   The hat matrix satisfies:
+
+   1. **Symmetric**: :math:`\mathbf{H}^\top = \mathbf{H}`
+   2. **Idempotent**: :math:`\mathbf{H}^2 = \mathbf{H}`
+   3. **Rank and trace**: :math:`\text{tr}(\mathbf{H}) = \text{rank}(\mathbf{H}) = p`
+   4. **Diagonal bounds**: :math:`0 \leq h_{ii} \leq 1` for all :math:`i`, where :math:`h_{ii} = \mathbf{x}_i^\top(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{x}_i`
+
+.. admonition:: Derivation: Hat Matrix is Symmetric and Idempotent
+   :class: proof
+
+   **Symmetry**: :math:`\mathbf{H}^\top = [\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top]^\top = \mathbf{X}[(\mathbf{X}^\top\mathbf{X})^{-1}]^\top\mathbf{X}^\top = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{H}`, since :math:`(\mathbf{X}^\top\mathbf{X})^{-1}` is symmetric.
+
+   **Idempotent**: :math:`\mathbf{H}^2 = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{H}`, since the middle :math:`\mathbf{X}^\top\mathbf{X}` cancels with :math:`(\mathbf{X}^\top\mathbf{X})^{-1}`.
+
+The **residual-maker matrix** :math:`\mathbf{M} = \mathbf{I} - \mathbf{H}` is also symmetric and idempotent, with :math:`\text{tr}(\mathbf{M}) = n - p`. It projects onto the orthogonal complement of :math:`\mathcal{C}(\mathbf{X})` — the space of residuals.
+
+Leverage
+~~~~~~~~~
+
+The diagonal element :math:`h_{ii}` measures the **leverage** of observation :math:`i` — how much influence its position in predictor space has on its own fitted value. High-leverage points are far from the center of the predictor cloud and can disproportionately influence the regression fit.
+
+Since :math:`\sum_{i=1}^n h_{ii} = \text{tr}(\mathbf{H}) = p`, the average leverage is :math:`p/n`. Observations with :math:`h_{ii} > 2p/n` (twice the average) warrant closer inspection.
+
+Leverage connects to several diagnostics developed in :ref:`ch4_5-jackknife-methods`:
+
+* **LOOCV shortcut**: The leave-one-out residual is :math:`e_{(i)} = e_i / (1 - h_{ii})`
+* **Cook's distance**: :math:`D_i = \frac{e_i^2}{p \cdot s^2} \cdot \frac{h_{ii}}{(1 - h_{ii})^2}`
+* **DFFITS**: :math:`\text{DFFITS}_i = e_i \sqrt{h_{ii}} / (s_{(i)}(1 - h_{ii}))`
+
+.. code-block:: python
+
+   import numpy as np
+
+   rng = np.random.default_rng(42)
+   n, p = 50, 3
+   X = np.column_stack([np.ones(n), rng.standard_normal((n, p - 1))])
+   y = X @ np.array([1, 2, -1]) + rng.standard_normal(n)
+
+   # Hat matrix
+   H = X @ np.linalg.solve(X.T @ X, X.T)
+
+   # Verify properties
+   print(f"Symmetric: {np.allclose(H, H.T)}")              # True
+   print(f"Idempotent: {np.allclose(H @ H, H)}")            # True
+   print(f"Trace: {np.trace(H):.1f}")                        # 3.0 = p
+   print(f"Max leverage: {np.max(np.diag(H)):.4f}")
+   print(f"Mean leverage: {np.mean(np.diag(H)):.4f}")        # p/n = 0.06
+
+   # Fitted values via projection
+   y_hat = H @ y
+   residuals = y - y_hat
+   print(f"Orthogonality: {np.max(np.abs(X.T @ residuals)):.2e}")  # ≈ 0
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig03_projection_geometry.png
+   :alt: Three-panel diagram of regression as projection: the response vector projected onto the column space to give the fitted values with the residual perpendicular to that subspace, the projection and hat-matrix equations, and a numerical check that residuals are orthogonal to fitted values.
+   :align: center
+   :width: 100%
+
+   **Projection geometry in linear regression.** (a) The response vector :math:`\mathbf{y}` is projected onto the column space :math:`\mathcal{C}(\mathbf{X})` to produce fitted values :math:`\hat{\mathbf{y}}`; the residual :math:`\mathbf{e}` is perpendicular to the subspace. (b) The projection equations and hat matrix properties. (c) Numerical verification that residuals are orthogonal to fitted values.
+
+
+Matrix Decompositions
+----------------------
+
+Matrix decompositions reveal hidden structure. Each decomposition answers a different question about a matrix, and each has distinct computational applications.
+
+Eigendecomposition (Spectral Decomposition)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Spectral Theorem
+   :class: theorem
+
+   Every real symmetric matrix :math:`\mathbf{A} \in \mathbb{R}^{n \times n}` can be decomposed as:
+
+   .. math::
+
+      \mathbf{A} = \mathbf{Q}\boldsymbol{\Lambda}\mathbf{Q}^\top = \sum_{i=1}^n \lambda_i \mathbf{q}_i \mathbf{q}_i^\top
+
+   where :math:`\mathbf{Q} = [\mathbf{q}_1 \mid \cdots \mid \mathbf{q}_n]` is orthogonal (columns are the eigenvectors) and :math:`\boldsymbol{\Lambda} = \text{diag}(\lambda_1, \ldots, \lambda_n)` contains the eigenvalues.
+
+The eigendecomposition reveals:
+
+* **Principal directions**: The eigenvectors :math:`\mathbf{q}_i` are the directions along which :math:`\mathbf{A}` acts by pure scaling (no rotation)
+* **Scaling factors**: The eigenvalues :math:`\lambda_i` give the scaling magnitude in each direction
+* **Matrix functions**: :math:`f(\mathbf{A}) = \mathbf{Q} \cdot \text{diag}(f(\lambda_1), \ldots, f(\lambda_n)) \cdot \mathbf{Q}^\top`, so :math:`\mathbf{A}^{-1} = \mathbf{Q}\boldsymbol{\Lambda}^{-1}\mathbf{Q}^\top`, :math:`\mathbf{A}^{1/2} = \mathbf{Q}\boldsymbol{\Lambda}^{1/2}\mathbf{Q}^\top`
+* **Definiteness**: Read directly from the sign of eigenvalues
+* **Markov convergence rate**: For a stochastic matrix, the second-largest eigenvalue modulus :math:`|\lambda_2|` governs how fast the chain converges to stationarity (see :ref:`ch5_4-markov-chains`)
+
+.. code-block:: python
+
+   import numpy as np
+
+   A = np.array([[4, 2],
+                  [2, 3]])
+
+   eigenvalues, Q = np.linalg.eigh(A)  # eigh for symmetric matrices
+   Lambda = np.diag(eigenvalues)
+
+   # Verify decomposition
+   print(f"Eigenvalues: {eigenvalues}")
+   print(f"Reconstruction error: {np.max(np.abs(A - Q @ Lambda @ Q.T)):.2e}")
+
+   # Matrix square root
+   A_sqrt = Q @ np.diag(np.sqrt(eigenvalues)) @ Q.T
+   print(f"(A^{1/2})^2 = A? {np.allclose(A_sqrt @ A_sqrt, A)}")  # True
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig01_covariance_ellipse.png
+   :alt: Three covariance ellipses shown with their eigenvector axes; as the correlation grows from panel (a) to (c) the ellipse elongates and its smallest eigenvalue shrinks toward zero, so the matrix approaches singularity.
+   :align: center
+   :width: 100%
+
+   **Eigendecomposition of covariance matrices.** The eigenvectors :math:`\mathbf{q}_1, \mathbf{q}_2` give the principal directions of variation, and the eigenvalues :math:`\lambda_1, \lambda_2` give the variance in each direction. As correlation increases from panel (a) to panel (c), the ellipse elongates and the smallest eigenvalue shrinks toward zero — the matrix approaches singularity.
+
+Cholesky Decomposition
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Cholesky Decomposition
+   :class: theorem
+
+   Every positive definite matrix :math:`\mathbf{A}` has a unique decomposition:
+
+   .. math::
+
+      \mathbf{A} = \mathbf{L}\mathbf{L}^\top
+
+   where :math:`\mathbf{L}` is lower triangular with positive diagonal entries. This is the **Cholesky factor**.
+
+The Cholesky decomposition is the matrix analogue of taking a square root. It is:
+
+* **Fast**: :math:`O(n^3/3)` operations — half the cost of a general LU factorization
+* **Stable**: Numerically well-conditioned for PD matrices
+* **The PD test**: If Cholesky fails, the matrix is not positive definite
+
+**Primary statistical application**: Generating correlated random vectors. To sample :math:`\mathbf{X} \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})`:
+
+1. Compute :math:`\mathbf{L}` from :math:`\boldsymbol{\Sigma} = \mathbf{L}\mathbf{L}^\top`
+2. Generate :math:`\mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})`
+3. Set :math:`\mathbf{X} = \boldsymbol{\mu} + \mathbf{L}\mathbf{Z}`
+
+Then :math:`\text{Var}(\mathbf{X}) = \mathbf{L}\text{Var}(\mathbf{Z})\mathbf{L}^\top = \mathbf{L}\mathbf{I}\mathbf{L}^\top = \boldsymbol{\Sigma}`, using the variance rule for linear transformations (see Covariance Matrices below). This method is used throughout :ref:`ch2.4-transformation-methods` for multivariate sampling.
+
+**Solving linear systems**: To solve :math:`\mathbf{A}\mathbf{x} = \mathbf{b}` with PD :math:`\mathbf{A}`, factor :math:`\mathbf{A} = \mathbf{L}\mathbf{L}^\top`, then solve the two triangular systems :math:`\mathbf{L}\mathbf{z} = \mathbf{b}` (forward substitution) and :math:`\mathbf{L}^\top\mathbf{x} = \mathbf{z}` (back substitution). Each triangular solve is :math:`O(n^2)`.
+
+.. code-block:: python
+
+   import numpy as np
+
+   Sigma = np.array([[1.0, 0.8, 0.3],
+                      [0.8, 1.0, 0.5],
+                      [0.3, 0.5, 1.0]])
+
+   L = np.linalg.cholesky(Sigma)
+   print(f"L =\n{L.round(4)}")
+   print(f"Reconstruction error: {np.max(np.abs(Sigma - L @ L.T)):.2e}")
+
+   # Generate correlated normals
+   rng = np.random.default_rng(42)
+   Z = rng.standard_normal((3, 10000))
+   X = L @ Z  # each column is a sample
+
+   print(f"Sample covariance:\n{np.cov(X).round(3)}")  # ≈ Sigma
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig04_cholesky_sampling.png
+   :alt: Three scatter panels: independent standard-normal draws, the Cholesky transform X = L Z that injects the target correlation, and the resulting correlated bivariate-normal samples with correlation rho = 0.8.
+   :align: center
+   :width: 100%
+
+   **Cholesky decomposition for generating correlated samples.** (a) Independent standard normal draws :math:`\mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})`. (b) The Cholesky transform :math:`\mathbf{X} = \mathbf{L}\mathbf{Z}` introduces the desired correlation structure. (c) The resulting samples :math:`\mathbf{X} \sim \mathcal{N}(\mathbf{0}, \boldsymbol{\Sigma})` with :math:`\rho = 0.8`.
+
+QR Decomposition
+~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: QR Decomposition
+   :class: theorem
+
+   Every matrix :math:`\mathbf{X} \in \mathbb{R}^{n \times p}` with :math:`n \geq p` and full column rank can be decomposed as:
+
+   .. math::
+
+      \mathbf{X} = \mathbf{Q}\mathbf{R}
+
+   where :math:`\mathbf{Q} \in \mathbb{R}^{n \times p}` has orthonormal columns (:math:`\mathbf{Q}^\top\mathbf{Q} = \mathbf{I}_p`) and :math:`\mathbf{R} \in \mathbb{R}^{p \times p}` is upper triangular with positive diagonal entries.
+
+The QR decomposition is the workhorse for **numerically stable regression**. Instead of forming :math:`\mathbf{X}^\top\mathbf{X}` (which squares the condition number), substitute :math:`\mathbf{X} = \mathbf{Q}\mathbf{R}` into the normal equations:
+
+.. math::
+
+   \mathbf{X}^\top\mathbf{X}\hat{\boldsymbol{\beta}} &= \mathbf{X}^\top\mathbf{y} \\
+   \mathbf{R}^\top\mathbf{Q}^\top\mathbf{Q}\mathbf{R}\hat{\boldsymbol{\beta}} &= \mathbf{R}^\top\mathbf{Q}^\top\mathbf{y} \\
+   \mathbf{R}^\top\mathbf{R}\hat{\boldsymbol{\beta}} &= \mathbf{R}^\top\mathbf{Q}^\top\mathbf{y} \\
+   \mathbf{R}\hat{\boldsymbol{\beta}} &= \mathbf{Q}^\top\mathbf{y}
+
+The last line is a triangular system — solved in :math:`O(p^2)` by back-substitution. No matrix inversion needed.
+
+The hat matrix simplifies to :math:`\mathbf{H} = \mathbf{Q}\mathbf{Q}^\top`, making leverage computation trivial: :math:`h_{ii} = \|\mathbf{q}_i\|^2` where :math:`\mathbf{q}_i` is the :math:`i`-th row of :math:`\mathbf{Q}`.
+
+.. code-block:: python
+
+   import numpy as np
+
+   rng = np.random.default_rng(42)
+   n, p = 100, 5
+   X = rng.standard_normal((n, p))
+   y = X @ np.ones(p) + rng.standard_normal(n)
+
+   # QR-based regression (numerically stable)
+   Q, R = np.linalg.qr(X)
+   beta_qr = np.linalg.solve(R, Q.T @ y)
+
+   # Compare with direct normal equations (less stable)
+   beta_direct = np.linalg.solve(X.T @ X, X.T @ y)
+
+   print(f"Max difference: {np.max(np.abs(beta_qr - beta_direct)):.2e}")
+
+   # Leverage from Q
+   leverage_qr = np.sum(Q**2, axis=1)
+   H = X @ np.linalg.solve(X.T @ X, X.T)
+   leverage_direct = np.diag(H)
+   print(f"Leverage difference: {np.max(np.abs(leverage_qr - leverage_direct)):.2e}")
+
+Singular Value Decomposition (SVD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Theorem: Singular Value Decomposition
+   :class: theorem
+
+   Every matrix :math:`\mathbf{X} \in \mathbb{R}^{n \times p}` can be decomposed as:
+
+   .. math::
+
+      \mathbf{X} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top
+
+   where :math:`\mathbf{U} \in \mathbb{R}^{n \times n}` and :math:`\mathbf{V} \in \mathbb{R}^{p \times p}` are orthogonal, and :math:`\boldsymbol{\Sigma} \in \mathbb{R}^{n \times p}` is "diagonal" with non-negative entries :math:`\sigma_1 \geq \sigma_2 \geq \cdots \geq \sigma_{\min(n,p)} \geq 0` called the **singular values**.
+
+   The **thin SVD** (economical form) uses only the first :math:`r = \min(n, p)` singular values: :math:`\mathbf{X} = \mathbf{U}_r \boldsymbol{\Sigma}_r \mathbf{V}_r^\top`.
+
+The SVD is the most general decomposition — it applies to *any* matrix, not just square or PD ones. The singular values reveal the "energy" in each direction:
+
+* :math:`\sigma_i^2` are the eigenvalues of :math:`\mathbf{X}^\top\mathbf{X}` (the nonzero ones are also eigenvalues of :math:`\mathbf{X}\mathbf{X}^\top`)
+* Columns of :math:`\mathbf{V}` are the right singular vectors (eigenvectors of :math:`\mathbf{X}^\top\mathbf{X}`)
+* Columns of :math:`\mathbf{U}` are the left singular vectors (eigenvectors of :math:`\mathbf{X}\mathbf{X}^\top`)
+
+**Ridge regression** via SVD: The ridge estimator :math:`\hat{\boldsymbol{\beta}}_\lambda = (\mathbf{X}^\top\mathbf{X} + \lambda\mathbf{I})^{-1}\mathbf{X}^\top\mathbf{y}` becomes:
+
+.. math::
+
+   \hat{\boldsymbol{\beta}}_\lambda = \mathbf{V} \text{diag}\!\left(\frac{\sigma_i}{\sigma_i^2 + \lambda}\right) \mathbf{U}^\top \mathbf{y}
+
+Along each singular direction, the OLS component is shrunk by the factor :math:`\sigma_i^2 / (\sigma_i^2 + \lambda)`. Directions with small singular values (near-collinear predictors) are shrunk the most — this is why ridge regression stabilizes ill-conditioned problems.
+
+**Effective degrees of freedom** for ridge regression are :math:`\text{df}(\lambda) = \sum_i \sigma_i^2 / (\sigma_i^2 + \lambda)`, a smooth function that interpolates between :math:`p` (at :math:`\lambda = 0`) and :math:`0` (as :math:`\lambda \to \infty`). See :ref:`ch4_8-cross-validation`.
+
+**Condition number**: :math:`\kappa(\mathbf{X}) = \sigma_1 / \sigma_p`. A large condition number means the matrix is nearly singular — small perturbations in the data cause large changes in the solution. When :math:`\kappa \gg 1`, use QR or SVD rather than forming :math:`\mathbf{X}^\top\mathbf{X}`.
+
+.. code-block:: python
+
+   import numpy as np
+
+   rng = np.random.default_rng(42)
+   n, p = 100, 5
+   X = rng.standard_normal((n, p))
+
+   U, sigma, Vt = np.linalg.svd(X, full_matrices=False)
+   print(f"Singular values: {sigma.round(3)}")
+   print(f"Condition number: {sigma[0] / sigma[-1]:.2f}")
+
+   # Ridge regression via SVD
+   y = X @ np.ones(p) + rng.standard_normal(n)
+   lam = 1.0
+   d = sigma / (sigma**2 + lam)  # multiplies U.T @ y; shrinkage factor is sigma**2/(sigma**2 + lam)
+   beta_ridge = Vt.T @ (d * (U.T @ y))
+
+   # Effective degrees of freedom
+   df_ridge = np.sum(sigma**2 / (sigma**2 + lam))
+   print(f"Effective df: {df_ridge:.2f}")  # < p = 5
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig02_svd_ridge_shrinkage.png
+   :alt: Three panels on SVD and ridge regression: the design matrix's singular values with small near-collinear values highlighted in red, the per-component ridge shrinkage factors that damp weak directions most, and effective degrees of freedom decreasing smoothly from p to 0 as the penalty lambda grows.
+   :align: center
+   :width: 100%
+
+   **SVD and ridge regression shrinkage.** (a) Singular values of the design matrix — small values (red) indicate near-collinear directions. (b) Ridge shrinkage factors :math:`\sigma_i^2/(\sigma_i^2 + \lambda)` by SVD component: weak directions are shrunk most aggressively. (c) Effective degrees of freedom decrease smoothly from :math:`p` to 0 as regularization :math:`\lambda` increases.
+
+The SVD view explains *how much* ridge shrinks each direction. There is a complementary geometric picture of *where* the regularized solution lands: the penalty defines a constraint region in coefficient space, and the solution is the first point where the expanding RSS contours touch that region. The shape of the region — the smooth :math:`L_2` disk of ridge versus the cornered :math:`L_1` diamond of the LASSO — determines whether coefficients merely shrink or are set exactly to zero.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig06_ridge_lasso_geometry.png
+   :alt: RSS contour ellipses expanding until they touch the constraint region: the L2 circle (ridge) is touched away from the axes so both coefficients stay nonzero, while the L1 diamond (LASSO) is touched at a corner on an axis, producing a sparse solution.
+   :align: center
+   :width: 100%
+
+   **Regularization geometry: Ridge vs LASSO.** RSS contour ellipses expand outward from the unconstrained OLS solution until they touch the constraint region. (a) The :math:`L_2` circle (Ridge) has a smooth boundary, so the tangent point has both :math:`\beta_1, \beta_2 \neq 0`. (b) The :math:`L_1` diamond (LASSO) has corners on the coordinate axes; the first contour to touch the diamond typically hits a corner where :math:`\beta_j = 0`, producing a sparse solution. (c) The geometric argument summarized step by step, with a note on higher dimensions: the :math:`L_1` ball in :math:`p` dimensions has :math:`2p` corners, so corner contact — and hence automatic variable selection — becomes even more likely as :math:`p` grows.
+
+Decomposition Summary
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. flat-table:: When to Use Which Decomposition
+   :header-rows: 1
+
+   * - Decomposition
+     - Requirements
+     - Cost
+     - Primary Use in This Course
+
+   * - **Eigen** (:math:`\mathbf{Q}\boldsymbol{\Lambda}\mathbf{Q}^\top`)
+     - Symmetric
+     - :math:`O(n^3)`
+     - PCA, Markov chain convergence, definiteness tests
+
+   * - **Cholesky** (:math:`\mathbf{L}\mathbf{L}^\top`)
+     - Symmetric PD
+     - :math:`O(n^3/3)`
+     - Sampling correlated normals, solving PD systems
+
+   * - **QR** (:math:`\mathbf{Q}\mathbf{R}`)
+     - Full column rank
+     - :math:`O(2np^2)` for thin QR
+     - Numerically stable regression, leverage
+
+   * - **SVD** (:math:`\mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top`)
+     - Any matrix
+     - :math:`O(\min(mn^2, m^2n))`
+     - Ridge regression, condition number, rank determination
+
+
+Quadratic Forms and Covariance
+--------------------------------
+
+Quadratic forms — expressions of the form :math:`\mathbf{x}^\top\mathbf{A}\mathbf{x}` — are ubiquitous in statistics. They appear in the multivariate normal density, in sum-of-squares decompositions, in the chi-square distribution, and in every optimization problem involving least squares.
+
+Quadratic Forms
+~~~~~~~~~~~~~~~~
+
+For a symmetric matrix :math:`\mathbf{A} \in \mathbb{R}^{n \times n}` and vector :math:`\mathbf{x} \in \mathbb{R}^n`:
+
+.. math::
+
+   Q(\mathbf{x}) = \mathbf{x}^\top \mathbf{A} \mathbf{x} = \sum_{i=1}^n \sum_{j=1}^n A_{ij} x_i x_j
+
+The sign behavior of :math:`Q` is determined by the definiteness of :math:`\mathbf{A}`:
+
+* :math:`\mathbf{A}` positive definite :math:`\Rightarrow Q(\mathbf{x}) > 0` for all :math:`\mathbf{x} \neq \mathbf{0}` (bowl opening upward)
+* :math:`\mathbf{A}` negative definite :math:`\Rightarrow Q(\mathbf{x}) < 0` for all :math:`\mathbf{x} \neq \mathbf{0}` (bowl opening downward)
+* :math:`\mathbf{A}` indefinite :math:`\Rightarrow Q` takes both positive and negative values (saddle)
+
+**Statistical connection**: The Mahalanobis distance :math:`(\mathbf{x} - \boldsymbol{\mu})^\top \boldsymbol{\Sigma}^{-1} (\mathbf{x} - \boldsymbol{\mu})` in the multivariate normal density is a quadratic form in :math:`\boldsymbol{\Sigma}^{-1}`. Its level sets are ellipsoids whose axes align with the eigenvectors of :math:`\boldsymbol{\Sigma}`.
+
+**Chi-square connection**: If :math:`\mathbf{Z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_p)`, then :math:`\mathbf{Z}^\top\mathbf{Z} = \sum_{i=1}^p Z_i^2 \sim \chi^2_p`. More generally, if :math:`\mathbf{P}` is a symmetric idempotent matrix of rank :math:`r`, then :math:`\mathbf{Z}^\top\mathbf{P}\mathbf{Z} \sim \chi^2_r`. This is the basis for the chi-square distribution of RSS/:math:`\sigma^2` in linear models.
+
+Covariance Matrices
+~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   The **covariance matrix** of a random vector :math:`\mathbf{X} = (X_1, \ldots, X_p)^\top` is:
+
+   .. math::
+
+      \boldsymbol{\Sigma} = \text{Var}(\mathbf{X}) = \mathbb{E}[(\mathbf{X} - \boldsymbol{\mu})(\mathbf{X} - \boldsymbol{\mu})^\top]
+
+   where :math:`\Sigma_{ij} = \text{Cov}(X_i, X_j)` and :math:`\boldsymbol{\mu} = \mathbb{E}[\mathbf{X}]`.
+
+Every covariance matrix is symmetric and positive semi-definite (PSD). It is PD if and only if no component is a deterministic linear combination of others.
+
+**Variance of linear combinations.** For a constant matrix :math:`\mathbf{A}` and random vector :math:`\mathbf{X}`:
+
+.. math::
+
+   \text{Var}(\mathbf{A}\mathbf{X}) = \mathbf{A} \text{Var}(\mathbf{X}) \mathbf{A}^\top
+
+This formula propagates uncertainty through linear transformations and is the matrix foundation for:
+
+* The variance of the OLS estimator: :math:`\text{Var}(\hat{\boldsymbol{\beta}}) = \sigma^2 (\mathbf{X}^\top\mathbf{X})^{-1}`
+* The sandwich estimator for robust variance: :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\text{diag}(e_i^2)\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}`
+* The multivariate delta method: :math:`\text{Var}(g(\hat{\boldsymbol{\theta}})) \approx \mathbf{J} \text{Var}(\hat{\boldsymbol{\theta}}) \mathbf{J}^\top`
+
+.. admonition:: Derivation: Variance of OLS Estimator
+   :class: proof
+
+   Under the model :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}` with :math:`\text{Var}(\boldsymbol{\varepsilon}) = \sigma^2 \mathbf{I}`:
+
+   .. math::
+
+      \text{Var}(\hat{\boldsymbol{\beta}}) = \text{Var}\!\left((\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{y}\right) = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \cdot \sigma^2\mathbf{I} \cdot \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1} = \sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}
+
+   using the :math:`\text{Var}(\mathbf{A}\mathbf{X}) = \mathbf{A}\text{Var}(\mathbf{X})\mathbf{A}^\top` rule with :math:`\mathbf{A} = (\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`.
+
+.. code-block:: python
+
+   import numpy as np
+
+   rng = np.random.default_rng(42)
+   n, p = 1000, 3
+   true_beta = np.array([1, 2, -1])
+   sigma = 0.5
+
+   X = rng.standard_normal((n, p))
+   y = X @ true_beta + sigma * rng.standard_normal(n)
+
+   # OLS and its variance
+   XtX_inv = np.linalg.inv(X.T @ X)
+   beta_hat = XtX_inv @ X.T @ y
+   s2 = np.sum((y - X @ beta_hat)**2) / (n - p)
+   var_beta = s2 * XtX_inv
+
+   print(f"Estimated beta: {beta_hat.round(4)}")
+   print(f"Standard errors: {np.sqrt(np.diag(var_beta)).round(4)}")
+
+
+.. _matrix-calculus-section:
+
+Matrix Calculus
+----------------
+
+Optimization-based inference — MLE, MAP estimation, Fisher scoring — requires taking derivatives of scalar functions with respect to vectors and matrices. Matrix calculus provides compact notation for these operations.
+
+Gradients of Scalar Functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a scalar-valued function :math:`f: \mathbb{R}^p \to \mathbb{R}`, the **gradient** is the column vector of partial derivatives:
+
+.. math::
+
+   \nabla_{\boldsymbol{\theta}} f = \frac{\partial f}{\partial \boldsymbol{\theta}} = \begin{pmatrix} \partial f / \partial \theta_1 \\ \vdots \\ \partial f / \partial \theta_p \end{pmatrix}
+
+The gradient points in the direction of steepest ascent. Setting :math:`\nabla f = \mathbf{0}` finds critical points — the basis for all optimization-based estimation.
+
+**Key gradient identities** (for constant :math:`\mathbf{a}`, :math:`\mathbf{b}`, and symmetric :math:`\mathbf{A}`):
+
+.. math::
+
+   \nabla_{\mathbf{x}} (\mathbf{a}^\top \mathbf{x}) &= \mathbf{a} \\
+   \nabla_{\mathbf{x}} (\mathbf{x}^\top \mathbf{A} \mathbf{x}) &= 2\mathbf{A}\mathbf{x} \\
+   \nabla_{\mathbf{x}} (\mathbf{x}^\top \mathbf{a}) &= \mathbf{a} \\
+   \nabla_{\mathbf{x}} (\mathbf{b}^\top \mathbf{A} \mathbf{x}) &= \mathbf{A}^\top \mathbf{b}
+
+.. admonition:: Derivation: Gradient of a Quadratic Form
+   :class: proof
+
+   For symmetric :math:`\mathbf{A}`, write out :math:`f(\mathbf{x}) = \mathbf{x}^\top\mathbf{A}\mathbf{x} = \sum_i \sum_j A_{ij} x_i x_j`. Then:
+
+   .. math::
+
+      \frac{\partial f}{\partial x_k} = \sum_j A_{kj} x_j + \sum_i A_{ik} x_i = 2 \sum_j A_{kj} x_j
+
+   where the last equality uses :math:`A_{ik} = A_{ki}` (symmetry). In matrix notation, this is :math:`2\mathbf{A}\mathbf{x}`.
+
+The Hessian Matrix
+~~~~~~~~~~~~~~~~~~~
+
+The **Hessian** is the matrix of second partial derivatives:
+
+.. math::
+
+   \mathbf{H}_f(\boldsymbol{\theta}) = \nabla^2 f = \begin{pmatrix} \frac{\partial^2 f}{\partial \theta_1^2} & \cdots & \frac{\partial^2 f}{\partial \theta_1 \partial \theta_p} \\ \vdots & \ddots & \vdots \\ \frac{\partial^2 f}{\partial \theta_p \partial \theta_1} & \cdots & \frac{\partial^2 f}{\partial \theta_p^2} \end{pmatrix}
+
+The Hessian is always symmetric (by equality of mixed partials for smooth functions). At a critical point :math:`\boldsymbol{\theta}^*`:
+
+* :math:`\mathbf{H}` negative definite :math:`\Rightarrow` local maximum (used to verify MLEs)
+* :math:`\mathbf{H}` positive definite :math:`\Rightarrow` local minimum
+
+In MLE, the **observed Fisher information** is :math:`\mathbf{J}(\hat{\boldsymbol{\theta}}) = -\mathbf{H}_\ell(\hat{\boldsymbol{\theta}})` — the negative Hessian of the log-likelihood evaluated at the MLE. Its inverse estimates the covariance of :math:`\hat{\boldsymbol{\theta}}` (see :ref:`ch3_2-maximum-likelihood-estimation`).
+
+Derivative of Log-Determinant
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a positive definite matrix :math:`\mathbf{A}(\boldsymbol{\theta})` that depends on parameters:
+
+.. math::
+
+   \frac{\partial}{\partial \theta_k} \log \det(\mathbf{A}) = \text{tr}\!\left(\mathbf{A}^{-1} \frac{\partial \mathbf{A}}{\partial \theta_k}\right)
+
+This identity appears in ML estimation for linear models (differentiating the normal log-likelihood with respect to variance parameters) and in computing the Fisher information for multivariate models.
+
+.. _jacobian-section:
+
+Jacobian and Change of Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Definition
+   :class: definition
+
+   The **Jacobian matrix** of a vector-valued function :math:`\mathbf{g}: \mathbb{R}^p \to \mathbb{R}^q` is:
+
+   .. math::
+
+      \mathbf{J}_{\mathbf{g}}(\mathbf{x}) = \frac{\partial \mathbf{g}}{\partial \mathbf{x}^\top} = \begin{pmatrix} \partial g_1/\partial x_1 & \cdots & \partial g_1/\partial x_p \\ \vdots & \ddots & \vdots \\ \partial g_q/\partial x_1 & \cdots & \partial g_q/\partial x_p \end{pmatrix}
+
+The Jacobian plays two roles in this course:
+
+1. **Change of variables in densities**: If :math:`\mathbf{Y} = \mathbf{g}(\mathbf{X})` where :math:`\mathbf{g}` is a bijection, then:
+
+   .. math::
+
+      f_{\mathbf{Y}}(\mathbf{y}) = f_{\mathbf{X}}(\mathbf{g}^{-1}(\mathbf{y})) \cdot \left|\det \mathbf{J}_{\mathbf{g}^{-1}}(\mathbf{y})\right|
+
+   This is essential for deriving distributions of transformed random vectors (see :ref:`ch2.4-transformation-methods`) and for constructing Jeffreys priors under reparameterization (see :ref:`ch5_2-prior-distributions`).
+
+2. **Multivariate delta method**: For an estimator :math:`\hat{\boldsymbol{\theta}} \xrightarrow{d} \mathcal{N}(\boldsymbol{\theta}, \boldsymbol{\Sigma}/n)` and a smooth function :math:`\mathbf{g}`:
+
+   .. math::
+
+      \mathbf{g}(\hat{\boldsymbol{\theta}}) \xrightarrow{d} \mathcal{N}\!\left(\mathbf{g}(\boldsymbol{\theta}),\; \mathbf{J}_{\mathbf{g}}(\boldsymbol{\theta}) \frac{\boldsymbol{\Sigma}}{n} \mathbf{J}_{\mathbf{g}}(\boldsymbol{\theta})^\top\right)
+
+   See :ref:`ch3_3-sampling-variability` for the full development.
+
+
+Numerical Considerations
+--------------------------
+
+The formulas in this appendix are exact in real arithmetic, but computers compute in finite-precision floating point, where mathematically equivalent algorithms can differ enormously in accuracy. This section introduces the condition number — the standard measure of how much a problem amplifies small errors — and the practical rules it implies for statistical computation.
+
+Condition Number and Stability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **condition number** of a matrix :math:`\mathbf{A}` measures how sensitive the solution of :math:`\mathbf{A}\mathbf{x} = \mathbf{b}` is to perturbations in :math:`\mathbf{A}` or :math:`\mathbf{b}`:
+
+.. math::
+
+   \kappa(\mathbf{A}) = \|\mathbf{A}\| \cdot \|\mathbf{A}^{-1}\| = \frac{\sigma_{\max}}{\sigma_{\min}}
+
+where :math:`\sigma_{\max}` and :math:`\sigma_{\min}` are the largest and smallest singular values. A relative perturbation of size :math:`\epsilon` in the data can cause a relative perturbation of up to :math:`\kappa \cdot \epsilon` in the solution.
+
+Rules of thumb:
+
+* :math:`\kappa \approx 1`: Well-conditioned (orthogonal matrices have :math:`\kappa = 1`)
+* :math:`\kappa \approx 10^k`: Expect to lose about :math:`k` digits of accuracy
+* :math:`\kappa > 10^{15}`: Effectively singular in double precision (:math:`\approx 16` digits)
+
+When :math:`\kappa(\mathbf{X})` is large (due to near-collinear predictors), forming :math:`\mathbf{X}^\top\mathbf{X}` squares the condition number to :math:`\kappa^2` — potentially catastrophic (see :ref:`Appendix C <appendix-numerical-analysis>` for how floating-point precision and condition numbers interact to determine digits of accuracy lost). This is why numerical linear algebra avoids :math:`\mathbf{X}^\top\mathbf{X}` and instead uses QR or SVD.
+
+.. figure:: https://pqyjaywwccbnqpwgeiuv.supabase.co/storage/v1/object/public/STAT%20418%20Images/assets/Appendices/appendix_c_fig05_condition_number.png
+   :alt: Three panels contrasting a well-conditioned system, where small perturbations of b barely move the solution, with an ill-conditioned system, where the same perturbations scatter the solution widely, plus the condition-number bound on worst-case error amplification.
+   :align: center
+   :width: 100%
+
+   **Condition number and perturbation sensitivity.** (a) A well-conditioned system: small perturbations in :math:`\mathbf{b}` cause small changes in the solution. (b) An ill-conditioned system: the same perturbations cause the solution to scatter wildly. (c) The error amplification bound: the condition number :math:`\kappa` multiplies input perturbations to give the worst-case output error.
+
+Avoiding :math:`\mathbf{X}^\top\mathbf{X}`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following operations should use decompositions rather than forming :math:`\mathbf{X}^\top\mathbf{X}` explicitly:
+
+.. flat-table:: Numerical Best Practices
+   :header-rows: 1
+
+   * - Task
+     - Naive (Avoid)
+     - Stable (Prefer)
+
+   * - Solve :math:`\mathbf{X}^\top\mathbf{X}\boldsymbol{\beta} = \mathbf{X}^\top\mathbf{y}`
+     - ``inv(X.T @ X) @ X.T @ y``
+     - ``np.linalg.lstsq(X, y)`` (uses SVD internally)
+
+   * - Compute leverage :math:`h_{ii}`
+     - ``diag(X @ inv(X.T @ X) @ X.T)``
+     - ``Q, R = qr(X); sum(Q**2, axis=1)``
+
+   * - Solve PD system :math:`\mathbf{A}\mathbf{x} = \mathbf{b}`
+     - ``inv(A) @ b``
+     - ``np.linalg.solve(A, b)`` or ``cho_solve(cho_factor(A), b)``
+
+Near-Singular Matrices
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a covariance matrix is theoretically PD but numerically near-singular (e.g., due to highly correlated variables or limited floating-point precision), the Cholesky decomposition may fail. Common remedies:
+
+* **Jitter**: Add a small multiple of the identity: :math:`\boldsymbol{\Sigma} + \epsilon \mathbf{I}` with :math:`\epsilon \sim 10^{-6}`. This nudges all eigenvalues away from zero.
+* **Regularization**: Use ridge-type shrinkage toward the identity: :math:`(1-\alpha)\boldsymbol{\Sigma} + \alpha \mathbf{I}`
+* **Pivoted Cholesky**: Detects and handles rank deficiency gracefully
+
+.. code-block:: python
+
+   import numpy as np
+
+   # Ill-conditioned design matrix
+   rng = np.random.default_rng(42)
+   X = rng.standard_normal((100, 5))
+   X[:, 4] = X[:, 3] + 1e-8 * rng.standard_normal(100)  # nearly collinear
+
+   print(f"Condition number of X: {np.linalg.cond(X):.2e}")
+   print(f"Condition number of X'X: {np.linalg.cond(X.T @ X):.2e}")  # squared!
+
+   # QR is stable even here
+   Q, R = np.linalg.qr(X)
+   y = rng.standard_normal(100)
+   beta = np.linalg.solve(R, Q.T @ y)  # works fine
+
+
+Key Takeaways
+--------------
+
+.. admonition:: Key Takeaways 📝
+   :class: important
+
+   1. **Matrices are linear transformations**, not just arrays of numbers. Reading :math:`\mathbf{H}\mathbf{y}` as "project :math:`\mathbf{y}` onto the column space" is more useful than computing entry by entry.
+
+   2. **Special structure enables shortcuts**: Symmetric → real eigenvalues; PD → Cholesky; idempotent → eigenvalues in {0,1}; block diagonal → invert each block independently.
+
+   3. **Block matrix algebra** (Schur complement, Sherman-Morrison-Woodbury) turns expensive :math:`n \times n` problems into cheaper :math:`k \times k` problems when structure is present.
+
+   4. **Decompositions reveal structure**: Eigen shows principal directions; Cholesky enables sampling; QR gives numerical stability; SVD handles everything else (rank, condition, regularization).
+
+   5. **Variance propagates through linear transformations** by :math:`\text{Var}(\mathbf{A}\mathbf{X}) = \mathbf{A}\text{Var}(\mathbf{X})\mathbf{A}^\top` — the single rule behind the OLS variance :math:`\sigma^2(\mathbf{X}^\top\mathbf{X})^{-1}`, the delta method, and Cholesky-based sampling of correlated normals.
+
+   6. **Never form** :math:`\mathbf{X}^\top\mathbf{X}` **when you can avoid it**. Use QR or SVD for regression. Use ``solve`` instead of ``inv``. Use Cholesky for PD systems. The algorithms are faster *and* more accurate.
+
+   7. **Matrix calculus** is the language of multivariate optimization: the gradient finds critical points, the Hessian classifies them, and the Jacobian propagates uncertainty through transformations.
+
+
+Looking Ahead
+--------------
+
+The linear algebra developed here supports multiple threads in the main course:
+
+* **Chapters 3-4**: The hat matrix, projection geometry, QR decomposition, and Sherman-Morrison-Woodbury formula are the computational backbone of linear models, influence diagnostics, and cross-validation shortcuts.
+
+* **Chapter 5**: Stochastic matrices and eigendecomposition govern Markov chain convergence, Cholesky decomposition enables correlated proposals in MCMC, and the mass matrix in HMC is a covariance-scaled inner product.
+
+* **Throughout**: Matrix calculus (gradients, Hessians, Jacobians) is the shared language of Fisher information, Newton-Raphson optimization, the delta method, and automatic differentiation.
+
+
+Practice Problems
+------------------
+
+These exercises connect the linear algebra concepts from this appendix to their statistical applications, combining mathematical derivations with computational verification.
+
+.. admonition:: Exercise 1: Projection Geometry and the Hat Matrix
+   :class: exercise
+
+   In linear regression, the hat matrix :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` projects the response vector onto the column space of :math:`\mathbf{X}`. This exercise explores its geometric and statistical properties.
+
+   a. Given a design matrix :math:`\mathbf{X}` (:math:`n=50`, :math:`p=3` with intercept + 2 predictors), compute :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top`. Prove mathematically that :math:`\mathbf{H}` is symmetric and idempotent, then verify computationally.
+
+      .. admonition:: Hint: Symmetry and Idempotency
+         :class: tip
+
+         For symmetry, take the transpose and use :math:`(\mathbf{A}\mathbf{B})^\top = \mathbf{B}^\top\mathbf{A}^\top`. For idempotency, expand :math:`\mathbf{H}^2` and simplify using the fact that :math:`(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\mathbf{X} = \mathbf{I}`.
+
+   b. Show that the diagonal entries :math:`h_{ii}` (leverage values) satisfy :math:`1/n \leq h_{ii} \leq 1`, and that they sum to :math:`p`. Compute leverage for your :math:`\mathbf{X}` and identify the highest-leverage observation. Explain geometrically why leverage measures "distance from the center of predictor space."
+
+      .. admonition:: Hint: Leverage Bounds
+         :class: tip
+
+         :math:`h_{ii} = \mathbf{x}_i^\top(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{x}_i` is a quadratic form. The bounds come from :math:`\mathbf{H}` being idempotent (eigenvalues 0 or 1) and the trace equaling :math:`p`. Since :math:`\text{tr}(\mathbf{H}) = p` and :math:`0 \leq h_{ii} \leq 1`, the average leverage is :math:`p/n`.
+
+   c. Add an outlier at a high-leverage point: set one observation's predictors to extreme values and its response to an unusual value. Show how the hat matrix concentrates influence — compare the fitted value at the outlier with and without using the hat matrix to quantify how much the outlier "pulls" the fit toward itself.
+
+      .. admonition:: Hint: Influence at High-Leverage Points
+         :class: tip
+
+         For a high-leverage point, :math:`h_{ii}` is close to 1, meaning :math:`\hat{y}_i \approx y_i` — the fit is forced through that point regardless of the other data. This is because :math:`\hat{y}_i = h_{ii} y_i + \sum_{j \neq i} h_{ij} y_j`, and when :math:`h_{ii} \approx 1`, the first term dominates.
+
+   d. Verify the fundamental orthogonality: :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{0}` where :math:`\mathbf{e} = (\mathbf{I} - \mathbf{H})\mathbf{y}`. Interpret geometrically: the residual vector is perpendicular to every column of :math:`\mathbf{X}`.
+
+      .. admonition:: Hint: Orthogonality of Residuals
+         :class: tip
+
+         Expand :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{X}^\top(\mathbf{I} - \mathbf{H})\mathbf{y} = \mathbf{X}^\top\mathbf{y} - \mathbf{X}^\top\mathbf{H}\mathbf{y}`. Then substitute :math:`\mathbf{H} = \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top` and simplify: :math:`\mathbf{X}^\top\mathbf{H} = \mathbf{X}^\top\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{X}^\top`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Symmetry and Idempotency — Mathematical Proof**
+
+      **Symmetry:**
+
+      .. math::
+
+         \mathbf{H}^\top &= \left[\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top\right]^\top \\
+         &= (\mathbf{X}^\top)^\top \left[(\mathbf{X}^\top\mathbf{X})^{-1}\right]^\top \mathbf{X}^\top \\
+         &= \mathbf{X} \left[(\mathbf{X}^\top\mathbf{X})^\top\right]^{-1} \mathbf{X}^\top \\
+         &= \mathbf{X} (\mathbf{X}^\top\mathbf{X})^{-1} \mathbf{X}^\top = \mathbf{H}
+
+      where we used :math:`(\mathbf{X}^\top\mathbf{X})^\top = \mathbf{X}^\top\mathbf{X}` (symmetric matrix) and :math:`(\mathbf{A}^{-1})^\top = (\mathbf{A}^\top)^{-1}`.
+
+      **Idempotency:**
+
+      .. math::
+
+         \mathbf{H}^2 &= \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \cdot \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top \\
+         &= \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1} \underbrace{(\mathbf{X}^\top\mathbf{X})(\mathbf{X}^\top\mathbf{X})^{-1}}_{\mathbf{I}} \mathbf{X}^\top \\
+         &= \mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{H}
+
+      **Computational Verification:**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         # Design matrix: intercept + 2 predictors, n=50, p=3
+         n, p = 50, 3
+         X = np.column_stack([
+             np.ones(n),
+             rng.standard_normal(n),
+             rng.standard_normal(n)
+         ])
+
+         # Hat matrix
+         H = X @ np.linalg.solve(X.T @ X, X.T)
+
+         # Verify symmetry: H = H^T
+         sym_error = np.max(np.abs(H - H.T))
+         print(f"Symmetry check: max|H - H^T| = {sym_error:.2e}")
+
+         # Verify idempotency: H^2 = H
+         idem_error = np.max(np.abs(H @ H - H))
+         print(f"Idempotency check: max|H^2 - H| = {idem_error:.2e}")
+
+         # Eigenvalues should be 0 or 1
+         eigvals = np.linalg.eigvalsh(H)
+         print(f"\nEigenvalues of H (sorted):")
+         print(f"  Number near 0: {np.sum(np.abs(eigvals) < 1e-10)}")
+         print(f"  Number near 1: {np.sum(np.abs(eigvals - 1) < 1e-10)}")
+         print(f"  Trace(H) = sum of eigenvalues = {np.trace(H):.6f} (should be p={p})")
+
+      .. code-block:: text
+
+         Symmetry check: max|H - H^T| = 2.78e-17
+         Idempotency check: max|H^2 - H| = 4.16e-17
+
+         Eigenvalues of H (sorted):
+           Number near 0: 47
+           Number near 1: 3
+           Trace(H) = sum of eigenvalues = 3.000000 (should be p=3)
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (b): Leverage Values**
+
+      Since :math:`\text{tr}(\mathbf{H}) = p` and :math:`\mathbf{H}` is idempotent with eigenvalues in :math:`\{0, 1\}`, each diagonal satisfies :math:`0 \leq h_{ii} \leq 1`. When :math:`\mathbf{X}` includes an intercept column, we additionally have :math:`h_{ii} \geq 1/n` because the intercept contribution alone gives :math:`1/n`.
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 50, 3
+         X = np.column_stack([
+             np.ones(n),
+             rng.standard_normal(n),
+             rng.standard_normal(n)
+         ])
+
+         H = X @ np.linalg.solve(X.T @ X, X.T)
+         leverages = np.diag(H)
+
+         print(f"Leverage statistics:")
+         print(f"  Sum of leverages: {np.sum(leverages):.6f} (should be p={p})")
+         print(f"  Mean leverage: {np.mean(leverages):.6f} (should be p/n={p/n:.4f})")
+         print(f"  Min leverage: {np.min(leverages):.6f} (lower bound 1/n={1/n:.4f})")
+         print(f"  Max leverage: {np.max(leverages):.6f} (upper bound 1)")
+         print(f"\nHighest-leverage observation:")
+         i_max = np.argmax(leverages)
+         print(f"  Index: {i_max}")
+         print(f"  Leverage h_ii: {leverages[i_max]:.6f}")
+         print(f"  Predictor values: x1={X[i_max, 1]:.4f}, x2={X[i_max, 2]:.4f}")
+         print(f"  Distance from predictor centroid: {np.sqrt(np.sum((X[i_max, 1:] - X[:, 1:].mean(axis=0))**2)):.4f}")
+
+      .. code-block:: text
+
+         Leverage statistics:
+           Sum of leverages: 3.000000 (should be p=3)
+           Mean leverage: 0.060000 (should be p/n=0.0600)
+           Min leverage: 0.020281 (lower bound 1/n=0.0200)
+           Max leverage: 0.183434 (upper bound 1)
+
+         Highest-leverage observation:
+           Index: 30
+           Leverage h_ii: 0.183434
+           Predictor values: x1=2.1416, x2=0.4568
+           Distance from predictor centroid: 2.1506
+
+      The highest-leverage point is the one farthest from the centroid of the predictor space, confirming the geometric interpretation: leverage measures how "unusual" an observation's predictor values are.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (c): Outlier at a High-Leverage Point**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 50, 3
+         X = np.column_stack([
+             np.ones(n),
+             rng.standard_normal(n),
+             rng.standard_normal(n)
+         ])
+         beta_true = np.array([2.0, -1.5, 0.8])
+         y = X @ beta_true + 0.5 * rng.standard_normal(n)
+
+         # Create a high-leverage outlier: extreme predictor values, unusual response
+         X_outlier = X.copy()
+         y_outlier = y.copy()
+         X_outlier[0, 1] = 8.0   # Far from center
+         X_outlier[0, 2] = 8.0
+         y_outlier[0] = 50.0     # Unusual response
+
+         # Compute hat matrix with the outlier
+         H_out = X_outlier @ np.linalg.solve(X_outlier.T @ X_outlier, X_outlier.T)
+         leverages_out = np.diag(H_out)
+
+         print(f"Leverage of outlier point: h_00 = {leverages_out[0]:.6f}")
+         print(f"Next highest leverage: {np.sort(leverages_out)[-2]:.6f}")
+
+         # Fitted values
+         beta_hat = np.linalg.solve(X_outlier.T @ X_outlier, X_outlier.T @ y_outlier)
+         y_hat = X_outlier @ beta_hat
+
+         print(f"\nOutlier: y_0 = {y_outlier[0]:.2f}, y_hat_0 = {y_hat[0]:.4f}")
+         print(f"Ratio y_hat_0 / y_0 = {y_hat[0] / y_outlier[0]:.4f}")
+         print(f"h_00 = {leverages_out[0]:.4f} (close to ratio above)")
+         print(f"\nInterpretation: since h_00 ≈ {leverages_out[0]:.3f}, the fit is")
+         print(f"forced {100*leverages_out[0]:.1f}% of the way toward the outlier's y-value.")
+
+      .. code-block:: text
+
+         Leverage of outlier point: h_00 = 0.825435
+         Next highest leverage: 0.109281
+
+         Outlier: y_0 = 50.00, y_hat_0 = 40.8597
+         Ratio y_hat_0 / y_0 = 0.8172
+         h_00 = 0.8254 (close to ratio above)
+
+         Interpretation: since h_00 ≈ 0.825, the fit is
+         forced 82.5% of the way toward the outlier's y-value.
+
+      With :math:`h_{ii} \approx 0.83`, the regression is forced mostly through the outlier regardless of the other 49 observations. This is the danger of high-leverage points: they can dominate the fit.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (d): Orthogonality of Residuals**
+
+      **Proof:** :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{X}^\top(\mathbf{I} - \mathbf{H})\mathbf{y} = \mathbf{X}^\top\mathbf{y} - \mathbf{X}^\top\mathbf{H}\mathbf{y}`.
+
+      Substituting :math:`\mathbf{H}`:
+
+      .. math::
+
+         \mathbf{X}^\top\mathbf{H} = \mathbf{X}^\top\mathbf{X}(\mathbf{X}^\top\mathbf{X})^{-1}\mathbf{X}^\top = \mathbf{X}^\top
+
+      Therefore :math:`\mathbf{X}^\top\mathbf{e} = \mathbf{X}^\top\mathbf{y} - \mathbf{X}^\top\mathbf{y} = \mathbf{0}`.
+
+      **Geometric interpretation:** The residual vector :math:`\mathbf{e}` lives in the orthogonal complement of :math:`\text{col}(\mathbf{X})`. It is perpendicular to every column of :math:`\mathbf{X}`, including the intercept column (which forces :math:`\sum e_i = 0`).
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 50, 3
+         X = np.column_stack([
+             np.ones(n),
+             rng.standard_normal(n),
+             rng.standard_normal(n)
+         ])
+         beta_true = np.array([2.0, -1.5, 0.8])
+         y = X @ beta_true + 0.5 * rng.standard_normal(n)
+
+         # Compute hat matrix and residuals
+         H = X @ np.linalg.solve(X.T @ X, X.T)
+         y_hat = H @ y
+         e = y - y_hat  # equivalently, (I - H) @ y
+
+         # Verify orthogonality
+         ortho_check = X.T @ e
+         print("X^T @ e (should be zero vector):")
+         print(f"  {ortho_check}")
+         print(f"  Max absolute value: {np.max(np.abs(ortho_check)):.2e}")
+
+         # Consequence: residuals sum to zero (orthogonal to intercept column)
+         print(f"\nSum of residuals: {np.sum(e):.2e} (orthogonal to ones column)")
+         print(f"Correlation of residuals with x1: {np.corrcoef(X[:, 1], e)[0, 1]:.2e}")
+         print(f"Correlation of residuals with x2: {np.corrcoef(X[:, 2], e)[0, 1]:.2e}")
+
+      .. code-block:: text
+
+         X^T @ e (should be zero vector):
+           [ 4.44089210e-15 -1.50920942e-15  2.66453526e-15]
+           Max absolute value: 4.44e-15
+
+         Sum of residuals: 4.44e-15 (orthogonal to ones column)
+         Correlation of residuals with x1: -9.63e-17
+         Correlation of residuals with x2: 1.95e-16
+
+      The residuals are orthogonal to the column space of :math:`\mathbf{X}` to machine precision, confirming the projection geometry.
+
+.. admonition:: Exercise 2: Matrix Decompositions for Ill-Conditioned Regression
+   :class: exercise
+
+   When predictors are nearly collinear, the normal equations become numerically unstable. This exercise compares decomposition-based approaches and introduces ridge regularization through the SVD lens.
+
+   a. Create an ill-conditioned design matrix: generate :math:`\mathbf{X}` (:math:`n=100`, :math:`p=5`) with ``rng.standard_normal``, then set ``X[:,4] = X[:,3] + 1e-6 * rng.standard_normal(100)`` to create near-collinearity. Compute :math:`\kappa(\mathbf{X})` and :math:`\kappa(\mathbf{X}^\top\mathbf{X})` and verify the squaring relationship.
+
+      .. admonition:: Hint: Condition Number Squaring
+         :class: tip
+
+         ``np.linalg.cond()`` computes the condition number. For well-conditioned :math:`\mathbf{X}`, :math:`\kappa(\mathbf{X}^\top\mathbf{X}) \approx \kappa(\mathbf{X})^2`. This is because the singular values of :math:`\mathbf{X}^\top\mathbf{X}` are the squares of the singular values of :math:`\mathbf{X}`.
+
+   b. Generate :math:`\mathbf{y} = \mathbf{X}\boldsymbol{\beta} + \boldsymbol{\varepsilon}` with known :math:`\boldsymbol{\beta} = [1, -2, 1.5, 0.5, -0.3]^\top` and solve OLS three ways: (1) Normal equations via ``np.linalg.inv(X.T @ X) @ X.T @ y``, (2) QR decomposition, (3) ``np.linalg.lstsq``. Compare the solutions — does any method recover :math:`\boldsymbol{\beta}` accurately? Explain why not.
+
+      .. admonition:: Hint: QR Solution Method
+         :class: tip
+
+         For QR, factor :math:`\mathbf{X} = \mathbf{Q}\mathbf{R}`, then :math:`\hat{\boldsymbol{\beta}} = \mathbf{R}^{-1}\mathbf{Q}^\top\mathbf{y}` via ``np.linalg.solve(R, Q.T @ y)``. ``lstsq`` uses SVD internally and is the most robust.
+
+   c. Apply ridge regression via the SVD: compute :math:`\mathbf{X} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top` and show that :math:`\hat{\boldsymbol{\beta}}_{\text{ridge}} = \mathbf{V} \text{diag}\left(\frac{\sigma_i}{\sigma_i^2 + \lambda}\right) \mathbf{U}^\top\mathbf{y}`. For :math:`\lambda \in \{0.001, 0.1, 1, 10\}`, compute the shrinkage factors and effective degrees of freedom :math:`\text{df}(\lambda) = \sum_i \frac{\sigma_i^2}{\sigma_i^2 + \lambda}`.
+
+      .. admonition:: Hint: SVD Shrinkage Geometry
+         :class: tip
+
+         Small singular values (the near-collinear directions) get shrunk most aggressively. This is the geometric insight: ridge regression stabilizes by damping the directions where :math:`\mathbf{X}` has little information. The shrinkage factor :math:`\sigma_i^2 / (\sigma_i^2 + \lambda)` is near 1 for large :math:`\sigma_i` and near 0 for small :math:`\sigma_i`.
+
+   d. Demonstrate the Cholesky speed advantage: for a :math:`500 \times 500` positive definite matrix, time ``scipy.linalg.solve(A, b)`` (general LU-based) vs ``scipy.linalg.cho_solve(scipy.linalg.cho_factor(A), b)``. For solving multiple right-hand sides (e.g., 100), show that Cholesky factorize-once-solve-many is faster.
+
+      .. admonition:: Hint: Cholesky Factorize-Once Strategy
+         :class: tip
+
+         Use ``import time`` for simple timing. ``cho_factor`` computes :math:`\mathbf{L}` once; ``cho_solve`` reuses it for each :math:`\mathbf{b}`. The advantage grows with the number of right-hand sides because the :math:`O(n^3)` factorization is done once rather than repeatedly.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Condition Number and the Squaring Relationship**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 100, 5
+         X = rng.standard_normal((n, p))
+
+         # Create near-collinearity: column 4 ≈ column 3
+         X[:, 4] = X[:, 3] + 1e-6 * rng.standard_normal(n)
+
+         cond_X = np.linalg.cond(X)
+         cond_XtX = np.linalg.cond(X.T @ X)
+
+         print(f"Condition number of X: κ(X) = {cond_X:.4e}")
+         print(f"Condition number of X'X: κ(X'X) = {cond_XtX:.4e}")
+         print(f"κ(X)^2 = {cond_X**2:.4e}")
+         print(f"Ratio κ(X'X) / κ(X)^2 = {cond_XtX / cond_X**2:.6f}")
+         print(f"\nSingular values of X:")
+         svs = np.linalg.svd(X, compute_uv=False)
+         for i, sv in enumerate(svs):
+             print(f"  σ_{i+1} = {sv:.6f}")
+         print(f"\nRatio σ_max/σ_min = {svs[0]/svs[-1]:.4e} = κ(X)")
+
+      .. code-block:: text
+
+         Condition number of X: κ(X) = 2.0454e+06
+         Condition number of X'X: κ(X'X) = 4.1796e+12
+         κ(X)^2 = 4.1835e+12
+         Ratio κ(X'X) / κ(X)^2 = 0.999065
+
+         Singular values of X:
+           σ_1 = 14.964792
+           σ_2 = 9.966658
+           σ_3 = 9.128724
+           σ_4 = 8.244767
+           σ_5 = 0.000007
+
+         Ratio σ_max/σ_min = 2.0454e+06 = κ(X)
+
+      The near-collinearity creates one tiny singular value (:math:`\sigma_5 \approx 7 \times 10^{-6}`), making :math:`\kappa(\mathbf{X}) \approx 2 \times 10^6`. The squaring relationship :math:`\kappa(\mathbf{X}^\top\mathbf{X}) \approx \kappa(\mathbf{X})^2` holds because the singular values of :math:`\mathbf{X}^\top\mathbf{X}` are :math:`\sigma_i^2`.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (b): Three OLS Methods Compared**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 100, 5
+         X = rng.standard_normal((n, p))
+         X[:, 4] = X[:, 3] + 1e-6 * rng.standard_normal(n)
+
+         beta_true = np.array([1.0, -2.0, 1.5, 0.5, -0.3])
+         y = X @ beta_true + 0.1 * rng.standard_normal(n)
+
+         # Method 1: Normal equations (direct inversion)
+         beta_normal = np.linalg.inv(X.T @ X) @ X.T @ y
+
+         # Method 2: QR decomposition
+         Q, R = np.linalg.qr(X)
+         beta_qr = np.linalg.solve(R, Q.T @ y)
+
+         # Method 3: lstsq (uses SVD internally)
+         beta_lstsq, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+
+         np.set_printoptions(precision=4)
+         print(f"True β: {beta_true}")
+         for name, b in [("Normal equations", beta_normal),
+                          ("QR decomposition", beta_qr),
+                          ("lstsq (SVD)", beta_lstsq)]:
+             print(f"\n{name}:")
+             print(f"  β_hat = {b}")
+             print(f"  max|β_hat - β_true| = {np.max(np.abs(b - beta_true)):.4e}")
+
+         # All methods achieve the same residual norm
+         print(f"\nResidual norms (should be identical):")
+         for name, b in [("Normal", beta_normal), ("QR", beta_qr), ("lstsq", beta_lstsq)]:
+             print(f"  {name}: {np.linalg.norm(y - X @ b):.6f}")
+
+         # The SUM beta_4 + beta_5 IS well-estimated
+         print(f"\nβ₄ + β₅ (identifiable combination):")
+         print(f"  True: {beta_true[3] + beta_true[4]:.4f}")
+         print(f"  All methods: {beta_normal[3] + beta_normal[4]:.4f}")
+
+      .. code-block:: text
+
+         True β: [ 1.  -2.   1.5  0.5 -0.3]
+
+         Normal equations:
+           β_hat = [ 9.9871e-01 -1.9994e+00  1.4933e+00 -1.2616e+03  1.2618e+03]
+           max|β_hat - β_true| = 1.2621e+03
+
+         QR decomposition:
+           β_hat = [ 9.9871e-01 -1.9994e+00  1.4933e+00 -1.2627e+03  1.2629e+03]
+           max|β_hat - β_true| = 1.2632e+03
+
+         lstsq (SVD):
+           β_hat = [ 9.9871e-01 -1.9994e+00  1.4933e+00 -1.2627e+03  1.2629e+03]
+           max|β_hat - β_true| = 1.2632e+03
+
+         Residual norms (should be identical):
+           Normal: 1.042693
+           QR: 1.042693
+           lstsq: 1.042693
+
+         β₄ + β₅ (identifiable combination):
+           True: 0.2000
+           All methods: 0.1957
+
+      **Key insight:** All three methods find valid least-squares solutions with identical residual norms — the fit to the data is equally good. The first three coefficients (:math:`\beta_1, \beta_2, \beta_3`) are recovered accurately. But :math:`\beta_4` and :math:`\beta_5` are individually off by orders of magnitude because columns 4 and 5 of :math:`\mathbf{X}` are nearly identical: only their *sum* :math:`\beta_4 + \beta_5` is identifiable. No numerical trick can fix mathematical ill-conditioning — that requires regularization (part c).
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (c): Ridge Regression via SVD**
+
+      The ridge estimator :math:`\hat{\boldsymbol{\beta}}_\lambda = (\mathbf{X}^\top\mathbf{X} + \lambda\mathbf{I})^{-1}\mathbf{X}^\top\mathbf{y}` can be expressed in SVD form. With :math:`\mathbf{X} = \mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top`:
+
+      .. math::
+
+         \hat{\boldsymbol{\beta}}_\lambda = \mathbf{V} \text{diag}\left(\frac{\sigma_i}{\sigma_i^2 + \lambda}\right) \mathbf{U}^\top\mathbf{y}
+
+      Each component is shrunk by the factor :math:`d_i(\lambda) = \sigma_i^2 / (\sigma_i^2 + \lambda)`.
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         n, p = 100, 5
+         X = rng.standard_normal((n, p))
+         X[:, 4] = X[:, 3] + 1e-6 * rng.standard_normal(n)
+
+         beta_true = np.array([1.0, -2.0, 1.5, 0.5, -0.3])
+         y = X @ beta_true + 0.1 * rng.standard_normal(n)
+
+         # SVD of X
+         U, sigma, Vt = np.linalg.svd(X, full_matrices=False)
+         V = Vt.T
+
+         # OLS via lstsq (for comparison)
+         beta_lstsq = np.linalg.lstsq(X, y, rcond=None)[0]
+
+         np.set_printoptions(precision=4)
+         print(f"Singular values: {sigma}")
+         print(f"OLS max error: {np.max(np.abs(beta_lstsq - beta_true)):.4e}")
+
+         print(f"\n{'λ':<10} {'df(λ)':>8} {'max|err|':>10}  Shrinkage factors")
+         print("-" * 80)
+
+         lambdas = [0.001, 0.1, 1.0, 10.0]
+         for lam in lambdas:
+             d = sigma**2 / (sigma**2 + lam)
+             df_lam = np.sum(d)
+             beta_ridge = V @ np.diag(sigma / (sigma**2 + lam)) @ U.T @ y
+             err = np.max(np.abs(beta_ridge - beta_true))
+             d_str = ', '.join([f'{di:.6f}' for di in d])
+             print(f"{lam:<10.3f} {df_lam:>8.4f} {err:>10.4e}  [{d_str}]")
+
+         # Compare OLS vs best ridge
+         print(f"\nOLS β_hat:          {beta_lstsq}")
+         print(f"Ridge(λ=0.001):     {V @ np.diag(sigma / (sigma**2 + 0.001)) @ U.T @ y}")
+         print(f"True β:             {beta_true}")
+
+      .. code-block:: text
+
+         Singular values: [1.4965e+01 9.9667e+00 9.1287e+00 8.2448e+00 7.3164e-06]
+         OLS max error: 1.2632e+03
+
+         λ            df(λ)   max|err|  Shrinkage factors
+         --------------------------------------------------------------------------------
+         0.001        4.0000  4.0226e-01  [0.999996, 0.999990, 0.999988, 0.999985, 0.000000]
+         0.100        3.9959  4.0229e-01  [0.999554, 0.998994, 0.998801, 0.998531, 0.000000]
+         1.000        3.9592  4.0311e-01  [0.995554, 0.990033, 0.988142, 0.985502, 0.000000]
+         10.000       3.6304  4.1043e-01  [0.957255, 0.908537, 0.892857, 0.871756, 0.000000]
+
+         OLS β_hat:          [ 9.9871e-01 -1.9994e+00  1.4933e+00 -1.2627e+03  1.2629e+03]
+         Ridge(λ=0.001):     [ 0.9986 -1.9994  1.4932  0.0977  0.0979]
+         True β:             [ 1.  -2.   1.5  0.5 -0.3]
+
+      **Interpretation:** Even the tiniest regularization (:math:`\lambda = 0.001`) reduces the max error from 1263 to 0.40 — a 3000× improvement. The shrinkage factor for :math:`\sigma_5 \approx 7 \times 10^{-6}` is effectively 0 for all :math:`\lambda` values, killing the unstable direction entirely. Ridge replaces the wild OLS estimates :math:`\hat\beta_4 \approx -1263, \hat\beta_5 \approx 1263` with regularized estimates near 0. The first four directions (large singular values) are barely shrunk for small :math:`\lambda`. As :math:`\lambda` increases, bias grows as stable directions also shrink.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (d): Cholesky Speed Advantage**
+
+      .. code-block:: python
+
+         import numpy as np
+         import time
+         from scipy.linalg import cho_factor, cho_solve, solve
+
+         rng = np.random.default_rng(seed=42)
+
+         # Create a 500x500 positive definite matrix
+         M = rng.standard_normal((500, 500))
+         A = M.T @ M + 0.1 * np.eye(500)  # Guaranteed PD
+
+         # Single right-hand side
+         b = rng.standard_normal(500)
+
+         # Time scipy.linalg.solve (general LU-based)
+         start = time.time()
+         for _ in range(100):
+             x1 = solve(A, b)
+         time_solve = time.time() - start
+
+         # Time Cholesky
+         start = time.time()
+         for _ in range(100):
+             c, low = cho_factor(A)
+             x2 = cho_solve((c, low), b)
+         time_chol = time.time() - start
+
+         print("Single right-hand side (100 repetitions):")
+         print(f"  scipy.linalg.solve: {time_solve:.4f}s")
+         print(f"  Cholesky:           {time_chol:.4f}s")
+         print(f"  Speedup:            {time_solve/time_chol:.2f}x")
+
+         # Multiple right-hand sides: factorize once, solve many
+         n_rhs = 100
+         B = rng.standard_normal((500, n_rhs))
+
+         # General solve for each column
+         start = time.time()
+         for i in range(n_rhs):
+             x = solve(A, B[:, i])
+         time_solve_multi = time.time() - start
+
+         # Cholesky: factorize once, solve many
+         start = time.time()
+         c, low = cho_factor(A)
+         for i in range(n_rhs):
+             x = cho_solve((c, low), B[:, i])
+         time_chol_multi = time.time() - start
+
+         print(f"\n100 right-hand sides (factorize once vs. solve each):")
+         print(f"  scipy.linalg.solve (each): {time_solve_multi:.4f}s")
+         print(f"  Cholesky (factor once):    {time_chol_multi:.4f}s")
+         print(f"  Speedup:                   {time_solve_multi/time_chol_multi:.2f}x")
+         print(f"\nSolutions agree: {np.allclose(solve(A, B[:, 0]), cho_solve((c, low), B[:, 0]))}")
+
+      .. code-block:: text
+
+         Single right-hand side (100 repetitions):
+           scipy.linalg.solve: 0.2806s
+           Cholesky:           0.0745s
+           Speedup:            3.77x
+
+         100 right-hand sides (factorize once vs. solve each):
+           scipy.linalg.solve (each): 0.2911s
+           Cholesky (factor once):    0.0151s
+           Speedup:                   19.29x
+
+         Solutions agree: True
+
+      **Key insight:** For a single solve, Cholesky is roughly 3–4x faster because it exploits symmetry (:math:`n^3/3` vs :math:`2n^3/3` flops for LU, plus reduced pivoting overhead). But the real advantage is the factorize-once-solve-many pattern: for 100 right-hand sides, the Cholesky factorization happens once, and each subsequent triangular solve is only :math:`O(n^2)`. Generic ``solve`` re-factors each time, giving a ~20x speedup.
+
+.. admonition:: Exercise 3: Block Matrices and Conditional Distributions
+   :class: exercise
+
+   Block matrix algebra connects directly to conditional distributions in the multivariate normal. This exercise derives the conditional formulas from the precision matrix and verifies them computationally, then applies the Sherman-Morrison-Woodbury formula to leave-one-out cross-validation.
+
+   a. For the multivariate normal with :math:`\boldsymbol{\mu} = [\boldsymbol{\mu}_1, \boldsymbol{\mu}_2]^\top` and :math:`\boldsymbol{\Sigma} = \begin{bmatrix} \boldsymbol{\Sigma}_{11} & \boldsymbol{\Sigma}_{12} \\ \boldsymbol{\Sigma}_{21} & \boldsymbol{\Sigma}_{22} \end{bmatrix}`, derive the conditional distribution :math:`\mathbf{X}_1 | \mathbf{X}_2 = \mathbf{x}_2` using block matrix inversion of :math:`\boldsymbol{\Sigma}`. Show that the conditional mean is :math:`\boldsymbol{\mu}_1 + \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}(\mathbf{x}_2 - \boldsymbol{\mu}_2)` and the conditional variance is :math:`\boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21}` (the Schur complement).
+
+      .. admonition:: Hint: Block Density Factorization
+         :class: tip
+
+         Write the exponent of the joint density :math:`-(\mathbf{x} - \boldsymbol{\mu})^\top\boldsymbol{\Sigma}^{-1}(\mathbf{x} - \boldsymbol{\mu})` in block form. Group terms involving :math:`\mathbf{x}_1` to identify a quadratic (normal density in :math:`\mathbf{x}_1`) plus terms involving only :math:`\mathbf{x}_2`. The quadratic in :math:`\mathbf{x}_1` gives the conditional mean (its center) and conditional variance (inverse of the quadratic coefficient).
+
+   b. Verify computationally: generate 200,000 samples from a 4-dimensional normal with a specific :math:`\boldsymbol{\Sigma}` (use Cholesky). Fix :math:`X_3 = 1.5` and :math:`X_4 = -0.5` (filter to samples near these values). Compare the empirical conditional mean and covariance of :math:`(X_1, X_2)` to the theoretical formulas.
+
+      .. admonition:: Hint: Filtering for Conditioning
+         :class: tip
+
+         "Near" means within a tolerance, e.g., :math:`|X_3 - 1.5| < 0.1` and :math:`|X_4 - (-0.5)| < 0.1`. Use enough samples that the filtered subset is large (>500). The Cholesky approach is: generate :math:`\mathbf{z} \sim N(\mathbf{0}, \mathbf{I})`, then :math:`\mathbf{x} = \boldsymbol{\mu} + \mathbf{L}\mathbf{z}` where :math:`\boldsymbol{\Sigma} = \mathbf{L}\mathbf{L}^\top`.
+
+   c. Apply the Sherman-Morrison-Woodbury formula: given :math:`(\mathbf{A} + \mathbf{U}\mathbf{C}\mathbf{V})^{-1} = \mathbf{A}^{-1} - \mathbf{A}^{-1}\mathbf{U}(\mathbf{C}^{-1} + \mathbf{V}\mathbf{A}^{-1}\mathbf{U})^{-1}\mathbf{V}\mathbf{A}^{-1}`, show how a rank-1 update to :math:`\mathbf{X}^\top\mathbf{X}` (removing one observation) avoids a full re-inversion. Implement leave-one-out cross-validation using the formula :math:`\tilde{e}_i = e_i / (1 - h_{ii})` without refitting.
+
+      .. admonition:: Hint: LOO via the Hat Matrix
+         :class: tip
+
+         When we remove observation :math:`i`, the design matrix changes by a rank-1 update. The LOO residual is :math:`\tilde{e}_i = e_i / (1 - h_{ii})` where :math:`e_i` is the full-data residual and :math:`h_{ii}` is the leverage. This avoids :math:`n` separate regressions — a speedup from :math:`O(n \cdot np^2)` to :math:`O(np^2)`.
+
+   d. Verify: compute the LOO residuals by actually refitting :math:`n` times (brute force) and compare to the shortcut formula. Show they match to machine precision.
+
+      .. admonition:: Hint: Brute-Force LOO
+         :class: tip
+
+         For each :math:`i`, fit OLS on all data except observation :math:`i`, predict at :math:`\mathbf{x}_i`, and compute the LOO residual :math:`y_i - \mathbf{x}_i^\top\hat{\boldsymbol{\beta}}_{(-i)}`. Compare to :math:`e_i / (1 - h_{ii})`.
+
+   .. dropdown:: Solution
+      :class-container: solution
+
+      **Part (a): Deriving the Conditional Distribution**
+
+      Write the joint density exponent in block form. Let :math:`\mathbf{a} = \mathbf{x}_1 - \boldsymbol{\mu}_1` and :math:`\mathbf{b} = \mathbf{x}_2 - \boldsymbol{\mu}_2`. The inverse of the block covariance is:
+
+      .. math::
+
+         \boldsymbol{\Sigma}^{-1} = \begin{bmatrix} \boldsymbol{\Sigma}^{11} & \boldsymbol{\Sigma}^{12} \\ \boldsymbol{\Sigma}^{21} & \boldsymbol{\Sigma}^{22} \end{bmatrix}
+
+      where :math:`\boldsymbol{\Sigma}^{11} = (\boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21})^{-1}` is the inverse of the Schur complement.
+
+      The exponent of the joint density is:
+
+      .. math::
+
+         Q &= \begin{bmatrix} \mathbf{a} \\ \mathbf{b} \end{bmatrix}^\top \boldsymbol{\Sigma}^{-1} \begin{bmatrix} \mathbf{a} \\ \mathbf{b} \end{bmatrix} \\
+         &= \mathbf{a}^\top\boldsymbol{\Sigma}^{11}\mathbf{a} + 2\mathbf{a}^\top\boldsymbol{\Sigma}^{12}\mathbf{b} + \mathbf{b}^\top\boldsymbol{\Sigma}^{22}\mathbf{b}
+
+      Completing the square in :math:`\mathbf{a}` (treating :math:`\mathbf{b}` as fixed):
+
+      .. math::
+
+         Q = (\mathbf{a} + (\boldsymbol{\Sigma}^{11})^{-1}\boldsymbol{\Sigma}^{12}\mathbf{b})^\top \boldsymbol{\Sigma}^{11} (\mathbf{a} + (\boldsymbol{\Sigma}^{11})^{-1}\boldsymbol{\Sigma}^{12}\mathbf{b}) + \text{terms in } \mathbf{b} \text{ only}
+
+      The quadratic in :math:`\mathbf{a}` identifies a normal distribution with:
+
+      - **Conditional precision:** :math:`\boldsymbol{\Sigma}^{11} = (\boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21})^{-1}`
+      - **Conditional variance:** :math:`\text{Var}(\mathbf{X}_1 | \mathbf{X}_2) = (\boldsymbol{\Sigma}^{11})^{-1} = \boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21}`
+      - **Conditional mean shift:** :math:`-(\boldsymbol{\Sigma}^{11})^{-1}\boldsymbol{\Sigma}^{12}\mathbf{b} = +\boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\mathbf{b}` (using block inverse identities)
+      - **Conditional mean:** :math:`E(\mathbf{X}_1 | \mathbf{X}_2 = \mathbf{x}_2) = \boldsymbol{\mu}_1 + \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}(\mathbf{x}_2 - \boldsymbol{\mu}_2)`
+
+      The conditional variance :math:`\boldsymbol{\Sigma}_{11} - \boldsymbol{\Sigma}_{12}\boldsymbol{\Sigma}_{22}^{-1}\boldsymbol{\Sigma}_{21}` is exactly the **Schur complement** of :math:`\boldsymbol{\Sigma}_{22}` in :math:`\boldsymbol{\Sigma}`. It does not depend on the observed value :math:`\mathbf{x}_2` — only the conditional mean changes.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (b): Computational Verification**
+
+      .. code-block:: python
+
+         import numpy as np
+
+         rng = np.random.default_rng(seed=42)
+
+         # Define a 4-dimensional covariance matrix
+         # Partition: X1 = (X_1, X_2), X2 = (X_3, X_4)
+         mu = np.array([1.0, -0.5, 2.0, 0.0])
+
+         # Construct a valid (PD) covariance matrix with interesting correlations
+         Sigma = np.array([
+             [2.0, 0.8, 0.6, -0.3],
+             [0.8, 1.5, 0.4,  0.2],
+             [0.6, 0.4, 1.0,  0.5],
+             [-0.3, 0.2, 0.5, 1.2]
+         ])
+
+         # Block partition
+         Sigma_11 = Sigma[:2, :2]
+         Sigma_12 = Sigma[:2, 2:]
+         Sigma_21 = Sigma[2:, :2]
+         Sigma_22 = Sigma[2:, 2:]
+
+         # Conditioning values
+         x2_obs = np.array([1.5, -0.5])
+
+         # Theoretical conditional distribution
+         Sigma_22_inv = np.linalg.inv(Sigma_22)
+         cond_mean = mu[:2] + Sigma_12 @ Sigma_22_inv @ (x2_obs - mu[2:])
+         cond_cov = Sigma_11 - Sigma_12 @ Sigma_22_inv @ Sigma_21
+
+         print("Theoretical conditional distribution X1 | X2 = [1.5, -0.5]:")
+         print(f"  Mean: {cond_mean}")
+         print(f"  Covariance:\n    {cond_cov[0]}\n    {cond_cov[1]}")
+
+         # Generate samples via Cholesky
+         L = np.linalg.cholesky(Sigma)
+         n_samples = 200000
+         z = rng.standard_normal((n_samples, 4))
+         samples = mu + z @ L.T
+
+         # Filter to samples near x2_obs
+         tol = 0.1
+         mask = (np.abs(samples[:, 2] - 1.5) < tol) & (np.abs(samples[:, 3] - (-0.5)) < tol)
+         filtered = samples[mask, :2]
+
+         print(f"\nFiltered {np.sum(mask)} samples (of {n_samples})")
+         print(f"\nEmpirical conditional distribution:")
+         print(f"  Mean: {np.mean(filtered, axis=0)}")
+         emp_cov = np.cov(filtered.T)
+         print(f"  Covariance:\n    {emp_cov[0]}\n    {emp_cov[1]}")
+
+         print(f"\nDifferences:")
+         print(f"  Mean error: {np.max(np.abs(np.mean(filtered, axis=0) - cond_mean)):.4f}")
+         print(f"  Cov error:  {np.max(np.abs(emp_cov - cond_cov)):.4f}")
+
+      .. code-block:: text
+
+         Theoretical conditional distribution X1 | X2 = [1.5, -0.5]:
+           Mean: [ 0.85789474 -0.7       ]
+           Covariance:
+             [1.26105263 0.56      ]
+             [0.56 1.34]
+
+         Filtered 1092 samples (of 200000)
+
+         Empirical conditional distribution:
+           Mean: [ 0.82360373 -0.70175817]
+           Covariance:
+             [1.19029182 0.52250102]
+             [0.52250102 1.32804361]
+
+         Differences:
+           Mean error: 0.0343
+           Cov error:  0.0708
+
+      The empirical conditional moments match the theoretical values to within sampling error, confirming the Schur complement formula.
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (c): Sherman-Morrison-Woodbury for Leave-One-Out**
+
+      When we remove observation :math:`i` from the regression, :math:`\mathbf{X}^\top\mathbf{X}` changes by a rank-1 downdate: :math:`\mathbf{X}_{(-i)}^\top\mathbf{X}_{(-i)} = \mathbf{X}^\top\mathbf{X} - \mathbf{x}_i\mathbf{x}_i^\top`. By SMW, we can show that the LOO prediction error is:
+
+      .. math::
+
+         \tilde{e}_i = y_i - \mathbf{x}_i^\top\hat{\boldsymbol{\beta}}_{(-i)} = \frac{e_i}{1 - h_{ii}}
+
+      where :math:`e_i = y_i - \hat{y}_i` is the ordinary residual and :math:`h_{ii}` is the leverage. This avoids refitting the model :math:`n` times.
+
+      .. code-block:: python
+
+         import numpy as np
+         np.set_printoptions(precision=4, linewidth=120)
+
+         rng = np.random.default_rng(seed=42)
+
+         # Generate regression data
+         n, p = 80, 4
+         X = np.column_stack([np.ones(n), rng.standard_normal((n, p-1))])
+         beta_true = np.array([3.0, -1.0, 2.0, 0.5])
+         y = X @ beta_true + 0.5 * rng.standard_normal(n)
+
+         # Full-data fit
+         H = X @ np.linalg.solve(X.T @ X, X.T)
+         y_hat = H @ y
+         e = y - y_hat
+         leverages = np.diag(H)
+
+         # LOO residuals via shortcut formula
+         loo_residuals_formula = e / (1 - leverages)
+
+         # LOO cross-validation MSE
+         loo_mse = np.mean(loo_residuals_formula**2)
+         print(f"LOO-CV MSE (shortcut formula): {loo_mse:.6f}")
+         print(f"\nFirst 10 LOO residuals (formula):")
+         print(f"  {loo_residuals_formula[:10]}")
+
+      .. code-block:: text
+
+         LOO-CV MSE (shortcut formula): 0.288641
+
+         First 10 LOO residuals (formula):
+           [-0.399  -0.0465 -0.9089 -0.8249  1.0491 -0.8096 -0.575   0.8456  1.4839 -0.6119]
+
+      .. raw:: html
+
+         <hr style="margin: 1.5em 0; border-top: 1px solid #ccc;">
+
+      **Part (d): Brute-Force Verification**
+
+      .. code-block:: python
+
+         import numpy as np
+         np.set_printoptions(precision=4, linewidth=120)
+
+         rng = np.random.default_rng(seed=42)
+
+         # Same data as part (c)
+         n, p = 80, 4
+         X = np.column_stack([np.ones(n), rng.standard_normal((n, p-1))])
+         beta_true = np.array([3.0, -1.0, 2.0, 0.5])
+         y = X @ beta_true + 0.5 * rng.standard_normal(n)
+
+         # Full-data quantities
+         H = X @ np.linalg.solve(X.T @ X, X.T)
+         e = y - H @ y
+         leverages = np.diag(H)
+
+         # Shortcut LOO residuals
+         loo_formula = e / (1 - leverages)
+
+         # Brute-force LOO: refit n times
+         loo_brute = np.zeros(n)
+         for i in range(n):
+             # Remove observation i
+             X_loo = np.delete(X, i, axis=0)
+             y_loo = np.delete(y, i, axis=0)
+
+             # Fit without observation i
+             beta_loo = np.linalg.lstsq(X_loo, y_loo, rcond=None)[0]
+
+             # Predict at the held-out point
+             y_pred_i = X[i] @ beta_loo
+             loo_brute[i] = y[i] - y_pred_i
+
+         # Compare
+         max_diff = np.max(np.abs(loo_formula - loo_brute))
+         print(f"Max |formula - brute force|: {max_diff:.2e}")
+         print(f"Relative error: {max_diff / np.max(np.abs(loo_brute)):.2e}")
+         print(f"\nFirst 10 LOO residuals comparison:")
+         print(f"  Formula:     {loo_formula[:10]}")
+         print(f"  Brute force: {loo_brute[:10]}")
+         print(f"\nLOO-CV MSE (formula):      {np.mean(loo_formula**2):.6f}")
+         print(f"LOO-CV MSE (brute force):  {np.mean(loo_brute**2):.6f}")
+         print(f"\nAgreement to machine precision: {np.allclose(loo_formula, loo_brute, atol=1e-12)}")
+
+      .. code-block:: text
+
+         Max |formula - brute force|: 4.36e-15
+         Relative error: 2.94e-15
+
+         First 10 LOO residuals comparison:
+           Formula:     [-0.399  -0.0465 -0.9089 -0.8249  1.0491 -0.8096 -0.575   0.8456  1.4839 -0.6119]
+           Brute force: [-0.399  -0.0465 -0.9089 -0.8249  1.0491 -0.8096 -0.575   0.8456  1.4839 -0.6119]
+
+         LOO-CV MSE (formula):      0.288641
+         LOO-CV MSE (brute force):  0.288641
+
+         Agreement to machine precision: True
+
+      The shortcut formula :math:`\tilde{e}_i = e_i / (1 - h_{ii})` matches brute-force LOO to machine precision (:math:`\sim 10^{-14}`), confirming the Sherman-Morrison-Woodbury derivation. This reduces computational cost from :math:`O(n^2 p^2)` (refitting :math:`n` times) to :math:`O(np^2)` (one fit + leverage computation).
