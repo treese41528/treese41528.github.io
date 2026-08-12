@@ -1,0 +1,1096 @@
+.. _worksheet19:
+
+Worksheet 19: Multiple Comparisons and Post-Hoc Testing
+========================================================
+
+.. admonition:: Learning Objectives 🎯
+   :class: info
+
+   • **Understand** the multiple comparisons problem and why controlling family-wise error rate is essential
+   • **Compare** different post-hoc methods: Tukey's HSD, Bonferroni, and Scheffé's method
+   • **Apply** Tukey's Honestly Significant Difference (HSD) procedure after significant ANOVA results
+   • **Interpret** confidence intervals for pairwise differences between group means
+   • **Conduct** simulation studies to evaluate Type I error rates and statistical power
+   • **Analyze** real datasets using one-way ANOVA followed by appropriate post-hoc comparisons
+   • **Create** visual summaries of multiple comparison results using R
+
+Introduction
+------------
+
+In :ref:`worksheet18`, we introduced One-Way Analysis of Variance (ANOVA) as a powerful statistical method for comparing multiple group means simultaneously, while controlling the overall Type I error rate. When ANOVA produces a statistically significant result, we conclude at least one group mean differs from the others. However, the ANOVA test alone does not reveal specifically which group means differ. Identifying precisely where these differences occur requires further pairwise comparisons between individual groups.
+
+The Multiple Comparisons Problem
+---------------------------------
+
+Consider an agricultural study involving a single crop type, where researchers evaluate the effectiveness of 30 different fertilizer treatments to maximize crop yield. Suppose there are 10 plots of land randomly assigned to each fertilizer, for a total of 300 observations (30 groups × 10 observations per group). An ANOVA conducted on the collected yield data might show strong statistical evidence that at least one fertilizer type leads to significantly different crop yields compared to the others.
+
+Once the ANOVA reveals differences among these 30 fertilizer groups, the logical next question is:
+
+*"Exactly which fertilizers differ significantly in their average yield performance?"*
+
+To answer this, researchers typically consider making separate pairwise comparisons. However, with 30 fertilizer treatments, the total number of pairwise comparisons required is substantial:
+
+.. math::
+
+   \binom{30}{2} = \frac{30 \times 29}{2} = 435 \text{ pairwise comparisons}
+
+If each of these 435 comparisons is conducted individually at the standard significance level of 5 percent, the probability of incorrectly declaring at least one significant difference (Type I error) dramatically exceeds the desired 5 percent level. If we (naively) treat these comparisons as independent, then an approximate upper bound on the overall Type I error rate can be computed as:
+
+.. math::
+
+   P(\text{at least one Type I error}) \approx 1 - (1 - 0.05)^{435} \approx 1 - (0.95)^{435}
+
+Under the assumption of independence, this value is very close to 1, implying an almost certain chance of making at least one false claim of difference. Of course, in practice, these tests may not be fully independent, so the actual value can differ. However, this rough approximation still demonstrates that the risk of false discoveries quickly becomes unacceptably large when many comparisons are made without adjusting the procedure.
+
+Methods to Control the Family-Wise Error Rate
+----------------------------------------------
+
+To avoid drawing unreliable conclusions, researchers employ **multiple comparison procedures** that help ensure the probability of making one or more false discoveries (Type I errors) across all comparisons remains at or below the desired level (for example, 5 percent). Common methods include:
+
+Scheffé's Method
+~~~~~~~~~~~~~~~~
+
+**Scheffé's method** is designed to allow testing of any contrast (a contrast is a linear combination of group means used to compare one set of groups to another), making it more flexible than methods intended solely for pairwise comparisons. It sets an appropriate critical value that controls the family-wise error rate for all possible linear contrasts.
+
+**Assumptions:** Scheffé's method relies on independence of observations and approximate normality in each group, along with no extreme differences in variances.
+
+**Conservativeness:** Scheffé's method is often considered the most conservative among these classical procedures. It produces relatively wide intervals for differences, so it may require stronger evidence to declare a difference significant.
+
+**Issues:** While it accommodates any linear contrast, Scheffé's method is frequently the most conservative among these procedures. It yields wide confidence intervals and demands strong evidence for significance, thus lowering power and making it harder to detect real effects in studies with many groups.
+
+Bonferroni Correction
+~~~~~~~~~~~~~~~~~~~~~
+
+The **Bonferroni correction** is the simplest approach for controlling the family-wise error rate. It divides the chosen alpha by the total number of comparisons, making each individual test more stringent. This method ensures that the overall rate of false positives stays at or below the intended alpha level, no matter how many comparisons are performed.
+
+**Assumptions:** Groups should be (approximately) normal and sampled independently, with no extreme differences in variances. The Bonferroni method can be used with both pre-planned and unplanned comparisons.
+
+**Conservativeness:** It is known to be quite conservative, which lowers the chance of detecting real differences when a large number of comparisons are performed. The corrected threshold for significance may become so small that many true effects remain undiscovered.
+
+**Issues:** When a large number of comparisons are performed, Bonferroni's strict cutoff makes it extremely conservative, often leading to a very small per-test alpha. This can greatly reduce the power to detect true differences, increasing the chance of overlooking meaningful effects.
+
+Tukey's Honestly Significant Difference (HSD)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Tukey's HSD** focuses on pairwise comparisons of group means following a significant one-way ANOVA. It calculates a single critical difference, derived from the studentized range, that applies to all pairwise comparisons. An extended version, often called Tukey-Kramer, adjusts for unequal sample sizes.
+
+**Assumptions:** Data in each group should be sampled independently from (approximately) normal populations, with variances that are not drastically different. While Tukey-Kramer can address unequal group sizes, extreme imbalance or variance irregularities may still lower its accuracy.
+
+**Conservativeness:** Compared to Bonferroni, Tukey's methods are typically less conservative for pairwise tests, allowing better power to detect genuine differences among multiple groups.
+
+**Issues:** Because Tukey's procedure depends on the studentized range distribution (which models the maximum spread of group means), it is especially sensitive to outliers and non-normal data. A single extreme observation or heavy skew can inflate the observed range, undermining the accuracy and power of the test. Moreover, Tukey's HSD is limited to pairwise comparisons.
+
+Advice on Selection
+~~~~~~~~~~~~~~~~~~~
+
+.. admonition:: Choosing a Method 💡
+   :class: tip
+
+   • If you need to compare **any combination of group means**, Scheffé's method grants the greatest flexibility, though with lowered power.
+   
+   • If you have a **large number of comparisons** but want a very simple control method, Bonferroni guarantees a strict overall alpha but at the cost of potentially missing real differences.
+   
+   • If your sole interest is in **pairwise comparisons** among multiple groups, Tukey's HSD usually strikes a better balance between error control and power, provided data are not severely non-normal or highly imbalanced in sample size.
+
+We will focus on using **Tukey's procedure** in this course, given that our primary concern is pairwise comparisons. Bonferroni is easy to apply and offers strict error control, but it often becomes too conservative with many comparisons. Scheffé's method allows more complex comparisons and is the most flexible but is also the most conservative. Because we wish to pinpoint which pairs of group means differ, and because Tukey's method balances effectiveness and simplicity in doing so, it will be our primary tool.
+
+.. note::
+   In situations where the number of groups is in the thousands, classical methods like Bonferroni, Scheffé, or Tukey's HSD can become too conservative and impractical. Instead, researchers often use methods that control the **false discovery rate**, such as the Benjamini-Hochberg procedure, which aim to limit the proportion of false positives rather than insisting on zero or one false discovery across thousands of comparisons.
+
+Part 1: Simulation Study - Type I Error with Multiple Comparison Methods
+-------------------------------------------------------------------------
+
+We will generate data from multiple groups, all sharing the same true mean. Because there are no real differences, any claim that a pair of groups differs is a false discovery.
+
+The steps below will:
+
+1. Generate data from multiple groups all sharing the same true mean (hence no real differences).
+2. Run an ANOVA on each simulated dataset to check if it is significant.
+3. If ANOVA is significant, apply Scheffé, Bonferroni, and Tukey's HSD to see whether they claim any differences.
+4. Record how often these methods incorrectly identify group differences (false positives) under a scenario of no true differences.
+
+Simulation Code
+~~~~~~~~~~~~~~~
+
+Below is the complete R code for the simulation study. Copy this code and save it as ``MultipleComparison_Sim.R`` or run it directly in R.
+
+.. code-block:: r
+
+   #--------------------------------------------------------------------------
+   # Simulation Study: ANOVA and Post-Hoc Tests with Flexible Mean Configuration
+   #--------------------------------------------------------------------------
+   # Purpose:
+   # This script simulates data for a one-way ANOVA design with two possible cases:
+   # 1. Null case: All group means are equal (H0 true)
+   # 2. Alternative case: Some group means differ (H1 true)
+   #
+   # It evaluates:
+   # 1. The Type I error rate of the overall ANOVA F-test (case 1)
+   # 2. The power of ANOVA to detect differences (case 2)
+   # 3. The performance of three common post-hoc multiple comparison procedures
+   #    (Scheffe, Bonferroni, Tukey HSD) in controlling error rates or detecting
+   #    true differences
+   #--------------------------------------------------------------------------
+   
+   # Load necessary libraries (implicitly uses stats package)
+   
+   # --- Simulation Parameters ---
+   set.seed(123)   # Ensure reproducibility
+   N <- 1500       # Number of simulated datasets (replications)
+   k <- 10          # Number of groups to compare
+   n <- 50         # Observations per group (equal sample sizes assumed)
+   alpha <- 0.05   # Significance level (threshold for p-values)
+   
+   # --- Common Parameters ---
+   base_mean <- 50 # Base mean value for all groups
+   sd_true <- 8    # Common standard deviation for all groups (homoscedasticity)
+   total_obs <- k * n # Total observations in each simulated dataset
+   
+   # --- Case Selection ---
+   # Set simulation_case to 1 for Null Hypothesis (all means equal)
+   # Set simulation_case to 2 for Alternative Hypothesis (some means differ)
+   simulation_case <- 1  # Set to null case for testing Type I error
+   
+   # --- Setup Group Means Based on Case ---
+   set_group_means <- function(case_number, base_value = 50, k = 4, effect_size = 2) {
+     if (case_number == 1) {
+       # Case 1: All means equal (H0 true)
+       true_means <- rep(base_value, k)
+       names(true_means) <- paste0("Group", 1:k)
+       return(list(
+         means = true_means,
+         description = "Null case (H0): All group means equal",
+         h0_true = TRUE
+       ))
+     } else {
+       # Case 2: Some means differ (H1 true)
+       # Randomly determine how many groups will have different means (at least 1)
+       n_diff_groups <- sample(1:min(3, k-1), 1)  # At least 1, at most 3 or k-1
+       diff_group_indices <- sample(1:k, n_diff_groups)
+       
+       # Generate means
+       true_means <- rep(base_value, k)
+       
+       # Create reasonable effect sizes (not too extreme)
+       for (idx in diff_group_indices) {
+         # Generate random effects between 0.5 and 1.5 times the specified effect size
+         effect_multiplier <- runif(1, 0.5, 1.5)
+         # Randomly choose direction of effect (positive or negative)
+         direction <- sample(c(-1, 1), 1)
+         true_means[idx] <- base_value + direction * effect_multiplier * effect_size * sd_true
+       }
+       
+       names(true_means) <- paste0("Group", 1:k)
+       
+       # Create a matrix of which pairs actually differ
+       pairs <- combn(k, 2)
+       n_pairs <- ncol(pairs)
+       true_diff_matrix <- logical(n_pairs)
+       for (i in 1:n_pairs) {
+         true_diff_matrix[i] <- abs(true_means[pairs[1,i]] - true_means[pairs[2,i]]) > 1e-10
+       }
+       
+       return(list(
+         means = true_means,
+         description = paste0("Alternative case (H1): ", n_diff_groups, " group(s) with different means"),
+         h0_true = FALSE,
+         diff_groups = diff_group_indices,
+         true_diff_pairs = true_diff_matrix,
+         n_true_diff_pairs = sum(true_diff_matrix),
+         n_equal_pairs = n_pairs - sum(true_diff_matrix)
+       ))
+     }
+   }
+   
+   # Set up simulation case
+   case_config <- set_group_means(simulation_case, base_mean, k, effect_size = 0.75)
+   true_means <- case_config$means
+   
+   # --- Create a group factor that will be reused for all datasets ---
+   group_factor <- factor(rep(1:k, each = n))
+   
+   #--------------------------------------------------------------------------
+   # Step 1: Generate all Simulated Datasets
+   #--------------------------------------------------------------------------
+   # Generate data for all simulations at once
+   generate_data <- function(true_means, n_per_group, n_simulations, sd) {
+     k <- length(true_means)
+     total_obs <- k * n_per_group
+     
+     # Create a matrix to hold all simulated datasets
+     all_data <- matrix(0, nrow = n_simulations, ncol = total_obs)
+     
+     # Fill the matrix with data
+     for (i in 1:n_simulations) {
+       row_data <- numeric(total_obs)
+       for (g in 1:k) {
+         start_idx <- (g-1) * n_per_group + 1
+         end_idx <- g * n_per_group
+         row_data[start_idx:end_idx] <- rnorm(n_per_group, mean = true_means[g], sd = sd)
+       }
+       all_data[i, ] <- row_data
+     }
+     
+     return(all_data)
+   }
+   
+   # Generate the data
+   all_data <- generate_data(true_means, n, N, sd_true)
+   
+   #--------------------------------------------------------------------------
+   # Step 2: Run ANOVA on each dataset
+   #--------------------------------------------------------------------------
+   
+   # Function to perform ANOVA on a single row (one simulated dataset)
+   run_anova <- function(dataset_row) {
+     data_anova <- data.frame(value = dataset_row, group = group_factor)
+     anova_result <- aov(value ~ group, data = data_anova)
+     anova_summary <- summary(anova_result)
+     p_value <- anova_summary[[1]]$"Pr(>F)"[1]
+     return(p_value)
+   }
+   
+   # Apply the run_anova function to each row (dataset) of the all_data matrix
+   p_values_anova <- apply(all_data, 1, run_anova)
+   
+   # Identify significant ANOVA results
+   significant_indices <- which(p_values_anova < alpha)
+   n_sig_anova <- length(significant_indices)
+   anova_sig_rate <- n_sig_anova / N
+   
+   #--------------------------------------------------------------------------
+   # Step 3: Perform Multiple Comparison Tests (Post-Hoc)
+   #         ONLY on datasets where ANOVA was significant
+   #--------------------------------------------------------------------------
+   # Initialize variables
+   n_pairs_total <- k * (k - 1) / 2
+   multi_test_results_df <- NULL
+   conditional_scheffe_FWER <- NA
+   conditional_bonferroni_FWER <- NA
+   conditional_tukey_FWER <- NA
+   unconditional_scheffe_FWER <- NA
+   unconditional_bonferroni_FWER <- NA
+   unconditional_tukey_FWER <- NA
+   scheffe_PCER <- NA
+   bonferroni_PCER <- NA
+   tukey_PCER <- NA
+   scheffe_avg_discoveries <- NA
+   bonferroni_avg_discoveries <- NA
+   tukey_avg_discoveries <- NA
+   error_summary_table <- NULL
+   
+   # Function for multiple comparisons
+   perform_multiple_tests <- function(dataset_row, true_diff_pairs = NULL) {
+     data_test <- data.frame(value = dataset_row, group = group_factor)
+     anova_result <- aov(value ~ group, data = data_test)
+     anova_summary <- summary(anova_result)
+     mse <- anova_summary[[1]]$"Mean Sq"[2]
+     group_means <- tapply(data_test$value, data_test$group, mean)
+     
+     # For all pairwise comparisons
+     pairs <- combn(k, 2)
+     n_pairs <- ncol(pairs)
+     mean_diffs <- abs(group_means[pairs[1, ]] - group_means[pairs[2, ]])
+     se_diff <- sqrt(mse * (1/n + 1/n))
+     t_stats <- mean_diffs / se_diff
+     
+     # Get degrees of freedom
+     df_between <- k - 1
+     df_within <- k * n - k
+     
+     # Scheffe test
+     scheffe_F_crit <- qf(1 - alpha, df_between, df_within)
+     scheffe_t_crit <- sqrt(df_between * scheffe_F_crit)
+     scheffe_significant <- t_stats > scheffe_t_crit
+     scheffe_significant_count <- sum(scheffe_significant)
+     
+     # Bonferroni test
+     bonferroni_alpha_adj <- alpha / n_pairs
+     bonferroni_t_crit <- qt(1 - bonferroni_alpha_adj / 2, df_within)
+     bonferroni_significant <- t_stats > bonferroni_t_crit
+     bonferroni_significant_count <- sum(bonferroni_significant)
+     
+     # Tukey HSD test
+     tukey_result <- TukeyHSD(anova_result, conf.level = 1 - alpha)
+     tukey_p_values_adj <- tukey_result$group[, "p adj"]
+     tukey_significant <- tukey_p_values_adj < alpha
+     tukey_significant_count <- sum(tukey_significant)
+     
+     # If true pairs info is provided, calculate true positive and false positive counts
+     if (!is.null(true_diff_pairs)) {
+       # Calculate true positives and false positives
+       scheffe_tp <- sum(scheffe_significant & true_diff_pairs)
+       scheffe_fp <- sum(scheffe_significant & !true_diff_pairs)
+       
+       bonferroni_tp <- sum(bonferroni_significant & true_diff_pairs)
+       bonferroni_fp <- sum(bonferroni_significant & !true_diff_pairs)
+       
+       tukey_tp <- sum(tukey_significant & true_diff_pairs)
+       tukey_fp <- sum(tukey_significant & !true_diff_pairs)
+       
+       # Return counts along with TP/FP breakdown
+       return(c(
+         scheffe_n_sig = scheffe_significant_count,
+         scheffe_any_sig = as.numeric(scheffe_significant_count > 0),
+         scheffe_tp = scheffe_tp,
+         scheffe_fp = scheffe_fp,
+         
+         bonferroni_n_sig = bonferroni_significant_count,
+         bonferroni_any_sig = as.numeric(bonferroni_significant_count > 0),
+         bonferroni_tp = bonferroni_tp,
+         bonferroni_fp = bonferroni_fp,
+         
+         tukey_n_sig = tukey_significant_count,
+         tukey_any_sig = as.numeric(tukey_significant_count > 0),
+         tukey_tp = tukey_tp,
+         tukey_fp = tukey_fp
+       ))
+     } else {
+       # Basic return when no true pairs info provided
+       return(c(
+         scheffe_n_sig = scheffe_significant_count,
+         scheffe_any_sig = as.numeric(scheffe_significant_count > 0),
+         bonferroni_n_sig = bonferroni_significant_count,
+         bonferroni_any_sig = as.numeric(bonferroni_significant_count > 0),
+         tukey_n_sig = tukey_significant_count,
+         tukey_any_sig = as.numeric(tukey_significant_count > 0)
+       ))
+     }
+   }
+   
+   # Proceed with calculations only if there are significant ANOVAs
+   if (n_sig_anova > 0) {
+     significant_data <- all_data[significant_indices, , drop = FALSE]
+     
+     # Apply the multiple comparison function
+     if (case_config$h0_true) {
+       # For null case, don't need to track true/false positives
+       multi_test_results <- t(apply(significant_data, 1, perform_multiple_tests))
+     } else {
+       # For alternative case, track true/false positives
+       multi_test_results <- t(apply(significant_data, 1, function(row) {
+         perform_multiple_tests(row, true_diff_pairs = case_config$true_diff_pairs)
+       }))
+     }
+     
+     multi_test_results_df <- as.data.frame(multi_test_results)
+     
+     # Calculate FWER and other metrics
+     conditional_scheffe_FWER <- mean(multi_test_results_df$scheffe_any_sig)
+     conditional_bonferroni_FWER <- mean(multi_test_results_df$bonferroni_any_sig)
+     conditional_tukey_FWER <- mean(multi_test_results_df$tukey_any_sig)
+     
+     # Calculate Unconditional FWER
+     unconditional_scheffe_FWER <- conditional_scheffe_FWER * anova_sig_rate
+     unconditional_bonferroni_FWER <- conditional_bonferroni_FWER * anova_sig_rate
+     unconditional_tukey_FWER <- conditional_tukey_FWER * anova_sig_rate
+     
+     # For null case, all discoveries are false positives
+     if (case_config$h0_true) {
+       # Calculate per-comparison error rates
+       total_comparisons_performed <- n_sig_anova * n_pairs_total
+       
+       scheffe_PCER <- sum(multi_test_results_df$scheffe_n_sig) / total_comparisons_performed
+       bonferroni_PCER <- sum(multi_test_results_df$bonferroni_n_sig) / total_comparisons_performed
+       tukey_PCER <- sum(multi_test_results_df$tukey_n_sig) / total_comparisons_performed
+       
+       scheffe_avg_discoveries <- mean(multi_test_results_df$scheffe_n_sig)
+       bonferroni_avg_discoveries <- mean(multi_test_results_df$bonferroni_n_sig)
+       tukey_avg_discoveries <- mean(multi_test_results_df$tukey_n_sig)
+       
+       # Summary table for null case
+       error_summary_table <- data.frame(
+         Method = c("Scheffe", "Bonferroni", "Tukey HSD"),
+         Conditional_FWER = round(c(conditional_scheffe_FWER, conditional_bonferroni_FWER, conditional_tukey_FWER), 4),
+         Unconditional_FWER = round(c(unconditional_scheffe_FWER, unconditional_bonferroni_FWER, unconditional_tukey_FWER), 4),
+         Per_Comparison_Error = round(c(scheffe_PCER, bonferroni_PCER, tukey_PCER), 4),
+         Avg_False_Discoveries = round(c(scheffe_avg_discoveries, bonferroni_avg_discoveries, tukey_avg_discoveries), 3)
+       )
+     } else {
+       # For alternative case, calculate TPR and FPR
+       # Total possible true positives across all sig datasets
+       total_possible_tp <- n_sig_anova * case_config$n_true_diff_pairs
+       # Total possible false positives across all sig datasets
+       total_possible_fp <- n_sig_anova * case_config$n_equal_pairs
+       
+       # Prevent division by zero
+       if (total_possible_tp > 0) {
+         scheffe_tpr <- sum(multi_test_results_df$scheffe_tp) / total_possible_tp
+         bonferroni_tpr <- sum(multi_test_results_df$bonferroni_tp) / total_possible_tp
+         tukey_tpr <- sum(multi_test_results_df$tukey_tp) / total_possible_tp
+       } else {
+         # If there are no true differences, set TPR to NA
+         scheffe_tpr <- NA
+         bonferroni_tpr <- NA
+         tukey_tpr <- NA
+         cat("Warning: No true differences between groups (check case setup)\n")
+       }
+       
+       if (total_possible_fp > 0) {
+         scheffe_fpr <- sum(multi_test_results_df$scheffe_fp) / total_possible_fp
+         bonferroni_fpr <- sum(multi_test_results_df$bonferroni_fp) / total_possible_fp
+         tukey_fpr <- sum(multi_test_results_df$tukey_fp) / total_possible_fp
+       } else {
+         # If all pairs differ, set FPR to NA
+         scheffe_fpr <- NA
+         bonferroni_fpr <- NA
+         tukey_fpr <- NA
+         cat("Warning: All pairs have different means (no null pairs to measure FPR)\n")
+       }
+       
+       # Calculate average discoveries
+       scheffe_avg_discoveries <- mean(multi_test_results_df$scheffe_n_sig)
+       bonferroni_avg_discoveries <- mean(multi_test_results_df$bonferroni_n_sig)
+       tukey_avg_discoveries <- mean(multi_test_results_df$tukey_n_sig)
+       
+       # Calculate avg true/false positives
+       scheffe_avg_tp <- mean(multi_test_results_df$scheffe_tp)
+       scheffe_avg_fp <- mean(multi_test_results_df$scheffe_fp)
+       
+       bonferroni_avg_tp <- mean(multi_test_results_df$bonferroni_tp)
+       bonferroni_avg_fp <- mean(multi_test_results_df$bonferroni_fp)
+       
+       tukey_avg_tp <- mean(multi_test_results_df$tukey_tp)
+       tukey_avg_fp <- mean(multi_test_results_df$tukey_fp)
+       
+       # Summary table for alternative case
+       error_summary_table <- data.frame(
+         Method = c("Scheffe", "Bonferroni", "Tukey HSD"),
+         True_Positive_Rate = round(c(scheffe_tpr, bonferroni_tpr, tukey_tpr), 4),
+         False_Positive_Rate = round(c(scheffe_fpr, bonferroni_fpr, tukey_fpr), 4),
+         Avg_TP_per_dataset = round(c(scheffe_avg_tp, bonferroni_avg_tp, tukey_avg_tp), 3),
+         Avg_FP_per_dataset = round(c(scheffe_avg_fp, bonferroni_avg_fp, tukey_avg_fp), 3),
+         Total_Discoveries = round(c(scheffe_avg_discoveries, bonferroni_avg_discoveries, tukey_avg_discoveries), 3)
+       )
+     }
+   } # End if(n_sig_anova > 0)
+   
+   #--------------------------------------------------------------------------
+   # Step 4: Generate Output
+   #--------------------------------------------------------------------------
+   
+   # --- Report Case Information and ANOVA Results ---
+   cat("--- ANOVA Simulation Results ---\n")
+   cat("Case:", case_config$description, "\n")
+   cat("Total number of simulations (N):", N, "\n")
+   cat("Number of groups (k):", k, "\n")
+   cat("Sample size per group (n):", n, "\n")
+   cat("True group means:", paste(round(true_means, 2), collapse=", "), "\n")
+   cat("Common standard deviation:", sd_true, "\n")
+   cat("Significance level (alpha):", alpha, "\n")
+   
+   if (!case_config$h0_true) {
+     # Additional info for alternative case
+     cat("\nTrue difference information:\n")
+     pairs <- combn(k, 2)
+     n_pairs <- ncol(pairs)
+     cat("Total pairs:", n_pairs, "\n")
+     cat("Pairs with true differences:", case_config$n_true_diff_pairs, "\n")
+     cat("Pairs with equal means:", case_config$n_equal_pairs, "\n")
+     
+     # Print which pairs actually differ
+     if (case_config$n_true_diff_pairs > 0) {
+       cat("Pairs that differ: ")
+       for (i in 1:n_pairs) {
+         if (case_config$true_diff_pairs[i]) {
+           cat(paste0("(", pairs[1,i], ",", pairs[2,i], ") "))
+         }
+       }
+       cat("\n")
+     }
+   }
+   
+   cat("--------------------------------------------------------\n")
+   cat("Number of significant ANOVAs:", n_sig_anova, "\n")
+   cat("Proportion of significant ANOVAs:", round(anova_sig_rate, 4), "\n")
+   
+   if (case_config$h0_true) {
+     cat("(This is the observed Type I Error Rate; expected to be ≈", alpha, ")\n\n")
+   } else {
+     cat("(This is the observed Power; depends on effect sizes)\n\n")
+   }
+   
+   # --- Report Post-Hoc Test Results ---
+   if (n_sig_anova > 0 && !is.null(multi_test_results_df)) {
+     cat("--- Multiple Comparison Test Results ---\n")
+     cat("Number of datasets with significant ANOVA:", n_sig_anova, "\n")
+     cat("Number of pairwise comparisons per dataset:", n_pairs_total, "\n")
+     cat("-----------------------------------------------------------------------\n")
+     
+     if (case_config$h0_true) {
+       # For null case, report error rates
+       cat("\n--- Type I Error Control in Post-Hoc Tests ---\n")
+       
+       # Helper function to print method results
+       print_method_results <- function(method_name, any_sig_vec, n_sig_vec, cond_fwer, uncond_fwer, pcer) {
+         cat(paste("\n", method_name, "Test:\n"))
+         cat("Datasets with >= 1 significant difference (false discovery):", sum(any_sig_vec), "\n")
+         cat("Conditional FWER (Prop. datasets with any false discovery):", round(cond_fwer, 4), "\n")
+         cat("Unconditional FWER (overall probability of false discovery):", round(uncond_fwer, 4), "\n")
+         cat("Average number of false discoveries per dataset:", round(mean(n_sig_vec), 3), "\n")
+         cat("Per-Comparison Error Rate (PCER):", round(pcer, 4), "\n")
+       }
+       
+       # Print results for each method
+       print_method_results("Scheffe",
+                            multi_test_results_df$scheffe_any_sig,
+                            multi_test_results_df$scheffe_n_sig,
+                            conditional_scheffe_FWER,
+                            unconditional_scheffe_FWER,
+                            scheffe_PCER)
+       
+       print_method_results("Bonferroni",
+                            multi_test_results_df$bonferroni_any_sig,
+                            multi_test_results_df$bonferroni_n_sig,
+                            conditional_bonferroni_FWER,
+                            unconditional_bonferroni_FWER,
+                            bonferroni_PCER)
+       
+       print_method_results("Tukey HSD",
+                            multi_test_results_df$tukey_any_sig,
+                            multi_test_results_df$tukey_n_sig,
+                            conditional_tukey_FWER,
+                            unconditional_tukey_FWER,
+                            tukey_PCER)
+       
+       # Print Summary Table
+       cat("\n--- Summary Table: Multiple Comparison Error Rates ---\n")
+       print(error_summary_table, row.names = FALSE)
+       
+       # Print Interpretation Notes
+       cat("\n--- Interpretation Notes for Null Case (H0 True) ---\n")
+       cat(" - Simulation Context: All population group means are equal, so any significant difference\n")
+       cat("   found is a Type I error (false discovery).\n")
+       cat(" - Conditional FWER: P(at least one false pairwise discovery | ANOVA was significant)\n")
+       cat(" - Unconditional FWER: Overall P(at least one false pairwise discovery) = Conditional FWER × P(ANOVA significant)\n")
+       cat(" - Expected Pattern: Scheffe is most conservative (lowest FWER), followed by Bonferroni,\n")
+       cat("   then Tukey HSD, with all controlling FWER at or below alpha = ", alpha, "\n", sep="")
+       
+     } else {
+       # For alternative case, report power and TP/FP rates
+       cat("\n--- Power Analysis for Post-Hoc Tests ---\n")
+       
+       # Helper function to print method results for alternative case
+       print_power_results <- function(method_name, any_sig_vec, tp_vec, fp_vec, tp_rate, fp_rate) {
+         cat(paste("\n", method_name, "Test:\n"))
+         cat("Datasets with >= 1 significant difference detected:", sum(any_sig_vec), "\n")
+         cat("Conditional Detection Rate (proportion of significant ANOVAs where method found a difference):", 
+             round(mean(any_sig_vec), 4), "\n")
+         
+         if (!is.na(tp_rate)) {
+           cat("True Positive Rate (among possible true differences):", round(tp_rate, 4), "\n")
+         } else {
+           cat("True Positive Rate: N/A (no true differences to detect)\n")
+         }
+         
+         if (!is.na(fp_rate)) {
+           cat("False Positive Rate (among truly equal pairs):", round(fp_rate, 4), "\n")
+         } else {
+           cat("False Positive Rate: N/A (no equal pairs to falsely detect)\n")
+         }
+         
+         cat("Average true discoveries per dataset:", round(mean(tp_vec), 3), "\n")
+         cat("Average false discoveries per dataset:", round(mean(fp_vec), 3), "\n")
+       }
+       
+       # Print results for each method using true/false positive rates
+       print_power_results("Scheffe",
+                           multi_test_results_df$scheffe_any_sig,
+                           multi_test_results_df$scheffe_tp,
+                           multi_test_results_df$scheffe_fp,
+                           scheffe_tpr,
+                           scheffe_fpr)
+       
+       print_power_results("Bonferroni",
+                           multi_test_results_df$bonferroni_any_sig,
+                           multi_test_results_df$bonferroni_tp,
+                           multi_test_results_df$bonferroni_fp,
+                           bonferroni_tpr,
+                           bonferroni_fpr)
+       
+       print_power_results("Tukey HSD",
+                           multi_test_results_df$tukey_any_sig,
+                           multi_test_results_df$tukey_tp,
+                           multi_test_results_df$tukey_fp,
+                           tukey_tpr,
+                           tukey_fpr)
+       
+       # Print Summary Table for alternative case
+       cat("\n--- Summary Table: Post-Hoc Test Performance ---\n")
+       print(error_summary_table, row.names = FALSE)
+       
+       # Print Interpretation Notes
+       cat("\n--- Interpretation Notes for Alternative Case (H1 True) ---\n")
+       cat(" - Simulation Context: Some population means differ, so methods should ideally detect these differences.\n")
+       cat(" - True Positive Rate: Proportion of truly different pairs that were correctly identified.\n")
+       cat(" - False Positive Rate: Proportion of truly equal pairs that were incorrectly identified as different.\n")
+       cat(" - Expected Pattern: Tukey HSD often has best balance of TPR and FPR for pairwise comparisons,\n")
+       cat("   with Bonferroni and Scheffe being more conservative (lower TPR but also lower FPR).\n")
+     }
+     
+   } else {
+     # Message if no significant ANOVAs occurred
+     cat("--- Multiple Comparison Test Results ---\n")
+     cat("No significant ANOVA results found to perform multiple comparison tests.\n")
+   }
+   
+   cat("\n--- End of Simulation ---\n")
+
+Part 1A: No Real Differences (Type I Error)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Instructions:**
+
+1. Copy the simulation code above into an R script file or run it directly in your R console.
+2. The code is initially set to ``simulation_case = 1`` for the null hypothesis (all means equal).
+3. Inside the script, modify :math:`k` to 4, 8, and 16 in separate runs to see how the number of groups affects the chance of false positives.
+4. You can also adjust the sample size per group :math:`n` if you want to explore further.
+
+**Record Your Findings:**
+
+Note how often ANOVA itself yields a false positive (Type I error).
+
+For those runs where ANOVA is significant, see how frequently each post-hoc method (Scheffé, Bonferroni, Tukey) flags at least one pairwise difference (conditional error rate).
+
+Observe that you can also derive an overall (unconditional) false positive rate for each post-hoc method.
+
+**Question 1a:** Record your simulation results for different values of :math:`k`:
+
+For :math:`k = 4` groups:
+
+• ANOVA Type I Error Rate: ____________
+
+• Scheffé Conditional False Positive Rate: ____________
+
+• Bonferroni Conditional False Positive Rate: ____________
+
+• Tukey Conditional False Positive Rate: ____________
+
+
+For :math:`k = 8` groups:
+
+• ANOVA Type I Error Rate: ____________
+
+• Scheffé Conditional False Positive Rate: ____________
+
+• Bonferroni Conditional False Positive Rate: ____________
+
+• Tukey Conditional False Positive Rate: ____________
+
+
+For :math:`k = 16` groups:
+
+• ANOVA Type I Error Rate: ____________
+
+• Scheffé Conditional False Positive Rate: ____________
+
+• Bonferroni Conditional False Positive Rate: ____________
+
+• Tukey Conditional False Positive Rate: ____________
+
+
+**Question 1b:** Interpret: Which procedure is most conservative? Which is least likely to discover false differences? How does increasing :math:`k` change these error rates?
+
+[Space for your interpretation]
+
+
+Part 1B: Some Real Differences (Statistical Power)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Objective:** See how often ANOVA and each post-hoc method detect genuine differences among the groups, while still controlling false discoveries on the groups that are actually the same.
+
+**Instructions:**
+
+1. In the simulation code, change the line ``simulation_case <- 1`` to ``simulation_case <- 2``.
+2. The code randomly picks a few groups to shift away from the baseline mean. This simulates real differences in some groups.
+3. Run the code again for the same values of :math:`k` in :math:`\{4, 8, 16\}` and any sample size per group you prefer.
+
+**Record Your Findings:**
+
+• **Power of ANOVA:** The proportion of simulations in which ANOVA correctly signals at least one group difference is present.
+
+• **True Positive Rate (TPR) for Each Post-Hoc Method:** Among pairs of groups that truly differ, how many were detected?
+
+• **False Positive Rate (FPR) for Each Post-Hoc Method:** Among pairs that are actually the same, how many were incorrectly flagged?
+
+**Question 1c:** Record your simulation results for different values of :math:`k`:
+
+For :math:`k = 4` groups:
+
+• ANOVA Power: ____________
+
+• Scheffé TPR: ____________  |  Scheffé FPR: ____________
+
+• Bonferroni TPR: ____________  |  Bonferroni FPR: ____________
+
+• Tukey TPR: ____________  |  Tukey FPR: ____________
+
+
+For :math:`k = 8` groups:
+
+• ANOVA Power: ____________
+
+• Scheffé TPR: ____________  |  Scheffé FPR: ____________
+
+• Bonferroni TPR: ____________  |  Bonferroni FPR: ____________
+
+• Tukey TPR: ____________  |  Tukey FPR: ____________
+
+
+For :math:`k = 16` groups:
+
+• ANOVA Power: ____________
+
+• Scheffé TPR: ____________  |  Scheffé FPR: ____________
+
+• Bonferroni TPR: ____________  |  Bonferroni FPR: ____________
+
+• Tukey TPR: ____________  |  Tukey FPR: ____________
+
+
+**Question 1d:** Interpret: Which method finds genuine differences most reliably (highest TPR)? Which method keeps false positives (FPR) lower? How does this balance compare between Scheffé, Bonferroni, and Tukey?
+
+[Space for your interpretation]
+
+
+Part 2: Applying Tukey's HSD to Worksheet 18 Data
+--------------------------------------------------
+
+In :ref:`worksheet18`, we confirmed (using a one-way ANOVA) that at least one group mean differs significantly among our three treatment groups (A, B, and C). However, ANOVA alone did not tell us which groups differ from each other. We will now address this question by applying Tukey's Honestly Significant Difference (HSD) procedure to the same data.
+
+**Given Summary Statistics:**
+
+.. flat-table::
+   :header-rows: 1
+   :width: 60%
+   :align: center
+   
+   * - Group
+     - :math:`n_i`
+     - :math:`\bar{X}_i`
+     - :math:`s_i^2`
+   * - A
+     - 10
+     - 20
+     - 4
+   * - B
+     - 8
+     - 22
+     - 2
+   * - C
+     - 7
+     - 18
+     - 3
+
+Tukey's HSD Method
+~~~~~~~~~~~~~~~~~~
+
+Tukey's HSD specifically handles pairwise comparisons after a significant ANOVA:
+
+• It uses the studentized range distribution to determine a single critical difference that applies to all pairs of group means simultaneously.
+
+• This approach keeps the overall Type I error rate at or below the chosen alpha (often 0.05), avoiding the inflation that would occur from naively doing many separate t-tests.
+
+**Question 2a:** At a significance level :math:`\alpha = 0.05`, compute the Tukey parameter (qtukey).
+
+.. note::
+   Use the ``qtukey()`` function in R with parameters: significance level, number of groups :math:`k`, and degrees of freedom for within-group variance :math:`df_{\text{within}}`.
+
+Tukey parameter: :math:`q_{\alpha, k, df}` = ____________
+
+**Question 2b:** Using your summary statistics, degrees of freedom for the within-group variance, and your within-group mean squares estimate :math:`\text{MSE}`, and Tukey parameter obtain your margin of error estimate:
+
+.. math::
+
+   \text{Margin of Error} = q_{\alpha, k, df} \times \sqrt{\frac{\text{MSE}}{2} \left( \frac{1}{n_i} + \frac{1}{n_j} \right)}
+
+Calculate the margin of error for each pairwise comparison.
+
+.. note::
+   You should have calculated :math:`\text{MSE}` in Worksheet 18. If not, compute it from the pooled variance: :math:`\text{MSE} = s_p^2`.
+
+For groups A and B:
+
+Margin of Error: ____________
+
+
+For groups A and C:
+
+Margin of Error: ____________
+
+
+For groups B and C:
+
+Margin of Error: ____________
+
+
+**Question 2c:** Complete the table below:
+
+.. flat-table::
+   :header-rows: 1
+   :width: 100%
+   :align: center
+   
+   * - Difference (Order)
+     - Difference (Numeric)
+     - Lower CI
+     - Upper CI
+     - Significant (yes/no)
+   * - :math:`\mu_A - \mu_B`
+     - 
+     - 
+     - 
+     - 
+   * - :math:`\mu_A - \mu_C`
+     - 
+     - 
+     - 
+     - 
+   * - :math:`\mu_B - \mu_C`
+     - 
+     - 
+     - 
+     - 
+
+.. note::
+   A difference is significant if the confidence interval does not contain zero.
+
+
+**Question 2d:** Provide a graphical comparison. See the lecture notes on how to construct this.
+
+
+**Question 2e:** Provide a formal decision and conclusion in context.
+
+**Decision:**
+
+[State which pairwise comparisons are significant]
+
+
+**Conclusion:**
+
+[Provide a comprehensive conclusion about which treatment groups differ from each other and what this means in the context of the study]
+
+
+Part 3: Comprehensive ANOVA Analysis - ToothGrowth Dataset
+-----------------------------------------------------------
+
+You will work with the ``ToothGrowth`` dataset in R, which includes 60 observations of tooth length (``len``) for guinea pigs under different supplement types (``supp``) and dose levels (``dose``). However, you must combine these two variables into a single factor with six possible levels (OJ_0.5, OJ_1, OJ_2, VC_0.5, VC_1, VC_2) to treat it as a one-way ANOVA problem.
+
+**Question 3a:** Load the dataset and create a new factor variable called ``group``, by concatenating ``supp`` and ``dose`` (e.g., "OJ_0.5", etc.).
+
+.. code-block:: r
+
+   # Load the dataset
+   data(ToothGrowth)
+   
+   # View the first few rows to verify
+   head(ToothGrowth)
+   
+   # Check the levels of the new factor
+   levels(ToothGrowth$group)
+
+   # Create the combined group factor
+   ToothGrowth$group <- factor(paste(ToothGrowth$supp, ToothGrowth$dose, sep="_"))
+   table(ToothGrowth$group)
+   
+
+**Question 3b:** For each of the six levels in your new factor (``group``), compute the sample size (:math:`n`), sample mean, and sample standard deviation. Provide the summary statistics below. Write a brief commentary on any major differences you see among the sample group means.
+
+.. flat-table::
+   :header-rows: 1
+   :width: 80%
+   :align: center
+   
+   * - Group
+     - Sample Size :math:`n_i`
+     - Group Sample Means :math:`\bar{X}_i`
+     - Group Sample SDs :math:`s_i`
+   * - OJ_0.5
+     - 
+     - 
+     - 
+   * - OJ_1
+     - 
+     - 
+     - 
+   * - OJ_2
+     - 
+     - 
+     - 
+   * - VC_0.5
+     - 
+     - 
+     - 
+   * - VC_1
+     - 
+     - 
+     - 
+   * - VC_2
+     - 
+     - 
+     - 
+
+**Commentary on group means:**
+
+[Describe any patterns or major differences you observe]
+
+
+**Question 3c:** Formal ANOVA Hypothesis Setup (Steps 1 & 2): Define the parameter(s) of interest and state the null and alternative hypotheses.
+
+**Parameter(s) of Interest:**
+
+[Define the population means for each group]
+
+
+**Hypotheses:**
+
+:math:`H_0`:
+
+
+:math:`H_A`:
+
+
+**Question 3d:** Check Assumptions (Visual Inspection):
+
+Create the following visualizations:
+
+1. **Side-by-Side Boxplots:** Plot the distribution of ``len`` by the newly created factor ``group``.
+
+2. **Effects Plot:** Plot just the group means connected by lines to see how average tooth length changes across levels.
+
+3. **Histograms with Normal Overlays:** Create a grid of histograms (all using the same scale for ease of comparison), each for one group, overlaid with both (i) a smooth kernel density curve and (ii) a fitted Normal curve using that group's mean and sd.
+
+4. **QQ Plots:** Create a grid of QQ plots.
+
+.. code-block:: r
+
+   library(ggplot2)
+   
+   # 1. Side-by-side boxplots
+   ggplot(ToothGrowth, aes(x=group, y=len)) +
+    geom_boxplot(fill="lightblue", outlier.color="red") +
+    stat_boxplot(geom = "errorbar") +
+    stat_summary(fun = mean, color = "black", size = 3, geom ="point")+
+    ggtitle("Side-by-Side Boxplots of Tooth Length by Combined Group")
+
+   # 2. Effects plot (means)
+    ggplot(ToothGrowth, aes(x=group, y=len)) +
+    stat_summary(fun=mean, geom="point") +
+    stat_summary(fun=mean, geom="line", aes(group=1)) +
+    ggtitle("Effects Plot of Mean Tooth Length by Combined Group")
+   
+
+    # 3. Summary table: n, mean, sd
+    group_levels <- levels(ToothGrowth$group)
+    n_vec <- tapply(ToothGrowth$len, ToothGrowth$group, length)
+    mean_vec <- tapply(ToothGrowth$len, ToothGrowth$group, mean)
+    sd_vec <- tapply(ToothGrowth$len, ToothGrowth$group, sd)
+
+    summary_table <- data.frame(
+    Group = group_levels,
+    n = as.numeric(n_vec),
+    Mean = as.numeric(mean_vec),
+    StdDev = as.numeric(sd_vec)
+    )
+    print(summary_table)
+   
+   
+   # 3. Histograms with normal overlays
+    xbar <- tapply(ToothGrowth$len, ToothGrowth$group, mean)
+    s   <- tapply(ToothGrowth$len, ToothGrowth$group, sd)
+
+    ToothGrowth$normal.density <- apply(ToothGrowth, 1, function(x){
+    dnorm(as.numeric(x["len"]), 
+            xbar[x["group"]], s[x["group"]])})
+
+    n_bins = 5
+
+    ggplot(ToothGrowth, aes(x=len)) +
+    geom_histogram(aes(y = after_stat(density)), 
+                    bins = n_bins, fill = "grey", col = "black") +
+    facet_wrap(group ~ ., nrow = 4, ncol = 3) +
+    geom_density(col = "red", linewidth = 1) +
+    geom_line(aes(y = normal.density), col = "blue", linewidth = 1) +
+    ggtitle("Histograms w/ Kernel (red) & Normal (blue), by group")
+
+   # 4. QQ plots
+    qq_plot <- ggplot(ToothGrowth, aes(sample=len)) +
+    stat_qq() +
+    stat_qq_line(color="blue") +
+    facet_wrap(~group, nrow=2, ncol=3) +
+    ggtitle("QQ Plots by Combined Group")
+    print(qq_plot)
+
+
+
+**Question 3e:** Using the summary statistics and graphs check the assumptions before proceeding with analysis. Also mention why the independence assumption is likely reasonable.
+
+**Normality assumption:**
+
+[Comment on whether the data appear approximately normal within each group]
+
+
+**Equal variance assumption:**
+
+[Check the ratio of largest to smallest standard deviation]
+
+
+**Independence assumption:**
+
+[Explain why independence is reasonable for this study]
+
+
+**Question 3f:** Perform the ANOVA at :math:`\alpha = 0.05` (Using ``aov`` in R) and perform Steps 3 & 4 of the Formal Hypothesis Procedure.
+
+**Test Statistic:** :math:`F` = ____________
+
+**P-value:** ____________
+
+**Decision:**
+
+[Reject or Fail to reject :math:`H_0`]
+
+
+**Conclusion:**
+
+[State your conclusion in context of tooth growth and supplement/dose combinations]
+
+
+**Question 3g:** Since we do reject the null with 6 distinct groups, perform a post-hoc analysis using Tukey's HSD (``TukeyHSD`` function in R). Provide a graphical representation of the results of the TukeyHSD and provide a formal conclusion.
+
+**Tukey HSD Results:**
+
+[Summarize which pairwise comparisons are significant]
+
+
+**Formal Conclusion:**
+
+[Provide a comprehensive conclusion about which supplement/dose combinations differ significantly from each other and what this means for tooth growth]
+
+
+
+Key Takeaways
+-------------
+
+.. admonition:: Summary 📝
+   :class: important
+
+   • **The multiple comparisons problem** arises when conducting many pairwise tests after ANOVA, which inflates the family-wise Type I error rate far beyond the nominal significance level unless corrected.
+   
+   • **Tukey's Honestly Significant Difference (HSD)** provides a balanced approach to pairwise comparisons that controls the family-wise error rate while maintaining reasonable power to detect true differences, making it the preferred method for most ANOVA follow-up analyses.
+   
+   • **The studentized range distribution** underlies Tukey's method, providing a single critical value that accounts for all :math:`\binom{k}{2}` pairwise comparisons simultaneously, avoiding the need to adjust alpha for each individual test.
+   
+   • **Confidence intervals for mean differences** in Tukey's HSD indicate which pairs of groups differ significantly: intervals that exclude zero correspond to significant differences at the specified alpha level.
+   
+   • **Bonferroni correction** is the simplest multiple comparison adjustment (dividing alpha by the number of comparisons) but becomes overly conservative with many comparisons, reducing power to detect real effects.
+   
+   • **Scheffé's method** is the most flexible, allowing any contrast comparison, but is also the most conservative and typically has the lowest power among the three methods discussed.
+   
+   • **Simulation studies** reveal the trade-offs between methods: Tukey's HSD generally provides the best balance of Type I error control and power for pairwise comparisons, while Scheffé is more conservative and Bonferroni becomes increasingly conservative as the number of comparisons grows.
+   
+   • **Post-hoc testing requires prior significant ANOVA** results to be most meaningful, as conducting multiple comparisons without evidence of any differences increases the overall error rate without theoretical justification.
+   
+   • **Visual representations** of Tukey HSD results, showing confidence intervals for all pairwise differences, provide an intuitive way to understand the pattern of similarities and differences among multiple groups.
+   
+   • **R provides comprehensive tools** for multiple comparisons through functions like ``TukeyHSD()``, which automatically compute adjusted confidence intervals and p-values for all pairwise comparisons following ANOVA.
