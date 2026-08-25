@@ -66,14 +66,24 @@ the data into four equally sized parts, each containing approximately 25% of the
 Calculating Sample Quartiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Sample quartiles can be found by "computing three different medians." The specific steps are as follows:
+Intuitively, the sample quartiles are "three medians": :math:`Q_2` is the median of the whole
+data set, while :math:`Q_1` and :math:`Q_3` sit at the centers of the lower and upper halves.
+Different textbooks and software packages turn this intuition into slightly different rules.
+In this course, we use the method that R's :code:`quantile()` function applies by default
+(the Hyndman–Fan **type 7** method), so that your hand calculations always match R's output:
 
-1. Compute the sample median of the whole data set. This is the second quartile, or :math:`Q_2`.
-2. The data is now divided into two equally sized subsets, from the minimum to the median,
-   then from the median to the maximum. Include
-   the median in both subsets if it is **on** a data point.
-   Compute the sample median of the first subset. This is the first quartile, :math:`Q_1`, for the whole data.
-3. Likewise, compute the median for the second subset. This is the third quartile, :math:`Q_3`, for the whole data.
+1. Sort the data: :math:`x_{(1)} \le x_{(2)} \le \cdots \le x_{(n)}`.
+2. For the quartile at proportion :math:`p` (:math:`p = 0.25, 0.5, 0.75` for
+   :math:`Q_1, Q_2, Q_3`, respectively), compute the **position**
+
+   .. math:: h = (n-1)p + 1.
+
+3. Split the position into its whole part :math:`k = \lfloor h \rfloor` and fractional part
+   :math:`f = h - k`.
+4. The quartile is the value at position :math:`h`. When :math:`h` is not a whole number,
+   interpolate a fraction :math:`f` of the way from :math:`x_{(k)}` to the next value:
+
+   .. math:: x_{(k)} + f \cdot \left(x_{(k+1)} - x_{(k)}\right).
 
 
 .. admonition:: Example 💡: Computing the Sample Quartiles
@@ -112,24 +122,22 @@ Sample quartiles can be found by "computing three different medians." The specif
 
    **Calculating the sample quartiles by hand**
 
-   1. :math:`n=19`. The sample median of the data set is the 10th smallest value. :math:`Q_2 = 24`.
-   2. Let us now consider the first half of the data, from 7 to 24. There are 10 (even) data points in the
-      subset. Therefore, we take the average between the 5th and the 6th data points as the subset's sample median.
-      :math:`Q_1 = \frac{14+18}{2} = 16`.
-   3. Repeating Step 2 for the second subset (24 to 150), we find :math:`Q_3 = \frac{37+47}{2} = 42`.
+   The sorted data has :math:`n = 19`.
+
+   1. :math:`Q_2`: the position is :math:`h = (19-1)(0.5) + 1 = 10`, a whole number, so
+      :math:`Q_2` is the 10th smallest value. :math:`Q_2 = 24`.
+   2. :math:`Q_1`: the position is :math:`h = (19-1)(0.25) + 1 = 5.5`, so :math:`k = 5` and
+      :math:`f = 0.5`. We interpolate halfway between the 5th and 6th smallest values:
+      :math:`Q_1 = 14 + 0.5(18 - 14) = 16`.
+   3. :math:`Q_3`: the position is :math:`h = (19-1)(0.75) + 1 = 14.5`, so :math:`k = 14` and
+      :math:`f = 0.5`: :math:`Q_3 = 37 + 0.5(47 - 37) = 42`.
 
    Confirm that the four sections created by :math:`Q_1, Q_2` and :math:`Q_3` are equally sized.
 
 
-.. warning::
+   **Calculating the sample quartiles in R**
 
-   **Quantile definitions:** R’s :code:`quantile()` uses the Hyndman and Fan type 7 method by default, which is **not** the same as the simple “median of halves” hand calculation shown above. **For all homework and assessments, you must use R’s approach with :code:`type = 7` (the default), and your answers should match R’s output.**
-
-
-
-**Calculating the sample quartiles in R**
-   
-   In R, the `quantile()` function is used to calculate percentiles (quantiles are simply percentiles on a 0-1 scale instead of
+   In R, the :code:`quantile()` function is used to calculate percentiles (quantiles are simply percentiles on a 0-1 scale instead of
    0-100.) By default, it returns the **five-number summary** (minimum, Q₁, median, Q₃, maximum):
 
    .. code-block:: r
@@ -141,10 +149,10 @@ Sample quartiles can be found by "computing three different medians." The specif
       quantile(x)
       
       # Output:
-      #    0%   25%   50%   75%  100% 
-      #   7.0  16.0  24.0  42.0 150.0
+      #   0%  25%  50%  75% 100%
+      #    7   16   24   42  150
 
-   To access  quartiles, you can use the following syntax:
+   To access individual quartiles, you can use the following syntax:
 
    .. code-block:: r
 
@@ -162,6 +170,11 @@ Sample quartiles can be found by "computing three different medians." The specif
       quantile(x, probs = c(0.1, 0.2, 0.3))
 
 
+.. warning::
+
+   **Quantile definitions:** Many textbooks teach a simpler “median of halves” shortcut for quartiles: split the sorted data at the median and take the median of each half, keeping the median itself in both halves when it falls on a data point. That shortcut (Tukey’s hinges) is **not** the same as the type 7 method taught above—it happens to give the same answers for the promotion data, but not in general. **For all homework and assessments, you must use the type 7 method (R’s default), and your answers should match the output of** :code:`quantile()`.
+
+
 .. admonition:: Brief discussion: quantile methods in R
    :class: tip
 
@@ -169,7 +182,7 @@ Sample quartiles can be found by "computing three different medians." The specif
 
    • **Two families.** Types 1–3 are stepwise choices that pick actual data points, with different tie handling. Types 4–9 use linear interpolation between data points.
 
-   • **Textbook “median of halves.”** This is Tukey’s hinges, used by :code:`fivenum()` and by base and ggplot boxplots. It often matches the hand method you may know, but not always.
+   • **Textbook “median of halves.”** This is Tukey’s hinges, used by :code:`fivenum()` and by base R’s :code:`boxplot()`. Note that ggplot2 does not use hinges: :code:`stat_boxplot()` calls :code:`quantile(..., type = 7)`, so the box plots you draw in this course already match the course policy.
 
    • **R default.** :code:`quantile(..., type = 7)` is the default. It interpolates to give smooth percentiles and is standard in R and S/S-PLUS.
 
@@ -354,11 +367,12 @@ a box plot, we often include it for a more comprehensive view of the data distri
       promotion_df <- data.frame(months=promotion)
 
       # Graph
-      ggplot(promotion_df, aes(y="", x=months)) +  # flip x and y to make the plot vertical
-         stat_boxplot(geom="errorbar") + #formats the whiskers
-         geom_boxplot() + 
+      ggplot(promotion_df, aes(y="", x=months)) +  # months on x makes the box plot horizontal
+         stat_boxplot(geom="errorbar", width=0.2, orientation="y") + # formats the whiskers
+         geom_boxplot(width=0.4) +
          ggtitle("Boxplot of Months to Promotion") +
-         stat_summary(fun = mean, col = "black", geom = "point", size = 3) 
+         stat_summary(fun = mean, col = "black", geom = "point", size = 3, orientation="y") +
+         ylab("")
 
 
    The code above returns :numref:`box-plot`. 
@@ -526,26 +540,24 @@ These exercises build your skills in calculating and interpreting quartiles, the
       The data is already sorted with :math:`n = 15`.
 
       **Step 1: Find Q₂ (median)**
-      
-      Since n = 15 is odd, Q₂ is the :math:`\frac{15+1}{2} = 8`\ th value.
-      
+
+      Position: :math:`h = (15-1)(0.5) + 1 = 8`, a whole number, so Q₂ is the 8th value.
+
       :math:`Q_2 = 27` ms
 
       **Step 2: Find Q₁**
-      
-      Consider the lower half: {12, 15, 18, 19, 22, 24, 25, 27} (8 values, including the median)
-      
-      Q₁ is the median of this subset: average of 4th and 5th values.
-      
-      :math:`Q_1 = \frac{19 + 22}{2} = 20.5` ms
+
+      Position: :math:`h = (15-1)(0.25) + 1 = 4.5`, so :math:`k = 4` and :math:`f = 0.5`.
+      Interpolate halfway between the 4th and 5th values:
+
+      :math:`Q_1 = 19 + 0.5(22 - 19) = 20.5` ms
 
       **Step 3: Find Q₃**
-      
-      Consider the upper half: {27, 29, 31, 34, 38, 42, 48, 55} (8 values, including the median)
-      
-      Q₃ is the median of this subset: average of 4th and 5th values.
-      
-      :math:`Q_3 = \frac{34 + 38}{2} = 36` ms
+
+      Position: :math:`h = (15-1)(0.75) + 1 = 11.5`, so :math:`k = 11` and :math:`f = 0.5`.
+      Interpolate halfway between the 11th and 12th values:
+
+      :math:`Q_3 = 34 + 0.5(38 - 34) = 36` ms
 
       **Five-Number Summary:**
       
@@ -611,51 +623,65 @@ These exercises build your skills in calculating and interpreting quartiles, the
 
       Data is sorted with :math:`n = 20`.
 
-      **Q₂ (median)**: Average of 10th and 11th values = :math:`\frac{452 + 455}{2} = 453.5` MPa
+      **Q₂ (median)**: :math:`h = (20-1)(0.5) + 1 = 10.5`, so interpolate halfway between the
+      10th and 11th values: :math:`Q_2 = 452 + 0.5(455 - 452) = 453.5` MPa
 
-      **Q₁**: Median of lower half {415, 422, 428, 431, 435, 438, 441, 445, 448, 452}
-      
-      Average of 5th and 6th values = :math:`\frac{435 + 438}{2} = 436.5` MPa
+      **Q₁**: :math:`h = (20-1)(0.25) + 1 = 5.75`, so :math:`k = 5` and :math:`f = 0.75`.
+      Interpolate 75% of the way from the 5th value (435) to the 6th value (438):
 
-      **Q₃**: Median of upper half {455, 458, 462, 468, 472, 478, 485, 495, 520, 580}
-      
-      Average of 5th and 6th values = :math:`\frac{472 + 478}{2} = 475` MPa
+      :math:`Q_1 = 435 + 0.75(438 - 435) = 437.25` MPa
 
-      **IQR** = Q₃ − Q₁ = 475 − 436.5 = **38.5** MPa
+      **Q₃**: :math:`h = (20-1)(0.75) + 1 = 15.25`, so :math:`k = 15` and :math:`f = 0.25`.
+      Interpolate 25% of the way from the 15th value (472) to the 16th value (478):
+
+      :math:`Q_3 = 472 + 0.25(478 - 472) = 473.5` MPa
+
+      **IQR** = Q₃ − Q₁ = 473.5 − 437.25 = **36.25** MPa
+
+      Verification in R:
+
+      .. code-block:: r
+
+         strength <- c(415, 422, 428, 431, 435, 438, 441, 445, 448, 452,
+                       455, 458, 462, 468, 472, 478, 485, 495, 520, 580)
+
+         quantile(strength)
+         #     0%    25%    50%    75%   100%
+         # 415.00 437.25 453.50 473.50 580.00
 
       **Part (b): Inner Fences (1.5 × IQR)**
 
       .. math::
 
-         \text{Lower inner fence} = Q_1 - 1.5 \times \text{IQR} = 436.5 - 1.5(38.5) = 436.5 - 57.75 = 378.75 \text{ MPa}
+         \text{Lower inner fence} = Q_1 - 1.5 \times \text{IQR} = 437.25 - 1.5(36.25) = 437.25 - 54.375 = 382.875 \text{ MPa}
 
       .. math::
 
-         \text{Upper inner fence} = Q_3 + 1.5 \times \text{IQR} = 475 + 1.5(38.5) = 475 + 57.75 = 532.75 \text{ MPa}
+         \text{Upper inner fence} = Q_3 + 1.5 \times \text{IQR} = 473.5 + 1.5(36.25) = 473.5 + 54.375 = 527.875 \text{ MPa}
 
       **Part (c): Outer Fences (3 × IQR)**
 
       .. math::
 
-         \text{Lower outer fence} = Q_1 - 3 \times \text{IQR} = 436.5 - 3(38.5) = 436.5 - 115.5 = 321 \text{ MPa}
+         \text{Lower outer fence} = Q_1 - 3 \times \text{IQR} = 437.25 - 3(36.25) = 437.25 - 108.75 = 328.5 \text{ MPa}
 
       .. math::
 
-         \text{Upper outer fence} = Q_3 + 3 \times \text{IQR} = 475 + 3(38.5) = 475 + 115.5 = 590.5 \text{ MPa}
+         \text{Upper outer fence} = Q_3 + 3 \times \text{IQR} = 473.5 + 3(36.25) = 473.5 + 108.75 = 582.25 \text{ MPa}
 
       **Part (d): Identifying Explicit Points**
 
       Check each value against the fences:
 
       - **Mild explicit points**: Values between inner and outer fences
-        
-        - 580 MPa: Above upper inner fence (532.75) but below upper outer fence (590.5) → **Mild explicit point**
+
+        - 580 MPa: Above upper inner fence (527.875) but below upper outer fence (582.25) → **Mild explicit point**
 
       - **Extreme explicit points**: Values beyond outer fences
-        
-        - None (580 < 590.5 and all values > 321)
 
-      - 520 MPa is below 532.75, so it is **NOT** an explicit point
+        - None (580 < 582.25—by only 2.25 MPa—and all values > 328.5)
+
+      - 520 MPa is below 527.875, so it is **NOT** an explicit point
 
       **Summary**: One mild explicit point (580 MPa), no extreme explicit points.
 
@@ -665,7 +691,7 @@ These exercises build your skills in calculating and interpreting quartiles, the
 
       **Why this is problematic:**
 
-      1. **Moving target**: After removing 580, the new Q₃ and IQR would decrease, potentially flagging 520 as a new explicit point
+      1. **Moving target**: After removing 580, the new Q₃ and IQR decrease, pulling the upper inner fence down to 520.25 MPa—the value 520 now escapes being flagged by only 0.25 MPa
       
       2. **Iterative deletion**: This could lead to repeatedly removing points, shrinking the dataset artificially
       
@@ -710,7 +736,7 @@ These exercises build your skills in calculating and interpreting quartiles, the
 
       **Server A:**
       
-      - Min (lower whisker): ~0.8 sec
+      - Min (left whisker): ~0.8 sec
       - Q₁: ~1.2 sec
       - Q₂ (median): ~1.5 sec
       - Q₃: ~2.0 sec
@@ -812,8 +838,8 @@ These exercises build your skills in calculating and interpreting quartiles, the
                           4.5, 5.0, 5.8, 8.5, 12.0)
          
          quantile(effect_time)
-         #    0%   25%   50%   75%  100%
-         #  1.20  2.40  3.00  3.90 12.00
+         #   0%  25%  50%  75% 100%
+         #  1.2  2.4  3.0  3.9 12.0
 
          IQR(effect_time)  # 1.5
 
@@ -850,23 +876,23 @@ These exercises build your skills in calculating and interpreting quartiles, the
          
          effect_df <- data.frame(time = effect_time)
          
-         ggplot(effect_df, aes(x = "", y = time)) +
-           stat_boxplot(geom = "errorbar", width = 0.2) +  # Whisker caps
+         ggplot(effect_df, aes(y = "", x = time)) +
+           stat_boxplot(geom = "errorbar", width = 0.2, orientation = "y") +  # Whisker caps
            geom_boxplot(fill = "lightblue", width = 0.4) +
-           stat_summary(fun = mean, geom = "point", 
-                        color = "black", size = 3) +  # Mean point
+           stat_summary(fun = mean, geom = "point",
+                        color = "black", size = 3, orientation = "y") +  # Mean point
            ggtitle("Drug Effect Time Distribution") +
-           ylab("Time to Effect (hours)") +
-           xlab("") +
+           xlab("Time to Effect (hours)") +
+           ylab("") +
            theme_minimal()
 
       **Part (d): Shape of Distribution**
 
       The distribution is **right-skewed (positively skewed)**:
 
-      - The upper whisker is much longer than the lower whisker
+      - The right whisker is much longer than the left whisker
       - The distance from Q₂ to Q₃ (0.9 hours) is greater than Q₁ to Q₂ (0.6 hours)
-      - There are explicit points only on the upper end
+      - There are explicit points only on the high end
       - The mean would be greater than the median due to the high values
 
       This pattern is common for time-to-effect data: most patients respond within a typical range, but some take much longer.
