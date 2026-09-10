@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Winter session runs mid-December through mid-January
     const isWinterSession = (
         (currentMonth === 11 && currentDay >= 15) || // December 15-31
-        (currentMonth === 0 && currentDay <= 8)     // January 1-8
+        (currentMonth === 0 && currentDay <= 15)    // January 1-15
     );
     // Summer session runs May 11 through August 7
     const isSummerSession = (
