@@ -96,11 +96,11 @@ First, compute descriptive statistics for the chick weights at each recorded tim
 Question 1b: Visual Assessment of Normality
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Next, visually assess the distribution of chick weights at each time point by plotting histograms with overlaid smooth kernel density curves and fitted Normal curves. Arrange these plots in a clear grid layout, labeling each time point clearly.
+Next, visually assess the distribution of chick weights at each time point by plotting histograms with overlaid smooth curves and fitted Normal curves. Arrange these plots in a clear grid layout, labeling each time point clearly.
 
 To further investigate the normality assumption required for the validity of Student's t confidence intervals, create QQ plots for chick weights at each time point.
 
-**Your Task:** Describe the steps needed to display these visualizations (histograms with density curves and QQ plots) in a clear, grid-like format. What R packages and functions would you use?
+**Your Task:** Describe the steps needed to display these visualizations (histograms with smooth curves and fitted Normal curves, and QQ plots) in a clear, grid-like format. What R packages and functions would you use?
 
 .. admonition:: R Visualization Exercise 🖥️
    :class: tip
@@ -109,7 +109,7 @@ To further investigate the normality assumption required for the validity of Stu
    
    You'll need to create two types of plots:
    
-   1. **Histograms with density curves**: Use ``ggplot2`` with ``geom_histogram()`` and ``stat_function()`` to overlay a normal curve
+   1. **Histograms with smooth curves and fitted Normal curves**: Use ``ggplot2`` with ``geom_histogram()`` for the histogram and ``geom_density()`` for the smooth curve. Compute each time point's fitted Normal curve from that time point's own mean and standard deviation, store the curves in a data frame (``norm_df`` below), and draw them with ``geom_line()``
    2. **QQ plots**: Use ``ggplot2`` with ``stat_qq()`` and ``stat_qq_line()``
    
    Consider using ``facet_wrap()`` or ``gridExtra::grid.arrange()`` to display multiple time points together.
@@ -121,18 +121,25 @@ To further investigate the normality assumption required for the validity of Stu
    library(ggplot2)
 
    data("ChickWeight")
-   # Filter data for specific time points
-   chick_subset <- ChickWeight[ChickWeight$Time %in% c(0, 10, 21), ]
+   # Time points to display: every recorded time point
+   times_to_plot <- sort(unique(ChickWeight$Time))
+   # To display only the three requested reporting times:
+   # times_to_plot <- c(0, 10, 21)
+
+   # Keep only the selected time points; the summaries and both plots below use chick_subset
+   chick_subset <- ChickWeight[ChickWeight$Time %in% times_to_plot, ]
 
    # Compute per-time means and sds (base R)
+   # (the sample SD of the individual weights at each time point, not s/sqrt(n))
    m_by_time  <- tapply(chick_subset$weight, chick_subset$Time, mean)
    sd_by_time <- tapply(chick_subset$weight, chick_subset$Time, sd)
-   times <- as.numeric(names(m_by_time))
 
-   # Build per-time Normal-fit curves without dplyr
+   # Build per-time Normal-fit curves without dplyr:
+   # for each time point, evaluate dnorm() over a grid of weights using that
+   # time point's own mean and SD; the Time column places each curve in its panel
    norm_df <- do.call(
    rbind,
-   lapply(times, function(t) {
+   lapply(times_to_plot, function(t) {
       w <- chick_subset$weight[chick_subset$Time == t]
       x <- seq(min(w), max(w), length.out = 200)
       y <- dnorm(x, mean = m_by_time[as.character(t)], sd = sd_by_time[as.character(t)])
@@ -141,28 +148,27 @@ To further investigate the normality assumption required for the validity of Stu
    )
 
 
-   # Histogram with KDE and fitted Normal curves
-   ggplot(ChickWeight, aes(x = weight)) +
-   geom_histogram(aes(y = after_stat(density)), bins = 9, color = "gray30", fill = "gray80") +
-   geom_density(color = "blue", size = 0.9) +
-   stat_function(
-      fun = function(x) dnorm(x, mean = mean(x), sd = sd(x)),
-      color = "red",
-      linetype = "dashed",
-      size = 0.9
-   ) +
-   facet_wrap(~Time, scales = "free") +
-   labs(title = "Histograms with Kernel Density and Normal Curves",
+   # Histograms with smooth curves and fitted Normal curves
+   # geom_density() draws the smooth curve; geom_line() draws the precomputed
+   # fitted Normal curves stored in norm_df
+   ggplot(chick_subset, aes(x = weight)) +
+   geom_histogram(aes(y = after_stat(density)),
+                  bins = 9, color = "gray30", fill = "gray80") +
+   geom_density(color = "red", linewidth = 0.9) +
+   geom_line(data = norm_df, aes(x = x, y = y),
+             inherit.aes = FALSE, color = "blue", linewidth = 0.9) +
+   facet_wrap(~Time, scales = "free", ncol = 3) +
+   labs(title = "Histograms with Smooth Curves and Fitted Normal Curves",
          x = "Chick Weight (grams)",
          y = "Density") +
    theme_minimal()
 
 
    # QQ plots by time
-   ggplot(ChickWeight, aes(sample = weight)) +
+   ggplot(chick_subset, aes(sample = weight)) +
    stat_qq(color = "black", size = 2) +
-   stat_qq_line(color = "red", lwd = 1.5) +
-   facet_wrap(~ Time, scales = "free") +
+   stat_qq_line(color = "red", linewidth = 1.5) +
+   facet_wrap(~Time, scales = "free", ncol = 3) +
    labs(title = "Normal QQ-Plots for Chick Weights by Time",
          x = "Theoretical Quantiles",
          y = "Sample Quantiles") +
