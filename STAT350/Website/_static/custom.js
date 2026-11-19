@@ -294,3 +294,53 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+/* -----------------------------------------------------------------------
+   React slides: scale each embedded deck to its column, and full screen.
+   (custom.css section 19 explains the frame.) The deck is laid out for a
+   1280x900 window; the frame keeps that size and is scaled to the column
+   width, re-measured whenever the column changes. In full screen the scale is
+   dropped and the deck lays itself out for the screen.
+   -------------------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', function () {
+    var boxes = document.querySelectorAll('.react-slides');
+    if (!boxes.length) return;
+    var DESIGN_WIDTH = 1280;
+
+    function fit(viewport) {
+        var frame = viewport.querySelector('iframe');
+        if (!frame) return;
+        if (document.fullscreenElement === viewport) {
+            frame.style.transform = 'none';
+            return;
+        }
+        frame.style.transform = 'scale(' + (viewport.clientWidth / DESIGN_WIDTH) + ')';
+    }
+
+    boxes.forEach(function (box) {
+        var viewport = box.querySelector('.react-slides__viewport');
+        if (!viewport) return;
+        fit(viewport);
+        if ('ResizeObserver' in window) {
+            new ResizeObserver(function () { fit(viewport); }).observe(viewport);
+        } else {
+            window.addEventListener('resize', function () { fit(viewport); });
+        }
+        var button = box.querySelector('.react-slides__fullscreen');
+        if (button && viewport.requestFullscreen) {
+            button.hidden = false;
+            button.addEventListener('click', function () {
+                viewport.requestFullscreen().then(function () {
+                    var frame = viewport.querySelector('iframe');
+                    if (frame) frame.focus();   // arrow keys now drive the slides
+                }).catch(function () {});
+            });
+        }
+    });
+
+    document.addEventListener('fullscreenchange', function () {
+        boxes.forEach(function (box) {
+            var viewport = box.querySelector('.react-slides__viewport');
+            if (viewport) fit(viewport);
+        });
+    });
+});
