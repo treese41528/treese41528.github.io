@@ -61,7 +61,7 @@ RAG combines two capabilities: **retrieval** (finding relevant documents) and **
 Building RAG with GenAI Studio
 --------------------------------
 
-GenAI Studio provides a built-in RAG system through its knowledge base API. This handles chunking, embedding, storage, and retrieval automatically—you upload documents and query against them.
+GenAI Studio provides a built-in RAG system through its knowledge base API. This handles chunking, embedding, storage, and retrieval automatically—you upload documents and query against them. The embedding happens inside the service: the vectors are never returned to you, and the API has no call that embeds text on request.
 
 Step 1: Upload Files
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -188,7 +188,7 @@ The clearest way to see what RAG buys you is a side-by-side comparison on a ques
 Building RAG from Scratch
 ---------------------------
 
-Understanding the mechanics of RAG requires building it manually. This connects directly to the embedding techniques from :ref:`Section 6.2 <ch6_2-embeddings-features>` and chunking strategies from :ref:`Section 6.3 <ch6_3-text-preprocessing>`.
+Understanding the mechanics of RAG requires building it manually. This connects directly to the embedding techniques from :ref:`Section 6.2 <ch6_2-embeddings-features>` and chunking strategies from :ref:`Section 6.3 <ch6_3-text-preprocessing>`. In this version, indexing and retrieval run on your own machine with the local embedding model from Section 6.2; only the final generation step calls GenAI Studio.
 
 Step 1: Chunk the Documents
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -273,23 +273,23 @@ Step 1: Chunk the Documents
 Step 2: Embed All Chunks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``gemma3`` (the chat model selected earlier) has no embedding endpoint, so switch to an embed-capable model before embedding. Keep the **same** embed model across indexing and querying—embedding dimension varies by model, so an index built with one model cannot be searched with another.
+Embed the chunks with the local model from :ref:`Section 6.2 <ch6_2-embeddings-features>`. Keep the **same** embedding model across indexing and querying—each model has its own vector space, so an index built with one model cannot be searched with another.
 
 .. code-block:: python
 
    import numpy as np
+   from sentence_transformers import SentenceTransformer
 
-   # gemma3 has no embedding endpoint; use an embed-capable model (llama3.2:latest -> 3072-d)
-   ai.select_model("llama3.2:latest")
+   # The local embedding model from Section 6.2 (384 dimensions, runs on a laptop CPU)
+   embedder = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
-   # Embed all chunks
-   chunk_embeddings = ai.embed(all_chunks)
-   chunk_matrix = np.array(chunk_embeddings)
+   # Embed all chunks: one unit-length row per chunk
+   chunk_matrix = embedder.encode(all_chunks)
    print(f"Chunk matrix shape: {chunk_matrix.shape}")
 
 .. code-block:: text
 
-   Chunk matrix shape: (6, 3072)
+   Chunk matrix shape: (6, 384)
 
 Step 3: Retrieve Relevant Chunks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -303,13 +303,11 @@ Step 3: Retrieve Relevant Chunks
 
 .. code-block:: python
 
-   def retrieve(query, chunk_matrix, all_chunks, chunk_sources, ai, top_k=3):
+   def retrieve(query, chunk_matrix, all_chunks, chunk_sources, embedder, top_k=3):
        """Retrieve the top-k most similar chunks to the query."""
-       query_embedding = ai.embed(query)
-       similarities = [
-           GenAIStudio.cosine_similarity(query_embedding, chunk_emb)
-           for chunk_emb in chunk_matrix
-       ]
+       query_embedding = embedder.encode(query)
+       # Unit-length vectors, so each dot product is a cosine similarity
+       similarities = chunk_matrix @ query_embedding
        ranked_indices = np.argsort(similarities)[::-1][:top_k]
 
        results = []
@@ -317,12 +315,12 @@ Step 3: Retrieve Relevant Chunks
            results.append({
                "chunk": all_chunks[idx],
                "source": chunk_sources[idx],
-               "similarity": similarities[idx],
+               "similarity": float(similarities[idx]),
            })
        return results
 
    query = "How do I construct a confidence interval without assumptions?"
-   retrieved = retrieve(query, chunk_matrix, all_chunks, chunk_sources, ai)
+   retrieved = retrieve(query, chunk_matrix, all_chunks, chunk_sources, embedder)
 
    print(f"Query: '{query}'")
    print(f"\nRetrieved {len(retrieved)} chunks:")
@@ -334,9 +332,11 @@ Step 3: Retrieve Relevant Chunks
    Query: 'How do I construct a confidence interval without assumptions?'
 
    Retrieved 3 chunks:
-     [0.7845] [bootstrap.txt] The bootstrap is a resampling method introduced by Bradley Efron in 1979...
-     [0.7234] [bootstrap.txt] replacement, computes the statistic, and repeats B times. The resultin...
-     [0.6567] [bayesian.txt] Bayesian inference treats parameters as random variables with prior distr...
+     [0.7320] [bootstrap.txt] replacement, computes the statistic, and repeats B times. The resultin...
+     [0.6591] [bayesian.txt] Bayesian inference treats parameters as random variables with prior di...
+     [0.6302] [cross_validation.txt] k folds. The average error across folds estimates generalization perfo...
+
+The best match is the bootstrap chunk that describes confidence intervals. The second and third results come from other documents and score lower: the index holds only two bootstrap chunks, so ``top_k=3`` necessarily reaches beyond the relevant document.
 
 Step 4: Build the Augmented Prompt
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -366,24 +366,16 @@ The retrieved chunks now become context in a structured prompt that instructs th
        return prompt
 
    rag_prompt = build_rag_prompt(query, retrieved)
-   # Generate with the chat model; llama3.2:latest stays selected for embeddings
+   # Generation is the one step that calls GenAI Studio
    response = ai.chat(rag_prompt, model="gemma3:12b")
    print(response)
 
 .. code-block:: text
 
-   Based on the provided documents, you can construct confidence intervals
-   without distributional assumptions using the bootstrap method. The bootstrap
-   is distribution-free—it makes no assumptions about the population
-   distribution. To construct a bootstrap confidence interval:
-
-   1. Draw B bootstrap samples (typically B = 1,000 or more) by sampling
-      n observations with replacement from your data.
-   2. Compute your statistic of interest on each bootstrap sample.
-   3. Use the resulting B estimates to form the interval via:
-      - The percentile method (use the 2.5th and 97.5th percentiles)
-      - The basic method
-      - The bias-corrected and accelerated (BCa) method
+   Bootstrap confidence intervals can be constructed using the percentile
+   method, the basic method, or the bias-corrected and accelerated (BCa)
+   method. The bootstrap is distribution-free—it makes no assumptions about the
+   population distribution.
 
 The model correctly grounds its answer in the retrieved bootstrap content and cites the specific methods mentioned in the source material.
 
@@ -395,10 +387,11 @@ Putting it all together into a reusable pipeline:
 .. code-block:: python
 
    class SimpleRAG:
-       """Minimal RAG pipeline built on GenAI Studio embeddings."""
+       """Minimal RAG pipeline: local embeddings for retrieval, GenAI Studio for generation."""
 
-       def __init__(self, ai):
+       def __init__(self, ai, embedder):
            self.ai = ai
+           self.embedder = embedder
            self.chunks = []
            self.sources = []
            self.embeddings = None
@@ -411,20 +404,20 @@ Putting it all together into a reusable pipeline:
 
        def build_index(self):
            """Embed all chunks."""
-           self.embeddings = np.array(self.ai.embed(self.chunks))
+           self.embeddings = self.embedder.encode(self.chunks)
            print(f"Indexed {len(self.chunks)} chunks "
                  f"({self.embeddings.shape[1]} dimensions)")
 
        def query(self, question, top_k=3):
            """Retrieve relevant chunks and generate an answer."""
            retrieved = retrieve(question, self.embeddings, self.chunks,
-                                self.sources, self.ai, top_k)
+                                self.sources, self.embedder, top_k)
            prompt = build_rag_prompt(question, retrieved)
            answer = self.ai.chat(prompt, model="gemma3:12b")  # generation uses the chat model
            return {"answer": answer, "sources": retrieved}
 
    # Usage — same chunking as before, so we rebuild the same 6-chunk index
-   rag = SimpleRAG(ai)
+   rag = SimpleRAG(ai, embedder)
    for name, content in documents.items():
        rag.add_document(content, source=name, chunk_size=50, overlap=10)
    rag.build_index()
@@ -435,10 +428,9 @@ Putting it all together into a reusable pipeline:
 
 .. code-block:: text
 
-   Indexed 6 chunks (3072 dimensions)
-   Based on the provided context, MCMC (Markov Chain Monte Carlo) methods
-   are used to sample from posterior distributions when analytical solutions
-   are unavailable. Specifically, Metropolis-Hastings and Hamiltonian Monte...
+   Indexed 6 chunks (384 dimensions)
+   MCMC methods are used to sample from posterior distributions when analytical
+   solutions are unavailable.
 
    Sources used: ['bayesian.txt', 'bayesian.txt', 'cross_validation.txt']
 
@@ -461,7 +453,7 @@ The choice of chunk size significantly affects RAG quality. Small chunks are mor
    question = "How does the bootstrap construct confidence intervals?"
 
    for chunk_size in [30, 75, 150]:
-       rag_test = SimpleRAG(ai)
+       rag_test = SimpleRAG(ai, embedder)
        for name, content in documents.items():
            rag_test.add_document(content, source=name, chunk_size=chunk_size)
        rag_test.build_index()
@@ -474,9 +466,15 @@ The choice of chunk size significantly affects RAG quality. Small chunks are mor
 
 .. code-block:: text
 
-   Chunk size=30: 15 chunks, top sim=0.8123, sources=['bootstrap.txt', 'bootstrap.txt', 'bootstrap.txt']
-   Chunk size=75: 6 chunks, top sim=0.7845, sources=['bootstrap.txt', 'bootstrap.txt', 'bayesian.txt']
-   Chunk size=150: 3 chunks, top sim=0.7234, sources=['bootstrap.txt', 'bayesian.txt', 'cross_validation.txt']
+   Indexed 15 chunks (384 dimensions)
+
+   Chunk size=30: 15 chunks, top sim=0.8327, sources=['bootstrap.txt', 'bootstrap.txt', 'bootstrap.txt']
+   Indexed 6 chunks (384 dimensions)
+
+   Chunk size=75: 6 chunks, top sim=0.7964, sources=['bootstrap.txt', 'bootstrap.txt', 'bayesian.txt']
+   Indexed 3 chunks (384 dimensions)
+
+   Chunk size=150: 3 chunks, top sim=0.7796, sources=['bootstrap.txt', 'bayesian.txt', 'cross_validation.txt']
 
 With smaller chunks (30 words), all retrieved chunks come from the correct source (bootstrap.txt) and the similarity is highest. With larger chunks (150 words), the retrieval is less focused. The optimal chunk size depends on your documents and query types—there is no universal best value.
 
@@ -536,9 +534,9 @@ Retrieval quality is measured with classic information-retrieval metrics. Precis
 
 .. code-block:: text
 
-   Precision@3: 0.778
+   Precision@3: 0.667
    Recall@3:    1.000
-   F1@3:        0.875
+   F1@3:        0.800
 
 Faithfulness Verification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -668,8 +666,7 @@ Chapter 6.5 Exercises: Retrieval-Augmented Generation
 
          import numpy as np
 
-         ai.select_model("llama3.2:latest")  # embed-capable model for indexing and queries
-         rag = SimpleRAG(ai)
+         rag = SimpleRAG(ai, embedder)
 
          # Add your own documents
          rag.add_document(
@@ -738,7 +735,7 @@ Chapter 6.5 Exercises: Retrieval-Augmented Generation
          results = []
 
          for cs in chunk_sizes:
-             test_rag = SimpleRAG(ai)
+             test_rag = SimpleRAG(ai, embedder)
              test_rag.add_document(document, source="methods.txt", chunk_size=cs)
              test_rag.build_index()
 
@@ -773,7 +770,7 @@ Chapter 6.5 Exercises: Retrieval-Augmented Generation
       .. code-block:: python
 
          # Retrieval failure: vocabulary mismatch
-         rag = SimpleRAG(ai)
+         rag = SimpleRAG(ai, embedder)
          rag.add_document(
              "The bootstrap method resamples observations with replacement "
              "to approximate the sampling distribution of a statistic.",

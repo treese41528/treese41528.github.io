@@ -25,7 +25,7 @@ Section-by-Section Recap
 
 **Section 6.4: Data Annotation** used LLMs to label text at scale. We designed annotation prompts, built batch pipelines, and evaluated quality with Cohen's kappa and bootstrap confidence intervals.
 
-**Section 6.5: Retrieval-Augmented Generation** grounded LLM responses in external documents. We built RAG both via GenAI Studio's knowledge base API and manually from scratch (chunk → embed → retrieve → generate).
+**Section 6.5: Retrieval-Augmented Generation** grounded LLM responses in external documents. We built RAG both via GenAI Studio's knowledge base API and manually from scratch with a local embedding model (chunk → embed → retrieve → generate).
 
 **Section 6.6: Prompt Engineering** treated prompts as code—versioned, tested, and iterated. We developed systematic techniques: structured instructions, few-shot examples, chain-of-thought reasoning, and self-consistency (framed as bootstrap resampling).
 
@@ -61,14 +61,6 @@ GenAI Studio Quick Reference
      - Multi-turn conversation from message list
    * - ``ai.chat_conversation(conv)``
      - Multi-turn conversation from ``Conversation`` object
-   * - ``ai.embed(text)``
-     - Generate embedding vector(s)
-   * - ``ai.embed_complete(text)``
-     - Embeddings with metadata
-   * - ``ai.similarity(text1, text2)``
-     - Cosine similarity between two texts
-   * - ``GenAIStudio.cosine_similarity(v1, v2)``
-     - Cosine similarity between two vectors (static)
    * - ``ai.upload_file(path)``
      - Upload file for RAG
    * - ``ai.create_knowledge_base(name)``
@@ -77,6 +69,21 @@ GenAI Studio Quick Reference
      - Link file to knowledge base
    * - ``ai.chat(prompt, collections=[kb_id])``
      - RAG-augmented chat
+
+Embeddings are not part of the GenAI Studio API. They are computed on your own machine with ``sentence-transformers``:
+
+.. list-table:: Local Embedding Quick Reference
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Call
+     - Description
+   * - ``embedder = SentenceTransformer("BAAI/bge-small-en-v1.5")``
+     - Load the embedding model (downloads once, then runs offline)
+   * - ``embedder.encode(texts)``
+     - Embed a string or a list of strings; returns a NumPy array with 384 columns
+   * - ``E @ E.T``
+     - All pairwise cosine similarities between the rows of ``E`` (each row has length 1)
 
 
 Connections to Earlier Chapters
@@ -216,12 +223,14 @@ The program below strings together five of the chapter's techniques—preprocess
        text = re.sub(r'<[^>]+>', '', text)
        return re.sub(r'\s+', ' ', text).strip()
 
-   # 2. Embed (Section 6.2)
+   # 2. Embed (Section 6.2): on your own machine, with a small open-weight model
+   from sentence_transformers import SentenceTransformer
+   embedder = SentenceTransformer("BAAI/bge-small-en-v1.5")
    reviews = ["Great product!", "Terrible quality.", "It works fine.",
               "Best purchase ever!", "Waste of money."]
    cleaned = [clean(r) for r in reviews]
-   embeddings = ai.embed(cleaned, model="llama3.2:latest")  # gemma3 has no embedding endpoint; use an embed-capable model (3072-d)
-   print(f"Embedded {len(embeddings)} reviews ({len(embeddings[0])} dims)")
+   embeddings = embedder.encode(cleaned)
+   print(f"Embedded {len(embeddings)} reviews ({embeddings.shape[1]} dims)")
 
    # 3. Annotate with self-consistency (Sections 6.4 + 6.6)
    PROMPT = ("Classify as positive, negative, or neutral. "
@@ -249,7 +258,7 @@ The program below strings together five of the chapter's techniques—preprocess
 
 .. code-block:: text
 
-   Embedded 5 reviews (3072 dims)
+   Embedded 5 reviews (384 dims)
      [positive] (100%) Great product!
      [negative] (100%) Terrible quality.
      [ neutral] (80%) It works fine.
